@@ -1,0 +1,105 @@
+name: Capacity report
+description: Offer an ASCEP capacity report for hardware or a model the repository does not yet cover
+title: "[capacity-report]: "
+labels: ["capacity-report", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue announces a report you intend to contribute — the report itself arrives as a PR under `examples/`, per CONTRIBUTING.md. Triage happens from what you declare here, so fill it in from your measurements, not from memory of them.
+
+        A report is not required to be fully conforming to be welcome. A `partial` verdict is a publishable state. A claim that overstates its tier is not.
+  - type: input
+    id: accelerator
+    attributes:
+      label: Accelerator and count
+      description: Model and count of the accelerators, e.g. "8× H100 SXM 141GB". Without this a reviewer cannot even check the weights floor, so the issue sits open until someone asks.
+      placeholder: "8× H100 SXM 141GB"
+    validations:
+      required: true
+  - type: textarea
+    id: topology
+    attributes:
+      label: Parallelism topology
+      description: Tensor-parallel width, pipeline depth, and single- or multi-node. Per-GPU KV capacity varies with TP width by up to 6× and non-monotonically (KV heads replicate once TP exceeds the KV head count), so a figure without its topology fails C3 and cannot be compared against anything.
+      placeholder: "TP=2, PP=1, single node, 4 replicas per node"
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: Model and geometry
+      description: "Architecture family or geometry (layers, heads, KV heads or GQA group; `kv_lora_rank`/`qk_rope_head_dim` for MLA), total parameters, active parameters if MoE, attention family, stored precision. These select which KV formula applies: GQA vs MLA geometry is a ~57× difference, and confusing total with active MoE parameters is the most common sizing error. Either mistake can make a deployable model look undeployable or vice versa."
+      placeholder: "Llama-3-70B-class; 80 layers, 64 Q / 8 KV heads (GQA); 70B total; bf16"
+    validations:
+      required: true
+  - type: input
+    id: framework
+    attributes:
+      label: Serving framework and version
+      description: Framework, version, and if available the engine's own reported KV pool size (e.g. vLLM's log line). Version goes in the reproduction bundle (C8); the engine-reported KV figure is preferred over the analytic pool and is what rescues a report whose geometry was not recorded.
+      placeholder: "vLLM 0.6.3; engine reports 574,798 KV tokens per GPU at TP=2"
+    validations:
+      required: true
+  - type: textarea
+    id: measurement
+    attributes:
+      label: What was measured, and at what context length
+      description: Metric, input/output token counts, open- vs closed-loop, and the context length(s). Throughput falls 2–4× from chat-length to document-length prompts, so a tokens/s figure with no token counts is not a property of the model and fails C4. A single-point measurement is fine; say that it is one.
+      placeholder: "Closed-loop, 1,000 in / 400 out, ~1,200-token contexts: 1,459 tok/s per GPU. Single point; no curve."
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which capacity tier is this number?
+      description: Theoretical (roofline), Measured (best observed, SLO ignored), Sustainable (SLO gates held), or Recommended (sustainable ÷ headroom). The four differ by integer multiples and readers assume the most favourable, so an unclear tier becomes a wrong claim (C6). "Not determined" is an honest answer; it just tells reviewers the measurement work is not done.
+      options:
+        - Theoretical
+        - Measured
+        - Sustainable
+        - Recommended
+        - Not determined
+    validations:
+      required: true
+  - type: dropdown
+    id: binding_constraint
+    attributes:
+      label: Binding constraint
+      description: "Which floor binds: weights, kv, throughput, or slo. A capacity number without its constraint does not say what to buy more of and fails C5. Which floor binds changes with context length; \"slo\" means latency gates, not memory, set the ceiling."
+      options:
+        - weights
+        - kv
+        - throughput
+        - slo
+        - not determined
+    validations:
+      required: true
+  - type: dropdown
+    id: bundle
+    attributes:
+      label: Can the reproduction bundle be published?
+      description: Run configs, per-request raw records, engine version and container digest, environment capture (C8). Without them the report caps at partial — that is still mergable, but reviewers need to know before they read, not after they ask.
+      options:
+        - "Yes, all four artefacts"
+        - "Partially — some artefacts cannot be published"
+        - "No — report will be partial"
+        - "Not sure yet"
+    validations:
+      required: true
+  - type: textarea
+    id: coverage_gap
+    attributes:
+      label: What gap does this fill?
+      description: Which existing example under `examples/` this most resembles and what is new. A duplicate configuration of an existing example is still useful — it is replication — but a first report on a new attention family or accelerator is triaged faster, so say which this is.
+    validations:
+      required: false
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Before submitting
+      options:
+        - label: The submitted report will be run through `ascep conformance`. I accept its verdict as the label on the report — a `partial` verdict is publishable, but I will not present the report as a higher tier than it earns.
+          required: true
+        - label: This submission and the eventual bundle contain no internal hostnames or IPs, credentials, internal paths, job IDs, customer or partner names, and no pricing. "Scrubbed" means absent, not redacted in place — CONTRIBUTING.md rejects and rewrites history over these, and a public issue is where they leak.
+          required: true

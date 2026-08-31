@@ -1,0 +1,17 @@
+# Blank issues stay enabled on purpose: a protocol whose value is hearing what it
+# failed to anticipate cannot force every report into a form. Templates cover the
+# known failures; the blank form covers the ones ASCEP did not foresee.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Protocol specification
+    url: https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/blob/main/protocol/SPEC.md
+    about: Read before opening an issue about what the protocol requires, forbids or leaves open — that question is the spec's job to answer, and if it doesn't, the issue is a spec gap worth filing as such.
+
+  - name: Conformance rules (C1–C8)
+    url: https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/blob/main/protocol/SPEC.md#conformance
+    about: Read before asking whether a report is conforming, partial or non-conforming — the level is computed from these rules, not decided in an issue; run `ascep conformance` first and open an issue only if the computed level looks wrong.
+
+  - name: Worked examples
+    url: https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/tree/main/examples
+    about: Read before asking how to structure a report — diff yours against a published one; if yours covers hardware or a model nobody has published, that is a contribution, not a question.

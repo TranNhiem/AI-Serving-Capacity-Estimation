@@ -80,7 +80,8 @@ Requirements:
    `unmeasured_assumptions` with `impact_if_wrong` and `cost_to_measure`. Enforced in both
    directions: an unjustified null fails, and so does a justification left behind after the
    field was measured.
-3. `conclusion_sensitivity` naming the assumption a reviewer should attack first.
+3. The `unmeasured_assumptions` entry a reviewer should attack first states what the number
+   becomes if the assumption is wrong. "May affect results" is not an `impact_if_wrong`.
 4. No internal hostnames, credentials, customer names or pricing — run
    `python tools/check_no_secrets.py` before opening the PR.
 5. `pytest tests/` green. Reports are picked up automatically by the `examples/*/report.json`

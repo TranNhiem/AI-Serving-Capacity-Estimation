@@ -1,0 +1,105 @@
+name: Protocol defect
+description: A rule in the spec that is unenforceable, contradictory, ambiguous, missing, or wrong. Protocol defects invalidate reports written against them; code bugs in the ascep tooling belong in the other template.
+title: "[Protocol defect]: "
+labels: ["protocol", "spec-defect"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for defects in the **protocol**: the text of `SPEC.md` and chapters 1–8, the schemas in `schemas/`, and the conformance rules C1–C8. A wrong formula in `ascep/capacity.py` is a code bug. A rule that cannot be checked, contradicts another rule, or lets a wrong number pass conformance is a protocol defect, and every report written against it inherits the defect.
+
+        **A defect report without a concrete wrong number is a matter of taste and will be treated as one.** If you cannot name a configuration and the figure the protocol currently gets wrong — or gets right while claiming otherwise — open a discussion instead.
+
+        Spec changes are debated on their failure modes, not their wording (see CONTRIBUTING.md). Any fix that would alter the numbers in an already-conforming report is a major version bump.
+  - type: dropdown
+    id: location
+    attributes:
+      label: Where is the defect
+      description: Select every location involved. A contradiction always involves at least two.
+      multiple: true
+      options:
+        - SPEC.md — top-level spec, purpose, tiers, floors
+        - "SPEC.md — conformance section (C1–C8 definitions as a whole)"
+        - Chapter 1 — Hardware
+        - Chapter 2 — Model
+        - Chapter 3 — Serving
+        - Chapter 4 — Measurement
+        - Chapter 5 — Capacity model
+        - Chapter 6 — Application sizing
+        - Chapter 7 — Benchmark procedure
+        - Chapter 8 — Reporting
+        - C1 — Complete declaration
+        - C2 — Provenance tagging
+        - C3 — Topology binding
+        - C4 — Context binding
+        - C5 — Binding constraint
+        - C6 — Four tiers
+        - C7 — SLO gates declared before measurement
+        - C8 — Reproduction bundle
+    validations:
+      required: true
+  - type: textarea
+    id: quoted-text
+    attributes:
+      label: Exact text at fault
+      description: Quote it verbatim, with section or rule reference. Paraphrase hides the ambiguity you are reporting. For a contradiction, quote both passages.
+      placeholder: |
+        SPEC.md, C7: "An operating point whose gates failed MUST be excluded from the sustainable tier when..."
+        Chapter 5, §5.5: "..."
+    validations:
+      required: true
+  - type: dropdown
+    id: defect-class
+    attributes:
+      label: Class of defect
+      description: Pick the one that best matches the failure, not the one that sounds most severe.
+      options:
+        - Contradiction — two rules cannot both be satisfied by the same report
+        - Unenforceable — the rule has no checkable criterion; a reviewer cannot pass or fail it
+        - Ambiguous — two careful readers would resolve it differently and produce different verdicts
+        - Missing — no existing rule stops a specific wrong number from passing conformance
+        - Wrong — the rule as written mandates a wrong number, or forbids a correct one
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: The concrete failure it permits or causes
+      description: |
+        A specific configuration and the wrong number that results. Without this, the report is unactionable: the defect classes above describe how a rule fails, but only a number proves that it does.
+      placeholder: |
+        8× H100, model with DeepSeek-V3 attention geometry declared as GQA, 32,000-token
+        context: the grouped-query KV formula overstates KV per session by ~57×, predicting
+        3 concurrent sessions where the measured answer is 153. The report passes C3/C4/C5
+        and concludes the model is undeployable at document length. Nothing in C1–C8 rejects
+        it, because attention_type is not verified against the formula selected.
+    validations:
+      required: true
+  - type: dropdown
+    id: report-impact
+    attributes:
+      label: Would any published report change verdict if this were fixed
+      description: This determines whether the fix is a major version bump. Name the report in the failure description above if you answer yes.
+      options:
+        - Yes — a conforming report becomes partial or non-conforming
+        - Yes — a partial or non-conforming report becomes conforming
+        - Yes — numbers change but no verdict does
+        - No — clarification only; no report's numbers or verdict move
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-fix
+    attributes:
+      label: Proposed fix
+      description: Optional. Expect it to be debated on its failure modes rather than adopted as written.
+    validations:
+      required: false
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Disclosure check
+      description: Reports containing any of these are rejected and history-rewritten, not patched.
+      options:
+        - label: This report contains no internal hostnames, IPs, cluster topology, credentials, customer names, or pricing. If quoting captured output, I have sanitized it (`python tools/check_no_secrets.py`).
+          required: true

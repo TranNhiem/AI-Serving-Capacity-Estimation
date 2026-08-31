@@ -220,14 +220,28 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
     }
     allowed = ours | foreign
 
+    # Everything a contributor is told to fill in, not just the chapters. The PR template once
+    # asked for a `conclusion_sensitivity` field that has never existed in any schema; a
+    # reviewer would have ticked the box, because a checklist item is read as authoritative.
+    # The templates and issue forms are documentation with the same failure mode as prose.
+    sources = sorted((ROOT / "protocol").glob("*.md"))
+    sources += sorted((ROOT / "templates").glob("*.md"))
+    sources += sorted((ROOT / ".github").rglob("*.yml"))
+    sources += sorted((ROOT / ".github").rglob("*.md"))
+    sources += [ROOT / "CONTRIBUTING.md", ROOT / "CHANGELOG.md", ROOT / "README.md"]
+    sources += sorted((ROOT / "examples").rglob("README.md"))
+
     unknown = {}
-    for md in sorted((ROOT / "protocol").glob("*.md")):
-        for lineno, line in enumerate(md.read_text().splitlines(), 1):
+    for doc in sources:
+        if not doc.exists():
+            continue
+        rel = doc.relative_to(ROOT)
+        for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for tok in re.findall(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`", line):
                 if tok not in allowed:
-                    unknown.setdefault(tok, f"{md.name}:{lineno}")
+                    unknown.setdefault(tok, f"{rel}:{lineno}")
     assert not unknown, (
-        "chapters name fields no schema declares — either add the field or fix the prose:\n  "
+        "docs name fields no schema declares — either add the field or fix the prose:\n  "
         + "\n  ".join(f"{k} ({v})" for k, v in sorted(unknown.items()))
     )
 
