@@ -9,6 +9,7 @@ abstract: >-
   requires each capacity figure to name the floor that binds it.
 type: software
 version: "0.1.0"
+date-released: "2026-08-31"
 license: Apache-2.0
 repository-code: "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation"
 keywords:
