@@ -263,3 +263,40 @@ def test_init_needs_no_optional_dependency():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_conformance_and_init_agree_on_the_placeholder_marker():
+    """`ascep.conformance` duplicates the marker rather than importing it, to stay free of
+    imports that could reach outside the stdlib. That is only safe if they cannot drift."""
+    assert conformance._PLACEHOLDER == init.TODO
+
+
+def test_a_leftover_placeholder_is_an_error_not_a_declaration():
+    """The hole `ascep init` would otherwise have opened.
+
+    Every rule in the checker tests `is None`, so a string sitting in a slot reads as
+    declared. Filling in the numbers and missing one string must not produce a report that
+    claims a reproduction bundle it does not have.
+    """
+    report = {
+        "reproduction": {"raw_records_path": init.TODO},
+        "hardware": {"gpu_model": "H100-SXM-80GB"},
+    }
+    paths = {f.path for f in conformance.check(report).findings if f.severity == "error"}
+    assert "reproduction.raw_records_path" in paths
+    assert "hardware.gpu_model" not in paths, "a real value must not be flagged"
+
+
+def test_an_unreplaced_u_reason_is_caught_even_though_c1_skips_reason_prose():
+    """`_walk_nulls` skips `*_u_reason` keys on purpose — they are prose about a claim, not
+    claims. That exemption is exactly where a generated reason would otherwise hide."""
+    reason = init._u_reason("vram_bytes_per_gpu")
+    report = {"hardware": {"vram_bytes_per_gpu": None, "vram_bytes_per_gpu_u_reason": reason}}
+    findings = conformance.check(report).findings
+    assert any(f.path == "hardware.vram_bytes_per_gpu_u_reason" for f in findings)
+
+
+def test_an_empty_string_is_not_a_declaration():
+    report = {"hardware": {"gpu_model": "   "}}
+    paths = {f.path for f in conformance.check(report).findings if f.severity == "error"}
+    assert "hardware.gpu_model" in paths

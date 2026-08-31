@@ -37,6 +37,12 @@ cross-version comparisons valid.
 
 ### Security
 
+- C1 now rejects a leftover `TODO` or an empty string as an error. Every other
+  rule in the conformance checker tests `is None`, so scaffolding text occupied
+  the slot and read as a declaration — a report with
+  `reproduction.raw_records_path: "TODO"` passed C8 while pointing at nothing.
+  This also covers `*_u_reason` fields, which C1's null walk deliberately skips.
+
 ## [0.1.0] — 2026-08-31
 
 Initial draft release.

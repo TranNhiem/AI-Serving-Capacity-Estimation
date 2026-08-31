@@ -35,6 +35,13 @@ _REPRODUCTION_FIELDS = (
 _LEVEL_STRENGTH = {"non-conforming": 0, "partial": 1, "conforming": 2}
 _U_REASON_SUFFIX = "_u_reason"
 
+# The marker `ascep init` leaves in every unfilled string. Every other rule in this module
+# tests `is None`, so before this existed a leftover "TODO" read as a declaration: a report
+# with `reproduction.raw_records_path: "TODO"` passed C8 while pointing at nothing. Duplicated
+# from `ascep.init.TODO` rather than imported, to keep this module free of any import that
+# could later reach outside the stdlib; tests/test_init.py asserts the two agree.
+_PLACEHOLDER = "TODO"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -161,7 +168,58 @@ def _check_c1(report: dict, findings: list[Finding]) -> None:
             if isinstance(entry, dict) and isinstance(entry.get("field"), str):
                 assumption_fields.add(entry["field"])
     _walk_nulls(report, "", assumption_fields, findings)
+    _walk_placeholders(report, "", findings)
     _check_schema(report, findings)
+
+
+def _walk_placeholders(node: Any, path: str, findings: list[Finding]) -> None:
+    """Flag scaffolding text that was never replaced.
+
+    A null is an honest unknown and C1 only asks that it be justified. A leftover ``TODO`` is
+    something else: it occupies the slot, so every ``is None`` test in this module reads it as
+    a declaration, and the report claims a value it does not have. Empty strings are the same
+    failure typed differently.
+
+    Deliberately not a general junk detector -- "n/a" and "unknown" are not caught, because
+    guessing at what a human meant is a losing game. This catches the one string the toolchain
+    itself produces, which is the one a contributor is most likely to leave behind.
+    """
+    if isinstance(node, list):
+        for index, item in enumerate(node):
+            _walk_placeholders(item, f"{path}.{index}", findings)
+        return
+    if isinstance(node, dict):
+        for key, value in node.items():
+            _walk_placeholders(value, f"{path}.{key}" if path else key, findings)
+        return
+    if not isinstance(node, str):
+        return
+
+    if _PLACEHOLDER in node:
+        findings.append(
+            Finding(
+                rule="C1",
+                severity="error",
+                path=path,
+                message=(
+                    f"Replace the '{_PLACEHOLDER}' left by `ascep init`: fill this in, or set "
+                    "it to null with a (U) reason. Scaffolding text occupies the slot, so "
+                    "every other check reads it as a value that was declared."
+                ),
+            )
+        )
+    elif not node.strip():
+        findings.append(
+            Finding(
+                rule="C1",
+                severity="error",
+                path=path,
+                message=(
+                    "An empty string is not a declaration. Give a value, or null with a "
+                    "(U) reason saying why it is unknown."
+                ),
+            )
+        )
 
 
 def _walk_nulls(node: Any, path: str, assumption_fields: set, findings: list[Finding]) -> None:
