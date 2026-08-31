@@ -56,7 +56,10 @@ figures MUST NOT be presented as topology-independent.
 
 **C4 — Context binding.** Any throughput figure MUST be reported with the input and output
 token counts it was measured at. A throughput curve over at least three context lengths
-SHOULD be reported; a single point MUST be labelled as such.
+SHOULD be reported; a campaign covering fewer MUST set `run.single_point` to `true`. The
+label does not raise the grade — a single point still caps the report at `partial` — it
+records that the limit was known, so the figures are not read as a curve and projected to a
+shape they were never measured at.
 
 **C5 — Binding constraint.** Every capacity figure MUST name which floor binds it —
 `weights`, `kv`, `throughput` or `slo`. A capacity number without its constraint does not

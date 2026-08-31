@@ -26,14 +26,54 @@ cross-version comparisons valid.
 - `capacity_tiers.<name>.tier` is now pinned to a `const` matching its key.
   Copying a tier row and forgetting to relabel it previously validated and passed
   every conformance gate, leaving two rows claiming to be the same tier.
+- `run.single_point`, the field C4 always required and no schema provided. C4
+  says a campaign covering fewer than three context lengths MUST be labelled as
+  such; there was nowhere to put the label, so the same three rows read as a
+  curve. Setting it does not raise the grade — a single point still caps at
+  `partial` — it records that the limit was known.
 
 ### Changed
+
+- `capacity_tiers.<tier>.headroom` now states in its description that it is a
+  **divisor**, matching `sizing_result.headroom_factor`. The two descriptions
+  previously said "factor" and "divisor" for the same quantity, so a generator
+  and a validator reading them literally would disagree on the recommended tier
+  by the square of the headroom.
+- `ascep.capacity.fits` raises `ValueError` when `min_kv_tokens` is asserted
+  without `kv_per_token`. It previously returned `True` as soon as the weights
+  loaded, so a caller who explicitly asked for a KV floor got a "fits" verdict
+  for a configuration nobody had checked.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- The `chatbot-10k-dau` document-assistant walkthrough quoted its two capacity
+  floors (610 KV, 784 throughput) at **4 GPUs** immediately after a table of
+  2-GPU floors, without saying so. The throughput floor appeared to *rise* with
+  longer context, which is an artifact of doubling the fleet — at equal GPU
+  count it falls from 761 to 392. Both fleet sizes are now labelled and the
+  like-for-like comparison is shown.
+- `ascep/capacity.py` and `CONTRIBUTING.md` referred contributors to
+  `ascep.sweep` and `ascep.metrics`, neither of which exists in this release.
+- C1's placeholder check matched `TODO` as a substring, so a real path such as
+  `s3://bench/TODO-migration/records.jsonl` was rejected as scaffolding. It now
+  matches the whole value, case-folded, plus the one `(U) TODO:` prefix `ascep
+  init` writes — the strings the toolchain itself produces, which is what the
+  rule always claimed to catch.
+- A stale `*_u_reason` beside a filled-in field produced two C1 errors at one
+  path with opposite instructions ("remove this" and "fill this in"). The null
+  walk owns that case; the placeholder walk now skips it.
+- `ascep.init` no longer writes `1970-01-01T00:00:00Z` into `date-time` fields.
+  A parseable sentinel is the worst kind of placeholder: it validates, it
+  survives `grep TODO`, and it reads as a real generation date. Those fields get
+  `TODO` like every other string, and C1 rejects the epoch wherever it appears —
+  including in `examples/moe-26b-h100-tp2`, which was publishing it.
+- `ascep.init`'s docstring claimed `if`/`then` requirements surface through
+  `decisions()`; only `anyOf`/`oneOf` ever did. The docstring now says what
+  actually happens and why it is the right behaviour.
 
 ### Security
 
@@ -42,6 +82,19 @@ cross-version comparisons valid.
   the slot and read as a declaration — a report with
   `reproduction.raw_records_path: "TODO"` passed C8 while pointing at nothing.
   This also covers `*_u_reason` fields, which C1's null walk deliberately skips.
+- C1 now rejects `NaN` and the infinities. `json.load` parses those bare tokens
+  by default, and every comparison against `NaN` is false, so a single such
+  value disabled the C6 tier ordering, the C6 roofline ceiling, the C7 gate
+  check and the C4 curve count at once — a report declaring nothing graded
+  `conforming`.
+- A bare `(U)` no longer justifies a null. The tag with no sentence after it
+  cleared C1 for any field, so four characters pasted beside every null
+  satisfied the rule the protocol is built on.
+- C8 now warns when `container_digest` is not `<algorithm>:<hex>`. Any registry
+  algorithm is accepted and the paths beside it remain unchecked — this tool
+  cannot see the machine they name — but `sha256:0` is malformed rather than
+  unverifiable, and the digest is what pins the software the rest of the bundle
+  came from.
 
 ## [0.1.0] — 2026-08-31
 

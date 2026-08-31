@@ -41,9 +41,12 @@ _MAX_DEPTH = 16
 # filled in.
 TODO = "TODO"
 
-# A date-time placeholder has to parse or validation fails for a reason that has nothing to do
-# with the user's data, which sends them debugging the tool instead of writing their report.
-_EPOCH = "1970-01-01T00:00:00Z"
+# Date-time fields get the same `TODO` as any other string, deliberately. The obvious
+# alternative -- a parseable sentinel like the epoch -- was worse in the one way that matters:
+# it validates, it survives `grep TODO`, and it reads as a real generation timestamp, so an
+# untouched skeleton would publish a date nobody chose. `format` is an annotation the validator
+# does not enforce, so `TODO` costs nothing here; if it ever is enforced, the resulting error
+# points at an unfilled field, which is exactly what this module wants an error to do.
 
 # Fields whose value is a fact about the document being generated rather than a claim about
 # the user's system. Emitting the real protocol version is not a fabricated value, and it is
@@ -104,9 +107,14 @@ def _merged(node: dict, root: dict) -> tuple[dict, list]:
     Conditional branches (``if``/``then``, ``oneOf``, ``anyOf``) are ignored on purpose. Their
     requirements contradict each other by construction -- `model.schema.json` demands MLA
     geometry or GQA geometry, never both -- so a skeleton that tried to satisfy every branch
-    would be a document no schema accepts. The unconditional fields are emitted; the
-    conditional ones surface through :func:`decisions` and, once the user declares which case
-    they are in, as conformance findings.
+    would be a document no schema accepts.
+
+    Only the unconditional fields are emitted, and only the ``anyOf``/``oneOf`` disjunctions
+    reach :func:`decisions`. An ``if``/``then`` is keyed on a value the skeleton does not have
+    yet: until ``attention_type`` says ``mla``, there is no sense in which ``kv_lora_rank`` is
+    required, and listing every branch's fields up front would name a dozen the user will never
+    need. They appear the moment they become real -- fill in the discriminator, run
+    ``ascep validate``, and the branch's own requirements are the next errors.
     """
     props = dict(node.get("properties") or {})
     required = list(node.get("required") or [])
@@ -194,7 +202,7 @@ def _value(node: dict, root: dict, depth: int, path: str, notes: list) -> Any:
     # which is the same information delivered as a task. Erring toward the error is the whole
     # posture of this protocol.
     if "string" in types and "null" not in types:
-        return _EPOCH if node.get("format") == "date-time" else TODO
+        return TODO
     return None
 
 

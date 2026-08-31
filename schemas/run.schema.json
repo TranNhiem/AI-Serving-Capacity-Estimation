@@ -207,7 +207,7 @@
     "results": {
       "type": "array",
       "minItems": 3,
-      "description": "One entry per (shape, concurrency) point. At least three distinct context lengths SHOULD be present (C4); fewer MUST be labelled single-point on output.",
+      "description": "One entry per (shape, concurrency) point. At least three distinct context lengths SHOULD be present (C4); fewer MUST be labelled with `single_point`.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -486,6 +486,11 @@
         ],
         "description": "A measured operating point. It MUST be identifiable in context: either context_tokens or input_tokens must carry a real value."
       }
+    },
+    "single_point": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when this campaign measured fewer than three distinct context lengths. C4 requires a single point be labelled as such: without this field the same three rows read as a curve, and a reader projects a figure to a shape it was never measured at. Setting it does not raise the report's grade -- it states the limit the grade already reflects."
     },
     "engine_version_u_reason": {
       "type": "string",

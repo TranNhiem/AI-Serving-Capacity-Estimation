@@ -105,10 +105,21 @@ optimistic pre-launch, and it is measurable from day one of a beta.
 
 **Context length is the second, and it moves more than the number.** Re-run the same workload
 as a document assistant — 8,000-token inputs instead of 1,000 — and two things happen at once:
-per-GPU throughput drops to 751 tok/s off the measured curve, and the KV floor falls to 610
-users while the throughput floor rises to 784. The binding constraint **flips from `throughput`
-to `kv`**, and the answer becomes 4 GPUs bought for a completely different reason. Same product,
-same DAU, same model; the shopping list changes. This is the crossover C5 exists to expose.
+average context goes to 8,200 tokens, and per-GPU throughput drops to 751 tok/s off the
+measured curve. At the same 2 GPUs both floors collapse, but not by the same factor:
+
+| floor | chat, 2 GPUs | document assistant, 2 GPUs |
+|---|---|---|
+| KV | 2,083 users | **305 users** |
+| Throughput | **761 users** | 392 users |
+
+The binding constraint **flips from `throughput` to `kv`** — 6.8× less KV headroom against
+1.9× less throughput — and 2 GPUs no longer covers the 556 needed at all. `gpus_required`
+answers **4 GPUs, binding constraint `kv`**, where the floors are 610 (KV) and 784
+(throughput). Same product, same DAU, same model; the shopping list changes from compute to
+memory. This is the crossover C5 exists to expose, and note that the two figures at 4 GPUs are
+not comparable with the 2-GPU table above — a floor is only a number once you say how many
+GPUs it is measured on.
 
 **`duty_cycle` = 0.4 is the interesting non-answer.** Chapter 6 warns about it harder than any
 other workload field, and here it changes nothing: with no per-stream rate target, duty cycle

@@ -8,6 +8,7 @@ Two failure modes they guard against:
 """
 
 import glob
+import inspect
 import json
 import pathlib
 import re
@@ -181,15 +182,21 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
     # Names the chapters may legitimately use that are not schema fields: our own function and
     # keyword-argument names, and third-party vocabulary the chapters quote on purpose.
     ours = declared | {n for n in dir(capacity) if not n.startswith("_")}
+    # Read the keyword names out of the signatures rather than listing them. A hand-kept list
+    # fails in the direction that costs the most: adding an argument makes accurate prose about
+    # it fail this test, so the pressure is on the writer to delete a true sentence.
+    for obj in list(vars(capacity).values()):
+        if inspect.isclass(obj):
+            ours |= {n for n in vars(obj) if not n.startswith("_")}
+        for member in [obj, *(vars(obj).values() if inspect.isclass(obj) else [])]:
+            if inspect.isfunction(member):
+                ours |= set(inspect.signature(member).parameters)
     ours |= {
-        "gpus_per_replica",
-        "min_kv_tokens",
-        "max_gpus",
-        "overhead_frac",
-        "batch_size",
-        "peak_concurrent_users",
+        # Intermediate names the chapters use when walking through a derivation by hand; they
+        # are prose variables, so no signature will ever contain them.
         "total_tok_s",
         "users_thr",
+        # A sampling knob, quoted as the model's own vocabulary.
         "top_k",
     }
     foreign = {

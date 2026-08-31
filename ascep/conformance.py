@@ -10,6 +10,7 @@ single pass rather than a dozen.
 
 from __future__ import annotations
 
+import math
 import numbers
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -41,6 +42,29 @@ _U_REASON_SUFFIX = "_u_reason"
 # from `ascep.init.TODO` rather than imported, to keep this module free of any import that
 # could later reach outside the stdlib; tests/test_init.py asserts the two agree.
 _PLACEHOLDER = "TODO"
+
+# The date-time placeholder from the same generator. A `format: date-time` field cannot hold
+# "TODO" without failing validation for a reason that is the tool's doing, so `ascep init`
+# writes the epoch there instead -- which parses, validates, and survives `grep TODO`. Without
+# this line an untouched skeleton claims a real generation timestamp, which is the one
+# fabricated value the placeholder rule exists to make impossible.
+_EPOCH_PLACEHOLDER = "1970-01-01T00:00:00Z"
+
+
+def _is_placeholder_text(value: str) -> bool:
+    """Whether a string is generated scaffolding rather than something a person wrote.
+
+    Case-folded and stripped, because "todo" and " TODO " are the same omission typed less
+    carefully. Anchored to the whole value, and to the one prefix `ascep init` writes into a
+    `_u_reason`, so a real path or a real sentence that happens to contain the word is left
+    alone -- an author who has to fight this rule stops reading it.
+    """
+    text = value.strip()
+    return (
+        text.upper() == _PLACEHOLDER
+        or text == _EPOCH_PLACEHOLDER
+        or text.startswith(f"(U) {_PLACEHOLDER}:")
+    )
 
 
 @dataclass(frozen=True)
@@ -118,7 +142,16 @@ def _compute_level(findings: tuple[Finding, ...]) -> str:
 
 def _is_number(value: Any) -> bool:
     # bool is an int subclass, but a gate flag is not a numeric claim and must be excluded.
-    return isinstance(value, numbers.Real) and not isinstance(value, bool)
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return False
+    # NaN and the infinities are not numeric claims either, and admitting them disables this
+    # whole module: every comparison against NaN is False, so the C6 ordering, the C6 roofline
+    # ceiling, the C7 gate check and the C4 curve count all pass on a report that declares
+    # nothing. `json.load` parses the bare tokens NaN and Infinity by default, so this is a
+    # file a real toolchain can emit, not a hand-crafted attack. Rejecting them here makes them
+    # invisible to those rules; `_walk_placeholders` then reports them under C1 by name, so
+    # they surface as the declaration failure they are rather than vanishing.
+    return math.isfinite(float(value))
 
 
 def _tokens(value: Any) -> str:
@@ -178,11 +211,17 @@ def _walk_placeholders(node: Any, path: str, findings: list[Finding]) -> None:
     A null is an honest unknown and C1 only asks that it be justified. A leftover ``TODO`` is
     something else: it occupies the slot, so every ``is None`` test in this module reads it as
     a declaration, and the report claims a value it does not have. Empty strings are the same
-    failure typed differently.
+    failure typed differently, and so are NaN and the infinities.
 
     Deliberately not a general junk detector -- "n/a" and "unknown" are not caught, because
-    guessing at what a human meant is a losing game. This catches the one string the toolchain
-    itself produces, which is the one a contributor is most likely to leave behind.
+    guessing at what a human meant is a losing game. This catches the strings the toolchain
+    itself produces, which are the ones a contributor is most likely to leave behind, plus the
+    non-finite floats, which need no guessing: they have a definite meaning and it is not a
+    measurement.
+
+    Matching is exact rather than by substring, for the same reason. A field reading
+    ``s3://logs/TODO-migration/2026.gz`` is a real path that happens to contain the word, and
+    rejecting it would make this rule something authors work around instead of with.
     """
     if isinstance(node, list):
         for index, item in enumerate(node):
@@ -190,21 +229,41 @@ def _walk_placeholders(node: Any, path: str, findings: list[Finding]) -> None:
         return
     if isinstance(node, dict):
         for key, value in node.items():
+            # A stale justification beside a filled-in field is already reported by the null
+            # walk, and with the opposite instruction: delete it, not fill it in. Two C1 errors
+            # at one path telling the author contradictory things is worse than one.
+            if key.endswith(_U_REASON_SUFFIX):
+                if node.get(key[: -len(_U_REASON_SUFFIX)]) is not None:
+                    continue
             _walk_placeholders(value, f"{path}.{key}" if path else key, findings)
         return
-    if not isinstance(node, str):
-        return
-
-    if _PLACEHOLDER in node:
+    if _is_non_finite(node):
         findings.append(
             Finding(
                 rule="C1",
                 severity="error",
                 path=path,
                 message=(
-                    f"Replace the '{_PLACEHOLDER}' left by `ascep init`: fill this in, or set "
-                    "it to null with a (U) reason. Scaffolding text occupies the slot, so "
-                    "every other check reads it as a value that was declared."
+                    f"Replace {node!r} with a number or with null plus a (U) reason. A "
+                    "non-finite value is what a division by zero or an empty average leaves "
+                    "behind, and every threshold comparison against it silently succeeds."
+                ),
+            )
+        )
+        return
+    if not isinstance(node, str):
+        return
+
+    if _is_placeholder_text(node):
+        findings.append(
+            Finding(
+                rule="C1",
+                severity="error",
+                path=path,
+                message=(
+                    f"Replace the scaffolding `ascep init` left here ({node.strip()!r}): fill "
+                    "this in, or set it to null with a (U) reason. A placeholder occupies the "
+                    "slot, so every other check reads it as a value that was declared."
                 ),
             )
         )
@@ -265,9 +324,24 @@ def _walk_nulls(node: Any, path: str, assumption_fields: set, findings: list[Fin
             _walk_nulls(value, child, assumption_fields, findings)
 
 
+def _is_non_finite(value: Any) -> bool:
+    """A real number that is NaN or an infinity -- the one numeric shape that is not a value."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return False
+    return not math.isfinite(float(value))
+
+
+#: Characters a bare "(U)" tag can be padded with while still saying nothing. A reason has to
+#: carry words; the tag on its own is the author agreeing with the rule rather than answering it.
+_TAG_PADDING = " \t.:;-—,"
+
+
 def _null_is_justified(node: dict, key: str, path: str, assumption_fields: set) -> bool:
     reason = node.get(key + _U_REASON_SUFFIX)
-    if isinstance(reason, str) and reason.startswith("(U)"):
+    # The tag alone is not the justification, the sentence after it is. Accepting a bare "(U)"
+    # turned C1 into a formality: pasting four characters beside every null cleared the whole
+    # rule, and the reviewer who needed to know WHY a figure is missing got nothing.
+    if isinstance(reason, str) and reason.startswith("(U)") and reason[3:].strip(_TAG_PADDING):
         return True
     # Entries may name the full dotted path or, for rows inside arrays, the leaf field.
     leaf = path.rsplit(".", 1)[-1]
@@ -449,17 +523,25 @@ def _check_c4(report: dict, findings: list[Finding]) -> None:
             if _is_number(context):
                 contexts.add(float(context))
         if len(contexts) < 3:
-            findings.append(
-                Finding(
-                    rule="C4",
-                    severity="warning",
-                    path="run.results",
-                    message=(
-                        f"Only {len(contexts)} distinct context length(s) measured; the "
-                        "protocol wants a curve of at least three, so label this a "
-                        "single-point measurement."
-                    ),
+            # Stays a warning either way: a single point is a real limit on what the report can
+            # claim, not a defect in it. The two messages differ because the actions differ --
+            # one asks for a declaration, the other confirms the declaration was read and tells
+            # the author what it costs them, so a labelled report stops looking like a to-do.
+            declared = isinstance(run, dict) and run.get("single_point") is True
+            message = (
+                f"Only {len(contexts)} distinct context length(s) measured. Declared "
+                "run.single_point, so this is honest — but the figures hold at that context "
+                "only and MUST NOT be quoted as a curve or projected to another shape."
+                if declared
+                else (
+                    f"Only {len(contexts)} distinct context length(s) measured; the protocol "
+                    "wants a curve of at least three. Measure more, or set run.single_point "
+                    "to true -- C4 requires the limit be stated, and an unlabelled point "
+                    "reads as a curve."
                 )
+            )
+            findings.append(
+                Finding(rule="C4", severity="warning", path="run.results", message=message)
             )
     for index, row in _scaling_rows(report):
         if row.get("context_tokens") is None:
@@ -713,3 +795,36 @@ def _check_c8(report: dict, findings: list[Finding]) -> None:
                     ),
                 )
             )
+    _check_digest(reproduction, findings)
+
+
+def _check_digest(reproduction: dict, findings: list[Finding]) -> None:
+    """Reject a container digest that cannot be one.
+
+    The paths in this section are deliberately unchecked -- they name artifacts on a machine
+    this tool cannot see, so "does it resolve" is not a question it can ask. A digest is the
+    exception: it is a self-describing string, so ``sha256:0`` is not an unverifiable claim but
+    a malformed one, and it is what a placeholder or a truncated copy-paste looks like. Getting
+    it wrong defeats the whole bundle, because the digest is what pins the software the other
+    four artifacts were produced by.
+    """
+    digest = reproduction.get("container_digest")
+    if not isinstance(digest, str) or not digest.strip():
+        return
+    algorithm, _, hexpart = digest.partition(":")
+    # Any registry algorithm is accepted; only the shape is checked. Hard-coding sha256 would
+    # reject an honest sha512 digest, which is a worse error than the one being caught.
+    if algorithm and len(hexpart) >= 32 and all(c in "0123456789abcdefABCDEF" for c in hexpart):
+        return
+    findings.append(
+        Finding(
+            rule="C8",
+            severity="warning",
+            path="reproduction.container_digest",
+            message=(
+                f"Record the full digest, not {digest!r}: the expected shape is "
+                "'<algorithm>:<hex>', as `docker inspect --format '{{index .RepoDigests 0}}'` "
+                "prints it. A short or unparseable digest pins nothing."
+            ),
+        )
+    )

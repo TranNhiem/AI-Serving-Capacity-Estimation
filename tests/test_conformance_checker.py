@@ -206,3 +206,138 @@ def test_a_wildly_incomplete_report_does_not_crash():
     v = check({"ascep_version": "0.1.0"})
     assert v.level == "non-conforming"
     assert v.findings
+
+
+# --- values that are not declarations --------------------------------------------------
+
+
+def test_a_nan_in_a_measured_tier_is_reported_by_name(report):
+    """A NaN neutralises every comparison in this module — the C6 ordering, the C6 roofline
+    ceiling, the C7 gate check and the C4 curve count all pass against it. It has to leave the
+    numeric rules and reappear under C1, or a report declaring nothing grades conforming."""
+    report["capacity_tiers"]["measured"]["max_concurrent_users"] = float("nan")
+    v = check(report)
+    errors = {f.path for f in v.findings if f.rule == "C1" and f.severity == "error"}
+    assert "capacity_tiers.measured.max_concurrent_users" in errors
+    assert v.level == "non-conforming"
+
+
+def test_an_infinity_is_treated_like_a_nan(report):
+    """`json.load` parses the bare token Infinity too, so this is a file a real toolchain can
+    emit, not a hand-crafted attack."""
+    report["capacity_tiers"]["measured"]["max_concurrent_users"] = float("inf")
+    v = check(report)
+    errors = {f.path for f in v.findings if f.rule == "C1" and f.severity == "error"}
+    assert "capacity_tiers.measured.max_concurrent_users" in errors
+
+
+def test_zero_is_a_declaration_and_is_not_flagged_as_non_finite(report):
+    """Guard against over-eager matching. Zero is a legitimate measurement — an error rate of
+    0% is the good outcome — and flagging it would make the rule unusable."""
+    report["run"]["results"][0]["error_rate_pct"] = 0
+    errors = {f.path for f in check(report).findings if f.rule == "C1" and f.severity == "error"}
+    assert "run.results.0.error_rate_pct" not in errors
+
+
+def test_a_bare_u_tag_does_not_justify_a_null_but_a_sentence_does(report):
+    """Pasting four characters beside every null once cleared C1 entirely. The sentence after
+    the tag is the justification; the tag alone is agreement with the rule, not an answer."""
+    row = report["capacity_tiers"]["measured"]
+    row["max_concurrent_users"] = None
+    path = "capacity_tiers.measured.max_concurrent_users"
+
+    for empty in ("(U)", "(U) ", "(U):", "(U) —"):
+        row["max_concurrent_users_u_reason"] = empty
+        errors = {f.path for f in check(report).findings if f.rule == "C1"}
+        assert path in errors, empty
+
+    row["max_concurrent_users_u_reason"] = "(U) the engine did not report it"
+    assert path not in {f.path for f in check(report).findings if f.rule == "C1"}
+
+
+def test_an_unmeasured_assumptions_entry_still_justifies_a_bare_u_tag(report):
+    """The assumption-list fallback predates the sentence rule and carries the same information
+    in a different place. Tightening the tag must not reject a report that justifies by naming
+    the field, or the fix would cost more honest reports than it catches dishonest ones."""
+    path = "capacity_tiers.measured.max_concurrent_users"
+    report["capacity_tiers"]["measured"]["max_concurrent_users"] = None
+    report["capacity_tiers"]["measured"]["max_concurrent_users_u_reason"] = "(U)"
+    report["unmeasured_assumptions"].append(
+        {
+            "field": path,
+            "value_used": "null",
+            "impact_if_wrong": "the measured tier is unquotable, so no tier below it is either",
+            "cost_to_measure": "one saturation sweep at the deployed shape",
+        }
+    )
+    assert path not in {f.path for f in check(report).findings if f.rule == "C1"}
+
+
+def test_a_malformed_container_digest_is_a_c8_warning_and_real_ones_are_not(report):
+    """A digest is self-describing, so `sha256:0` is malformed rather than unverifiable — the
+    one artifact in the bundle this tool can judge without seeing the machine. Rejecting an
+    honest sha512 digest would be a worse error than the one being caught."""
+    reproduction = report["reproduction"]
+    reproduction.pop("container_digest_u_reason", None)
+    path = "reproduction.container_digest"
+
+    for bad in ("sha256:0", "n/a", "-", "sha256:"):
+        reproduction["container_digest"] = bad
+        assert path in {f.path for f in check(report).findings if f.rule == "C8"}, bad
+
+    for good in ("sha256:" + "a1" * 32, "sha512:" + "b7" * 64, "md5:" + "0f" * 16):
+        reproduction["container_digest"] = good
+        assert path not in {f.path for f in check(report).findings if f.rule == "C8"}, good
+
+
+def test_a_single_point_campaign_can_say_so_and_the_finding_changes(report):
+    """C4 says a single point MUST be labelled, so there has to be somewhere to put the label.
+    It stays a warning either way — the limit is real — but an author who declared it should
+    not keep reading a message telling them to."""
+    report["run"]["results"] = report["run"]["results"][:1]
+    unlabelled = next(f for f in check(report).findings if f.path == "run.results")
+    assert "single_point" in unlabelled.message
+    report["run"]["single_point"] = True
+    labelled = next(f for f in check(report).findings if f.path == "run.results")
+    assert labelled.severity == "warning"
+    assert labelled.message != unlabelled.message
+    assert "MUST NOT be quoted as a curve" in labelled.message
+
+
+def test_a_real_value_containing_the_word_todo_is_not_scaffolding(report):
+    """Substring matching made this rule something authors work around instead of with: a
+    bucket really can be called TODO-migration, and one false positive teaches people that C1
+    errors are noise."""
+    report["reproduction"]["raw_records_path"] = "s3://bench/TODO-migration/2026/records.jsonl"
+    report["reproduction"].pop("raw_records_path_u_reason", None)
+    errors = {f.path for f in check(report).findings if f.rule == "C1"}
+    assert "reproduction.raw_records_path" not in errors
+
+
+def test_a_lowercase_todo_is_still_scaffolding(report):
+    """The omission is the same one typed less carefully, and it points at nothing either way."""
+    for variant in ("todo", " TODO ", "Todo"):
+        report["reproduction"]["raw_records_path"] = variant
+        report["reproduction"].pop("raw_records_path_u_reason", None)
+        errors = {f.path for f in check(report).findings if f.rule == "C1"}
+        assert "reproduction.raw_records_path" in errors, variant
+
+
+def test_an_epoch_timestamp_is_a_placeholder_not_a_generation_date(report):
+    """A parseable sentinel is the worst kind: it validates, it survives `grep TODO`, and it
+    reads as a real date. A report generated in 1970 is a report nobody dated."""
+    report["report_generated_utc"] = "1970-01-01T00:00:00Z"
+    assert "report_generated_utc" in {f.path for f in check(report).findings if f.rule == "C1"}
+
+
+def test_a_stale_justification_is_reported_once_not_twice(report):
+    """Two C1 errors at one path telling the author to delete it and to fill it in is worse
+    than one: whichever they act on, the other still fires."""
+    report["capacity_tiers"]["measured"]["max_tokens_per_s_u_reason"] = "TODO"
+    at_path = [
+        f
+        for f in check(report).findings
+        if f.path == "capacity_tiers.measured.max_tokens_per_s_u_reason"
+    ]
+    assert len(at_path) == 1
+    assert "stale" in at_path[0].message

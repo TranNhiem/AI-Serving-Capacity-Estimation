@@ -41,7 +41,7 @@ Adapters translate a framework's native output (vLLM, SGLang, TGI, TensorRT-LLM,
 3. Prefer the engine-reported KV cache size over the analytic `kv_pool_bytes` path, and call `calibrate_memory_utilization` to reconcile the two when both exist.
 4. Ship with a fixture: a captured real framework output plus the expected schema output, so refactors are caught by unit tests without needing a GPU.
 
-An adapter MUST NOT change raw measurements — no unit rescaling, no percentile smoothing, no dropped outliers. That logic belongs in `ascep.metrics`, once, for every framework.
+An adapter MUST NOT change raw measurements — no unit rescaling, no percentile smoothing, no dropped outliers. Emit the framework's numbers as it reported them and let the reduction happen downstream. There is no shared reducer module in v0.1, so if your adapter needs one, propose it as its own PR rather than folding the arithmetic into the adapter where the next framework cannot reuse it or check it.
 
 ## Proposing a change to the spec
 

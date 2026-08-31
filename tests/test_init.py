@@ -78,7 +78,7 @@ def test_every_validation_error_points_at_an_unfilled_field(layer):
 
 def _is_placeholder(value) -> bool:
     """Whether a value is visibly unfilled, so an error about it is a prompt not a puzzle."""
-    return value is None or value in (init.TODO, init._EPOCH)
+    return value is None or value == init.TODO
 
 
 @pytest.mark.parametrize("layer", LAYERS)

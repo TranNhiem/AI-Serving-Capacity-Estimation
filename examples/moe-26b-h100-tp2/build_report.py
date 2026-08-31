@@ -215,7 +215,11 @@ def build() -> dict:
 
     return {
         "ascep_version": VERSION,
-        "report_generated_utc": SRC.get("report_generated_utc", "1970-01-01T00:00:00Z"),
+        # A literal, not `datetime.now()`: CI regenerates this file and diffs it against the
+        # committed copy, so a wall-clock timestamp would fail the build every run. It is a
+        # real date rather than the epoch because a "generated at 1970" reads as data, not as
+        # the absence of it, and `ascep conformance` now rejects it as the placeholder it is.
+        "report_generated_utc": SRC.get("report_generated_utc", "2026-08-31T00:00:00Z"),
         "conformance": SRC["conformance"],
         "conformance_note": SRC["conformance_note"],
         "hardware": {

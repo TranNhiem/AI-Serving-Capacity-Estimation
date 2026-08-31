@@ -19,7 +19,14 @@ from dataclasses import replace
 
 import pytest
 
-from ascep.capacity import Constraint, Workload, capacity_at, gpus_required, interpolate_throughput
+from ascep.capacity import (
+    Constraint,
+    Workload,
+    capacity_at,
+    fits,
+    gpus_required,
+    interpolate_throughput,
+)
 from ascep.validation import validate
 
 ROOT = pathlib.Path(__file__).parent.parent
@@ -251,3 +258,26 @@ def test_monthly_requests_is_not_a_reportable_field():
     """
     schema = json.loads((ROOT / "schemas" / "capacity-report.schema.json").read_text())
     assert "monthly_requests" not in json.dumps(schema)
+
+
+def test_fits_rejects_a_kv_floor_without_the_bytes_per_token_it_needs():
+    """Returning True here was the worst available answer: the caller asked for the floor to be
+    enforced, the floor was silently skipped, and a `fits` verdict came back for a configuration
+    nobody had checked. The two arguments are one assertion and must arrive together."""
+    with pytest.raises(ValueError, match="min_kv_tokens needs kv_per_token"):
+        fits(26e9, n_gpus=2, vram_bytes_per_gpu=80e9, min_kv_tokens=4096)
+
+
+def test_fits_enforces_the_kv_floor_when_both_arguments_are_given():
+    """A model that loads but leaves no usable KV pool serializes to batch-size-1; the floor is
+    what separates 'the weights fit' from 'this is deployable'."""
+    assert fits(150e9, 2, 80e9, min_kv_tokens=4096, kv_per_token=1e6) is False
+    assert fits(26e9, 8, 80e9, min_kv_tokens=4096, kv_per_token=1e6) is True
+    assert fits(26e9, 8, 80e9, min_kv_tokens=10_000_000, kv_per_token=1e6) is False
+
+
+def test_fits_without_a_kv_floor_still_reports_that_the_weights_load():
+    """The floor is opt-in. A caller that only means 'the weights load' gets the answer it
+    always did, so tightening the assertion above breaks no existing use."""
+    assert fits(26e9, 2, 80e9) is True
+    assert fits(200e9, 2, 80e9) is False

@@ -601,7 +601,7 @@
             "null"
           ],
           "minimum": 1,
-          "description": "Headroom factor applied (required and > 1 only for the recommended tier; 1.0 elsewhere)."
+          "description": "Headroom applied, as a DIVISOR: capacity is divided by it, so 1.15 means 15 percent held back and 1.0 means none. Same quantity and same direction as sizing_result.headroom_factor. Required and > 1 only for the recommended tier; 1.0 elsewhere. Reading it as a multiplier inverts the correction and inflates the recommended tier by its square."
         },
         "context_tokens": {
           "type": [

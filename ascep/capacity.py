@@ -2,8 +2,10 @@
 
 Every function here is a closed-form model with its assumptions stated. Nothing calls a
 GPU, a server, or the network — this module is the *analytic* half of the protocol and is
-meant to be readable, unit-testable, and arguable. The empirical half lives in
-``ascep.sweep`` and ``ascep.metrics``.
+meant to be readable, unit-testable, and arguable. The empirical half — the sweep driver and
+the metric reducers that turn raw per-request records into the figures below — is **not in
+this release**; chapter 7 specifies the procedure so an existing harness can stand in, and
+``examples/*/build_report.py`` shows the hand-off.
 
 The protocol distinguishes four capacity tiers and this module computes all four:
 
@@ -267,12 +269,22 @@ def fits(
     """Whether the model loads *and* leaves a usable KV pool.
 
     A deployment that loads but has near-zero KV is not viable — it serializes to batch-size-1
-    and its latency collapses. Pass ``min_kv_tokens`` to assert a floor.
+    and its latency collapses. Pass ``min_kv_tokens`` to assert a floor; asserting one requires
+    ``kv_per_token``, since the floor is in tokens and the pool is in bytes.
     """
+    # Returning True here would be the worst available answer: the caller asked for the floor
+    # to be enforced, the floor was silently skipped, and a "fits" verdict came back for a
+    # configuration nobody checked. The two arguments are one assertion and must arrive together.
+    if min_kv_tokens > 0 and kv_per_token <= 0:
+        raise ValueError(
+            "min_kv_tokens needs kv_per_token to be checkable: the floor is a token count and "
+            "the pool is bytes. Pass kv_bytes_per_token(...) for the deployed attention "
+            "geometry, or drop min_kv_tokens if you only mean 'the weights load'."
+        )
     pool = kv_pool_bytes(n_gpus, vram_bytes_per_gpu, weights_bytes_, memory_utilization)
     if pool <= 0:
         return False
-    if min_kv_tokens > 0 and kv_per_token > 0:
+    if min_kv_tokens > 0:
         return kv_capacity_tokens(pool, kv_per_token) >= min_kv_tokens
     return True
 
