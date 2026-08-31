@@ -219,3 +219,35 @@ def test_readme_quotes_the_numbers_the_formulas_produce(work, measured):
     }
     missing = {k: v for k, v in expected.items() if v not in readme}
     assert not missing, f"README no longer states these computed figures: {missing}"
+
+
+# --- volume conversions ----------------------------------------------------------------
+
+
+def test_monthly_requests_is_daily_times_a_day_count_the_caller_chooses(work, measured):
+    """Monthly volume is a presentation unit, not a second measurement.
+
+    The method exists because commercial conversations happen in months, and the day count is a
+    parameter because "a month" is not a quantity. What must never happen is monthly acquiring
+    its own reported field: it would be an (I) derived from an (I), and the two would drift.
+    """
+    cap = _size(work, measured)[2]
+    assert cap.monthly_requests() == pytest.approx(cap.daily_requests() * 30)
+    assert cap.monthly_requests(days=31) == pytest.approx(cap.daily_requests() * 31)
+    # The spread the docstring warns about: 28 vs 31 days is 10.7% of the answer, several times
+    # the 15% headroom factor these deployments are sized on.
+    february = cap.monthly_requests(days=28)
+    january = cap.monthly_requests(days=31)
+    assert (january - february) / february > 0.10
+
+
+def test_monthly_requests_is_not_a_reportable_field():
+    """Guards the design decision, not the arithmetic.
+
+    If someone later adds `monthly_requests` to the report schema, C2 has to tag a number
+    derived from another (I) number, and there are then two places for one figure to be wrong.
+    The fix, if monthly is ever genuinely needed in a report, is to state the day count next to
+    `daily_requests` -- not to add a field.
+    """
+    schema = json.loads((ROOT / "schemas" / "capacity-report.schema.json").read_text())
+    assert "monthly_requests" not in json.dumps(schema)

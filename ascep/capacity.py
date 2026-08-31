@@ -420,6 +420,18 @@ class Capacity:
         """
         return self.max_requests_per_s * 86_400.0
 
+    def monthly_requests(self, days: float = 30.0) -> float:
+        """The same headroom figure over a billing period, whose length you must choose.
+
+        Not a reported field, and deliberately so: it is ``daily_requests`` times a constant, so
+        giving it its own slot in the schema would create a second place for one number to be
+        wrong, and C2 would have to tag an **(I)** derived from an **(I)**. Quote it in a
+        commercial conversation if that is the unit the conversation uses, but state the day
+        count with it — "30 days" and "a calendar month" differ by up to 3.3%, which is larger
+        than the headroom margin some deployments are sized on.
+        """
+        return self.daily_requests() * days
+
 
 def capacity_at(
     n_gpus: int,
