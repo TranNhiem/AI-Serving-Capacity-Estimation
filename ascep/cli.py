@@ -214,6 +214,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
+    p_init = sub.add_parser("init", help="write a fillable report skeleton")
+    p_init.add_argument("-o", "--out", help="write the skeleton here instead of stdout")
+    p_init.add_argument(
+        "--layer",
+        default="capacity-report",
+        choices=_LAYERS,
+        help="which schema to scaffold (default: capacity-report, the whole report)",
+    )
+    p_init.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite --out if it already exists",
+    )
+    p_init.set_defaults(handler=_cmd_init)
+
     p_validate = sub.add_parser("validate", help="schema-validate a JSON file")
     p_validate.add_argument("path", help="path to the JSON file")
     p_validate.add_argument(
@@ -272,21 +287,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="factor dividing usable capacity for the recommended tier (default: 1.15)",
     )
     p_size.set_defaults(handler=_cmd_size)
-
-    p_init = sub.add_parser("init", help="write a fillable report skeleton")
-    p_init.add_argument("-o", "--out", help="write the skeleton here instead of stdout")
-    p_init.add_argument(
-        "--layer",
-        default="capacity-report",
-        choices=_LAYERS,
-        help="which schema to scaffold (default: capacity-report, the whole report)",
-    )
-    p_init.add_argument(
-        "--force",
-        action="store_true",
-        help="overwrite --out if it already exists",
-    )
-    p_init.set_defaults(handler=_cmd_init)
 
     p_version = sub.add_parser("version", help="print the protocol and package version")
     p_version.set_defaults(handler=_cmd_version)
