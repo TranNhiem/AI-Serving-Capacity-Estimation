@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ascep"
+version = "0.1.0"
+description = "AI Serving Capacity Estimation Protocol — reproducible capacity estimation for LLM inference infrastructure"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+keywords = ["llm", "inference", "benchmark", "capacity-planning", "vllm", "sglang", "serving"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: System :: Benchmark",
+]
+
+# ascep.capacity — the formula set — has NO dependencies, by design.
+# It must stay importable on a bare interpreter so it can be audited and reused
+# without adopting the harness.
+dependencies = []
+
+[project.optional-dependencies]
+# Needed only to RUN benchmarks, not to compute capacity from numbers you already have.
+run = [
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+  "jsonschema>=4.21",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+ascep = "ascep.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation"
+Specification = "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/blob/main/protocol/SPEC.md"
+Issues = "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ascep"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

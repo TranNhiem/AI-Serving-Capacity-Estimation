@@ -1,0 +1,94 @@
+# Worked examples
+
+Each subdirectory is an artifact you can diff your own against. Every `(I)` number in every
+example is recomputed from its `(M)` numbers in CI, so an example cannot drift from the
+formulas that produced it.
+
+There are two shapes, matching the two directions of the question:
+
+| example | asks | shape |
+|---|---|---|
+| [`moe-26b-h100-tp2`](moe-26b-h100-tp2/) | *given this hardware, what can it serve?* | **capacity report** |
+| [`chatbot-10k-dau`](chatbot-10k-dau/) | *given this product, what hardware do I buy?* | **workload declaration** |
+
+## Capacity reports
+
+A capacity report holds three files:
+
+| file | what it is |
+|---|---|
+| `run-summary.json` | the measured facts, hand-written, in whatever shape the campaign produced |
+| `build_report.py` | maps those facts onto the schema, deriving every `(I)` via `ascep.capacity` |
+| `report.json` | **generated** — the conforming artifact. Never hand-edit it |
+
+The split is the point. `run-summary.json` is what you actually observed; `report.json` is what
+the protocol says about it. Keeping them apart means the derivation is a readable script rather
+than an unexplained jump from measurements to conclusions, and
+`tests/test_report_conformance.py` regenerates `report.json` and diffs it — so a number cannot
+be quietly edited into agreeing with a conclusion it no longer supports.
+
+| example | model | hardware | topology | conformance | binding constraint |
+|---|---|---|---|---|---|
+| [`moe-26b-h100-tp2`](moe-26b-h100-tp2/) | MoE, 26B total / 4B active, bf16 | 1× 8-GPU H100 SXM node | TP=2 | **partial** | throughput |
+
+## Workload declarations
+
+A workload declaration is layer 5 alone: a product forecast with no measurements of its own.
+It becomes an answer only when composed with per-GPU figures measured somewhere else — which
+is exactly what `chatbot-10k-dau` does, borrowing the H100 numbers from the report above and
+arriving at **2 GPUs, throughput-bound**, where chapter 6's illustrative figures said 4.
+
+Keeping the two apart is the honest arrangement: the workload half travels between deployments,
+the measured half never does. `tests/test_application_sizing.py` recomputes the composition and
+also checks that the example's prose still quotes the numbers the formulas produce.
+
+| example | application | DAU | peak concurrency | avg context | binding constraint |
+|---|---|---|---|---|---|
+| [`chatbot-10k-dau`](chatbot-10k-dau/) | chat assistant, short context | 10,000 (U) | 556 (I) | 1,200 tokens (I) | throughput |
+
+## Why the first example is deliberately *partial*
+
+It was produced by a benchmark campaign that predates this protocol, so several declarations
+were simply never captured — the engine version, the memory-utilization flag, whether prefix
+caching was on. Rather than guess them, they are recorded as `null` with an entry in the
+`unmeasured` register stating what each would cost if wrong.
+
+That is the honest outcome, and it is more instructive than a polished one. It shows:
+
+- what **partial** conformance looks like in practice, and that partial is a legitimate,
+  publishable state — the alternative is people quietly inventing the missing fields;
+- that the protocol's own rule of preferring the **engine-reported** KV size over the analytic
+  model is what rescues the report: the KV geometry was never recorded, so the analytic path is
+  unavailable, and the measured path still gives a defensible answer;
+- which single unmeasured field the conclusion is most sensitive to. Here it is
+  `prefix_caching`: if it was on and the benchmark reused prompt prefixes, the measured
+  throughput overstates production. Every other gap affects projection to untested
+  configurations rather than the headline.
+
+## Contributing an example
+
+A conforming report from hardware or a model nobody has published is the most valuable
+contribution to this project — more than a code change. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+Requirements:
+
+1. `run-summary.json` with your measured facts, and a `build_report.py` that emits
+   `report.json`. Copy `moe-26b-h100-tp2`'s builder and edit it — most of it is declarations.
+   For a workload-only contribution, copy `chatbot-10k-dau` instead: a `build_workload.py`
+   emitting a `workload.json`, and no measurements to justify.
+2. Every `null` carries a `<field>_u_reason` starting with `(U)`, or an entry in
+   `unmeasured_assumptions` with `impact_if_wrong` and `cost_to_measure`. Enforced in both
+   directions: an unjustified null fails, and so does a justification left behind after the
+   field was measured.
+3. `conclusion_sensitivity` naming the assumption a reviewer should attack first.
+4. No internal hostnames, credentials, customer names or pricing — run
+   `python tools/check_no_secrets.py` before opening the PR.
+5. `pytest tests/` green. Reports are picked up automatically by the `examples/*/report.json`
+   glob and regenerated by the `examples/*/build_*.py` glob; there is nothing to register.
+
+Declining to state a tier is allowed and is sometimes the correct answer — this example
+publishes no `theoretical` row, because the KV geometry needed for the roofline was never
+captured and a weight-bandwidth-only bound would have understated its own error. An honest
+`null` with a reason beats a roofline nobody can defend.
+
+Partial reports are welcome. Reports that guess at fields they did not measure are not.

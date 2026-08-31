@@ -1,0 +1,585 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/run.schema.json",
+  "title": "ASCEP Layer 4 \u2014 Measurement declaration and results",
+  "description": "Layer 4 of the five ASCEP layers. SLO gates MUST be fixed here before the run (C7); gates chosen after seeing results make the sustainable tier meaningless. Every throughput figure MUST bind its input/output token counts (C4) and its topology (C3, inherited from the serving layer).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "engine_version",
+    "container_digest",
+    "warmup_seconds",
+    "repeats",
+    "sustained_window_seconds",
+    "concurrency_ladder",
+    "percentile_method",
+    "tokenizer",
+    "outlier_method",
+    "open_loop",
+    "slo_gates",
+    "environment_capture_path",
+    "raw_records_path",
+    "engine_logs_path",
+    "results",
+    "drain_deadline_seconds",
+    "throughput_collapse_ratio",
+    "monotonic_across_ladder"
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "ASCEP protocol version."
+    },
+    "engine_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Exact engine version at run time; restated here so a run record is self-contained (C8)."
+    },
+    "container_digest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Container digest actually executed (sha256); MUST match the serving declaration."
+    },
+    "warmup_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Seconds discarded before recording (warm-up). Units: seconds. Recording warm-up requests inflates TTFT tails and throughput variance."
+    },
+    "warmup_seconds_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when warmup_seconds is null (C1)."
+    },
+    "repeats": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Repeat count per operating point."
+    },
+    "repeats_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when repeats is null (C1)."
+    },
+    "sustained_window_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Length of the sustained measurement window in seconds. SLO gates MUST hold for this full window for the point to count toward the sustainable tier."
+    },
+    "sustained_window_seconds_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when sustained_window_seconds is null (C1)."
+    },
+    "concurrency_ladder": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "minItems": 1,
+      "description": "Concurrent-request levels applied, unitless. A single concurrency level cannot locate the binding floor."
+    },
+    "outlier_method": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Named outlier-handling method applied to raw records. 'none' is acceptable; undocumented trimming is a C8 failure."
+    },
+    "open_loop": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "true if requests were submitted open-loop / saturation-style rather than user-paced. Open-loop runs measure engine ceiling, not user capacity; results MUST be labelled and MUST NOT populate the sustainable tier without user-pacing evidence."
+    },
+    "ignore_eos": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "default": false,
+      "description": "true if fixed-token ignore_eos generation was used. Such runs are engine-ceiling measurements and MUST NOT be reported as user capacity."
+    },
+    "slo_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Gate thresholds fixed BEFORE the run (C7). All gates MUST hold for the full sustained_window_seconds for a point to be SLO-passing.",
+      "required": [
+        "ttft_p95_max_s",
+        "itl_p95_max_s",
+        "e2e_p95_max_s",
+        "error_rate_max_pct",
+        "declared_before_run"
+      ],
+      "properties": {
+        "ttft_p95_max_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Time-to-first-token p95 gate, seconds. Null with reason permitted only if the workload genuinely has no TTFT requirement."
+        },
+        "ttft_p95_max_s_u_reason": {
+          "type": "string",
+          "description": "(U) justification for a null ttft gate."
+        },
+        "itl_p95_max_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Inter-token-latency p95 gate, seconds."
+        },
+        "itl_p95_max_s_u_reason": {
+          "type": "string",
+          "description": "(U) justification for a null ITL gate."
+        },
+        "e2e_p95_max_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "End-to-end request latency p95 gate, seconds."
+        },
+        "e2e_p95_max_s_u_reason": {
+          "type": "string",
+          "description": "(U) justification for a null e2e gate."
+        },
+        "error_rate_max_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Maximum failed-request rate, percent."
+        },
+        "declared_before_run": {
+          "type": "boolean",
+          "description": "MUST be true (C7). false makes the report non-conforming."
+        },
+        "error_rate_max_pct_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when error_rate_max_pct is null (C1)."
+        }
+      }
+    },
+    "environment_capture_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Relative path to captured environment (versions, topology, knobs) in the reproduction bundle (C8)."
+    },
+    "raw_records_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Relative path to per-request raw records (C8). Aggregate tables without raw records are non-conforming."
+    },
+    "engine_logs_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Relative path to engine logs, including the startup line printing the KV cache size."
+    },
+    "results": {
+      "type": "array",
+      "minItems": 3,
+      "description": "One entry per (shape, concurrency) point. At least three distinct context lengths SHOULD be present (C4); fewer MUST be labelled single-point on output.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "concurrency",
+          "ttft_p50_s",
+          "ttft_p95_s",
+          "ttft_p99_s",
+          "itl_p50_s",
+          "itl_p95_s",
+          "e2e_p95_s",
+          "e2e_p99_s",
+          "output_tok_s",
+          "requests_per_s",
+          "gpu_util_pct",
+          "gpu_mem_util_pct",
+          "error_rate_pct",
+          "slo_pass",
+          "outcome",
+          "provenance"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Mean input tokens per request at this point (C4). Units: tokens."
+          },
+          "output_tokens": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Mean output tokens per request at this point (C4). Units: tokens."
+          },
+          "concurrency": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Concurrent in-flight requests. Units: requests."
+          },
+          "ttft_p50_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "TTFT p50, seconds (M)."
+          },
+          "ttft_p95_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "TTFT p95, seconds (M). Capacity is set by the tail; means MUST NOT substitute."
+          },
+          "ttft_p99_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "TTFT p99, seconds (M)."
+          },
+          "itl_p50_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Inter-token latency p50, seconds (M)."
+          },
+          "itl_p95_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Inter-token latency p95, seconds (M)."
+          },
+          "e2e_p95_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "End-to-end latency p95, seconds (M)."
+          },
+          "e2e_p99_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "End-to-end latency p99, seconds (M)."
+          },
+          "output_tok_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Aggregate OUTPUT tokens/s for the full window (M), at this shape, concurrency, and topology only. Never topology- or context-independent (C3/C4). Feeds ascep.capacity.capacity_at(throughput_tok_s=...)."
+          },
+          "output_tok_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when output_tok_s is null (C1)."
+          },
+          "requests_per_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Completed requests/s (M). Units: 1/s."
+          },
+          "gpu_util_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Mean device utilization over the window, percent (M)."
+          },
+          "gpu_mem_util_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Peak device memory utilization over the window, percent (M)."
+          },
+          "error_rate_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Failed-request rate over the window, percent (M)."
+          },
+          "slo_pass": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true iff every gate held for the full window. Feeds ascep.capacity.capacity_at(slo_pass=...); a passing-floors run with slo_pass=false binds at Constraint.SLO."
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "complete",
+              "failed",
+              "invalid",
+              "aborted",
+              null
+            ],
+            "description": "Closed outcome vocabulary for this ladder rung (chapter 7 \u00a77). 'failed' is a real result \u2014 capacity ends here; 'invalid' is a defective measurement and is not a result at all. slo_pass alone conflates the two, which lets a true system limit be laundered into an instrumentation excuse and a broken harness into a capacity boundary."
+          },
+          "outcome_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when outcome is null (C1)."
+          },
+          "provenance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "M",
+              "I",
+              "T",
+              "U",
+              null
+            ],
+            "description": "Row-level provenance tag (C2). Rows in the results table SHOULD be 'M'; anything else requires justification in \u00a77 of the report."
+          },
+          "ttft_p50_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when ttft_p50_s is null (C1)."
+          },
+          "ttft_p95_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when ttft_p95_s is null (C1)."
+          },
+          "ttft_p99_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when ttft_p99_s is null (C1)."
+          },
+          "itl_p50_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when itl_p50_s is null (C1)."
+          },
+          "itl_p95_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when itl_p95_s is null (C1)."
+          },
+          "e2e_p95_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when e2e_p95_s is null (C1)."
+          },
+          "e2e_p99_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when e2e_p99_s is null (C1)."
+          },
+          "requests_per_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when requests_per_s is null (C1)."
+          },
+          "gpu_util_pct_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when gpu_util_pct is null (C1)."
+          },
+          "gpu_mem_util_pct_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when gpu_mem_util_pct is null (C1)."
+          },
+          "error_rate_pct_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when error_rate_pct is null (C1)."
+          },
+          "slo_pass_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when slo_pass is null (C1)."
+          },
+          "context_tokens": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Context length this point was measured at (C4), tokens. Either this or input_tokens/output_tokens MUST be present: a throughput figure with no context length attached is not a measurement of anything."
+          },
+          "context_tokens_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when context_tokens is null (C1)."
+          },
+          "input_tokens_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when input_tokens is null (C1). Common for legacy campaigns that logged context length but not the input/output split."
+          },
+          "output_tokens_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when output_tokens is null (C1). Common for legacy campaigns that logged context length but not the input/output split."
+          },
+          "concurrency_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when concurrency is null (C1). Common for legacy campaigns that logged context length but not the in-flight request count."
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "context_tokens": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "context_tokens"
+            ]
+          },
+          {
+            "properties": {
+              "input_tokens": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "input_tokens"
+            ]
+          }
+        ],
+        "description": "A measured operating point. It MUST be identifiable in context: either context_tokens or input_tokens must carry a real value."
+      }
+    },
+    "engine_version_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when engine_version is null (C1)."
+    },
+    "container_digest_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when container_digest is null (C1)."
+    },
+    "outlier_method_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when outlier_method is null (C1)."
+    },
+    "percentile_method": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Named percentile interpolation convention used to compute every p50/p95/p99 in this run, e.g. 'hyndman-fan-type-7'. Chapter 4.3 makes type-7 the protocol default; a run using anything else must say so, because two conventions give different tails from identical records and the difference lands in an SLO gate."
+    },
+    "percentile_method_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when percentile_method is null (C1)."
+    },
+    "tokenizer": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Identifier of the tokenizer used for the independent local token count required by chapter 4.7.1, e.g. a HuggingFace repo id plus revision. Without it the server-vs-tokenizer reconciliation cannot be reproduced, and an undetected fertility mismatch moves every context-length and KV figure in the report."
+    },
+    "tokenizer_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when tokenizer is null (C1)."
+    },
+    "drain_deadline_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Grace period in seconds after measurement-window close within which a straddling request may still complete and count as a valid latency sample. Chapter 7 \u00a76 requires it because without it a late finisher is simultaneously a valid tail sample and a non-completion, and the harness resolves that contradiction whichever way flatters the run."
+    },
+    "drain_deadline_seconds_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when drain_deadline_seconds is null (C1)."
+    },
+    "throughput_collapse_ratio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0.5,
+      "maximum": 1,
+      "description": "Fixed ratio r_c, declared before timing, below which a rung's goodput relative to the best lower complete rung counts as throughput collapse and terminates the ladder (chapter 7 \u00a77). MUST NOT be below 0.5. Left to operator taste after the fact, 'collapse' becomes whatever keeps the ladder climbing."
+    },
+    "throughput_collapse_ratio_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when throughput_collapse_ratio is null (C1)."
+    },
+    "monotonic_across_ladder": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Whether pass/fail outcomes were monotone across the measured concurrency ladder (chapter 7 \u00a75). A bisection over a non-monotone function returns an arbitrary point wearing a boundary label, so a reader needs to know which of the two they are looking at."
+    },
+    "monotonic_across_ladder_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when monotonic_across_ladder is null (C1)."
+    },
+    "open_loop_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when open_loop is null (C1)."
+    },
+    "ignore_eos_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when ignore_eos is null (C1)."
+    },
+    "environment_capture_path_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when environment_capture_path is null (C1)."
+    },
+    "raw_records_path_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when raw_records_path is null (C1)."
+    },
+    "engine_logs_path_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when engine_logs_path is null (C1)."
+    },
+    "concurrency_ladder_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when concurrency_ladder is null (C1). An empty array claims the ladder was empty; null says it was not recorded."
+    }
+  }
+}

@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev,run]"
+      - name: Unit tests
+        run: pytest -q
+      - name: capacity.py must import with no third-party deps
+        # The formula set is the auditable core of the protocol. If it ever grows a
+        # dependency, anyone wanting to check the maths has to adopt our stack first.
+        run: |
+          python - <<'EOF'
+          import subprocess, sys, textwrap
+          code = textwrap.dedent("""
+              import sys
+              before = set(sys.modules)
+              import ascep.capacity  # noqa: F401
+              stdlib = set(sys.stdlib_module_names)
+              new = {m.split('.')[0] for m in set(sys.modules) - before}
+              extra = {m for m in new if m not in stdlib and not m.startswith('ascep')
+                       and not m.startswith('_')}
+              assert not extra, f"ascep.capacity pulled in non-stdlib modules: {sorted(extra)}"
+              print("ascep.capacity is stdlib-only")
+          """)
+          sys.exit(subprocess.run([sys.executable, "-c", code]).returncode)
+          EOF
+
+  bare-install:
+    name: everything but validate works with no optional extras
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Deliberately NOT ".[run]". tests/test_cli.py asserts these commands import nothing
+      # outside the stdlib, but it runs where jsonschema happens to be installed, so it can
+      # only catch an eager import — not a lazy one that would still fail here. The users who
+      # most need `ascep size` are on locked-down benchmark clusters where adding a dependency
+      # is a ticket, so this is the install that has to work.
+      - run: pip install -e .
+      - run: ascep version
+      - run: |
+          ascep size --workload examples/chatbot-10k-dau/workload.json \
+                     --kv-tokens 574798 --throughput-tok-s 1459 --gpus-per-replica 2
+      - run: ascep conformance examples/moe-26b-h100-tp2/report.json
+      - run: ascep render examples/moe-26b-h100-tp2/report.json -o /dev/null
+      # And the commands that DO need the extras must say so instead of tracebacking.
+      - name: validate without extras explains itself
+        run: |
+          set +e
+          out=$(ascep validate examples/moe-26b-h100-tp2/report.json 2>&1); rc=$?
+          set -e
+          echo "$out"
+          [ "$rc" = "2" ] || { echo "expected exit 2, got $rc"; exit 1; }
+          echo "$out" | grep -q "pip install" || { echo "no install hint"; exit 1; }
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  schemas:
+    name: schemas are valid and self-consistent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev,run]"
+      - run: pytest -q tests/test_schemas.py
+
+  examples:
+    name: published examples still reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev,run]"
+      # Every (I) number in every example must recompute from its (M) numbers.
+      # This is conformance rule C2 enforced in CI.
+      - run: |
+          pytest -q tests/test_example_reproduces.py tests/test_report_conformance.py \
+                    tests/test_application_sizing.py
+      # A committed artifact that its own builder no longer produces has been hand-edited.
+      - name: published artifacts are regenerable
+        run: |
+          for b in examples/*/build_*.py; do python "$b"; done
+          git diff --exit-code -- examples/
+
+  no-secrets:
+    name: no credentials, hostnames or pricing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      # Generic patterns only in CI — the site-specific .ascep-denylist is intentionally
+      # not committed, so contributors must also run this locally before opening a PR.
+      - run: python tools/check_no_secrets.py

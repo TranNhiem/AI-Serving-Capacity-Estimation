@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/workload.schema.json",
+  "title": "ASCEP Layer 5 \u2014 Application workload declaration",
+  "description": "Layer 5 of the five ASCEP layers, mirroring ascep.capacity.Workload field-for-field. Turns a product question into a serving question: N concurrent sessions, M tokens/s. The highest-leverage input is avg_context_tokens \u2014 override the input + output/2 default whenever real conversation-length data exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "application_type",
+    "daily_active_users",
+    "concurrent_users",
+    "sessions_per_user_per_day",
+    "avg_session_seconds",
+    "peak_to_mean",
+    "duty_cycle",
+    "input_tokens_per_request",
+    "output_tokens_per_request",
+    "requests_per_session",
+    "target_tok_s_per_user",
+    "peak_concurrent_users",
+    "active_sessions",
+    "avg_context_tokens",
+    "demand_tok_s"
+  ],
+  "anyOf": [
+    {
+      "properties": {
+        "concurrent_users": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "concurrent_users"
+      ]
+    },
+    {
+      "properties": {
+        "daily_active_users": {
+          "type": "number"
+        },
+        "avg_session_seconds": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "daily_active_users",
+        "avg_session_seconds"
+      ]
+    }
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "ASCEP protocol version."
+    },
+    "application_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text application class (chat assistant, code completion, agentic loop, TTS feed, ...)."
+    },
+    "daily_active_users": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Daily active users. Used with avg_session_seconds to derive peak concurrency via Little's law (peak_concurrent_users). Null permitted only when concurrent_users is set directly."
+    },
+    "daily_active_users_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when daily_active_users is null (C1)."
+    },
+    "concurrent_users": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Peak concurrent users, if known directly; overrides the Little's-law derivation. Units: users."
+    },
+    "concurrent_users_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when concurrent_users is null (C1)."
+    },
+    "daily_users_tag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "M",
+        "I",
+        "U",
+        null
+      ],
+      "description": "Provenance of the user figures (C2); forecasts are typically (U)."
+    },
+    "sessions_per_user_per_day": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Sessions per user per day, dimensionless (Workload.sessions_per_user_per_day)."
+    },
+    "avg_session_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Mean session wall-clock length, seconds. Pair with daily_active_users for Little's law. Null makes both peak_concurrent_users and demand_tok_s uncomputable from daily figures."
+    },
+    "avg_session_seconds_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when avg_session_seconds is null (C1)."
+    },
+    "peak_to_mean": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Peak-hour rate \u00f7 daily-average rate, dimensionless (Workload.peak_to_mean). 1.0 ('flat load') is almost never real; 3-6 is typical. Sizing to the mean with peak_to_mean=1 underprovisions by exactly this ratio."
+    },
+    "duty_cycle": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Fraction of a concurrent session actually generating, dimensionless (Workload.duty_cycle). capacity_at applies it to the KV floor but NOT to per-user token demand \u2014 applying it twice overprovisions by 1/duty_cycle, dropping it entirely underprovisions by the same."
+    },
+    "input_tokens_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Mean prompt tokens per request, tokens."
+    },
+    "input_tokens_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when input_tokens_per_request is null (C1)."
+    },
+    "output_tokens_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Mean generated tokens per request, tokens."
+    },
+    "output_tokens_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when output_tokens_per_request is null (C1)."
+    },
+    "requests_per_session": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "default": 1.0,
+      "description": "Requests per session, dimensionless (Workload.requests_per_session)."
+    },
+    "target_tok_s_per_user": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Required per-stream generation rate, tokens/s (e.g. above reading speed, or enough to feed TTS without underrun). If null, demand is derived from session length instead."
+    },
+    "target_tok_s_per_user_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when target_tok_s_per_user is null (C1)."
+    },
+    "peak_concurrent_users": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Concurrent users at the peak hour (I), from Workload.peak_concurrent_users: (daily_active_users × sessions_per_user_per_day / 86400) × avg_session_seconds × peak_to_mean, or concurrent_users verbatim when that is declared. Every capacity floor is compared against THIS figure, so it MUST be stated rather than left implicit in the arithmetic."
+    },
+    "peak_concurrent_users_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when peak_concurrent_users is null (C1)."
+    },
+    "active_sessions": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Sessions holding a KV slot and generating at peak (I), from Workload.active_sessions: peak_concurrent_users × duty_cycle. Distinct from peak_concurrent_users by exactly the duty cycle; conflating the two mis-sizes the KV floor by 1/duty_cycle in whichever direction the mistake runs."
+    },
+    "active_sessions_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when active_sessions is null (C1)."
+    },
+    "avg_context_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Mean KV footprint per active session, tokens. Default (I): input_tokens_per_request + output_tokens_per_request/2 via Workload.avg_context_tokens. A real measured distribution SHOULD override the default; this is the highest-leverage input in the protocol."
+    },
+    "avg_context_tokens_tag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "M",
+        "I",
+        "U",
+        null
+      ],
+      "description": "Provenance of avg_context_tokens (C2); 'I' MUST name ascep.capacity.Workload.avg_context_tokens or the override method."
+    },
+    "avg_context_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when avg_context_tokens is null (C1)."
+    },
+    "demand_tok_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Aggregate output tokens/s required at peak (I), from Workload.demand_tok_s. The (I) claim MUST cite ascep.capacity.Workload.demand_tok_s."
+    },
+    "demand_tok_s_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when demand_tok_s is null (C1)."
+    },
+    "application_type_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when application_type is null (C1)."
+    },
+    "daily_users_tag_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when daily_users_tag is null (C1)."
+    },
+    "sessions_per_user_per_day_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when sessions_per_user_per_day is null (C1)."
+    },
+    "peak_to_mean_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when peak_to_mean is null (C1)."
+    },
+    "duty_cycle_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when duty_cycle is null (C1)."
+    },
+    "requests_per_session_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when requests_per_session is null (C1)."
+    },
+    "avg_context_tokens_tag_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when avg_context_tokens_tag is null (C1)."
+    }
+  }
+}

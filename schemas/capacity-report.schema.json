@@ -1,0 +1,643 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/capacity-report.schema.json",
+  "title": "ASCEP Capacity Report (envelope)",
+  "description": "The complete machine-readable capacity report. Binding constraints: C1 complete declaration (nulls allowed, never omissions), C2 provenance tags on every numeric claim, C3 topology binding, C4 context binding, C5 binding constraint on every capacity row, C6 all four tiers, C7 gates pre-declared, C8 reproduction bundle. A report meeting C1-C5 but not C6-C8 MAY be labelled 'partial'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "report_generated_utc",
+    "conformance",
+    "conformance_note",
+    "hardware",
+    "model",
+    "serving",
+    "run",
+    "workload",
+    "capacity_tiers",
+    "roofline_comparison",
+    "scaling",
+    "sizing_result",
+    "unmeasured_assumptions",
+    "reproduction"
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Protocol version the report was produced under. Reports MUST cite it; cross-version comparison of numbers requires the majors to match."
+    },
+    "report_generated_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC generation timestamp."
+    },
+    "conformance": {
+      "type": "string",
+      "enum": [
+        "conforming",
+        "partial",
+        "non-conforming"
+      ],
+      "description": "conforming = C1-C8; partial = C1-C5 met, some of C6-C8 not; non-conforming reports MUST NOT be compared against conforming ones."
+    },
+    "hardware": {
+      "$ref": "hardware.schema.json",
+      "description": "Layer 1 declaration."
+    },
+    "model": {
+      "$ref": "model.schema.json",
+      "description": "Layer 2 declaration."
+    },
+    "serving": {
+      "$ref": "serving.schema.json",
+      "description": "Layer 3 declaration; provides the topology triple binding all downstream numbers (C3)."
+    },
+    "run": {
+      "$ref": "run.schema.json",
+      "description": "Layer 4 declaration and results; provides the pre-declared gates (C7)."
+    },
+    "workload": {
+      "$ref": "workload.schema.json",
+      "description": "Layer 5 declaration; capacity is a function of all five layers \u2014 an envelope without workload numbers is a partial capacity statement."
+    },
+    "capacity_tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "C6: all four tiers MUST be present. They differ by integer multiples; reporting one tier alone is non-conforming because readers assume the most favourable.",
+      "required": [
+        "theoretical",
+        "measured",
+        "sustainable",
+        "recommended"
+      ],
+      "properties": {
+        "theoretical": {
+          "$ref": "#/$defs/capacityRow",
+          "description": "Roofline tier (T): bandwidth-bound decode via ascep.capacity.roofline_decode_tok_s; FLOP-bound prefill via roofline_prefill_ttft_s. Always an upper bound."
+        },
+        "measured": {
+          "$ref": "#/$defs/capacityRow",
+          "description": "Best observed tier (M), SLO ignored, via ascep.capacity.capacity_at(tier=Tier.MEASURED)."
+        },
+        "sustainable": {
+          "$ref": "#/$defs/capacityRow",
+          "description": "Measured restricted to points where every SLO gate held for the full window; capacity_at(slo_pass=false) maps to Constraint.SLO."
+        },
+        "recommended": {
+          "$ref": "#/$defs/capacityRow",
+          "description": "sustainable \u00f7 headroom via capacity_at(headroom=...). The row MUST record its headroom factor."
+        }
+      }
+    },
+    "roofline_comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decode_tok_s_theoretical",
+        "decode_tok_s_measured",
+        "roofline_efficiency",
+        "prefill_ttft_s_theoretical",
+        "prefill_ttft_s_measured"
+      ],
+      "description": "roofline_efficiency = measured \u00f7 theoretical and MUST be reported. A value at or above 1.0 indicates measurement error (mis-declared active_params or an untracked cache hit) and MUST be investigated, not published.",
+      "properties": {
+        "decode_tok_s_theoretical": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "ascep.capacity.roofline_decode_tok_s output, tokens/s (T)."
+        },
+        "decode_tok_s_measured": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Best measured aggregate decode throughput, tokens/s (M), bound to context and topology (C3/C4)."
+        },
+        "roofline_efficiency": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "measured \u00f7 theoretical, dimensionless. Values above ~0.8 warrant verification; >= 1.0 MUST NOT be published unexamined."
+        },
+        "roofline_efficiency_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when roofline_efficiency is null (C1)."
+        },
+        "prefill_ttft_s_theoretical": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "ascep.capacity.roofline_prefill_ttft_s output, seconds (T); excludes queueing, so real TTFT is always larger."
+        },
+        "prefill_ttft_s_measured": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Measured prefill TTFT, seconds (M)."
+        },
+        "prefill_mfu_used": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "mfu argument passed to roofline_prefill_ttft_s; typical 0.3-0.5."
+        },
+        "decode_tok_s_theoretical_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when decode_tok_s_theoretical is null (C1)."
+        },
+        "decode_tok_s_measured_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when decode_tok_s_measured is null (C1)."
+        },
+        "prefill_ttft_s_theoretical_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when prefill_ttft_s_theoretical is null (C1)."
+        },
+        "prefill_ttft_s_measured_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when prefill_ttft_s_measured is null (C1)."
+        },
+        "prefill_mfu_used_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when prefill_mfu_used is null (C1)."
+        }
+      }
+    },
+    "scaling": {
+      "type": "array",
+      "description": "Per-topology scaling table. Every row restates the topology (C3).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tensor_parallel",
+          "pipeline_parallel",
+          "gpu_count",
+          "output_tok_s",
+          "scaling_efficiency",
+          "context_tokens",
+          "provenance"
+        ],
+        "properties": {
+          "tensor_parallel": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "TP width of this row."
+          },
+          "pipeline_parallel": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "PP depth of this row."
+          },
+          "gpu_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Devices in this row's topology."
+          },
+          "output_tok_s": {
+            "type": "number",
+            "description": "Aggregate tokens/s at this topology and context (M). Units: tokens/s."
+          },
+          "context_tokens": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Context length this throughput was measured at (C4). Units: tokens."
+          },
+          "scaling_efficiency": {
+            "type": "number",
+            "description": "ascep.capacity.scaling_efficiency output, dimensionless. A value above 1.0 means the NARROW baseline was degraded (typically KV-starved), NOT superlinear scaling; it MUST be flagged, never celebrated."
+          },
+          "efficiency_over_one_explanation": {
+            "type": "string",
+            "description": "REQUIRED whenever scaling_efficiency > 1.0: the concrete reason the baseline was degraded."
+          },
+          "provenance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "M",
+              "I",
+              "T",
+              "U",
+              null
+            ],
+            "description": "Row-level tag (C2)."
+          },
+          "context_tokens_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when context_tokens is null (C1). A scaling row without a context length is C4-incomplete and MUST say so here: throughput ratios are only comparable at equal context."
+          }
+        }
+      }
+    },
+    "sizing_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Application sizing: users \u2192 tokens \u2192 GPUs, per ascep.capacity.gpus_required, which rounds UP to whole replicas because capacity is bought in whole tensor-parallel groups.",
+      "required": [
+        "gpus_required",
+        "replica_topology",
+        "binding_constraint",
+        "headroom_factor",
+        "utilization_at_target_pct",
+        "provenance"
+      ],
+      "properties": {
+        "gpus_required": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Smallest GPU count meeting the workload at peak, whole replicas. Units: devices."
+        },
+        "gpus_required_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when gpus_required is null (C1)."
+        },
+        "replica_topology": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Replica layout, e.g. '4 x TP2'. Topology-independent claims are C3 failures."
+        },
+        "binding_constraint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "weights",
+            "kv",
+            "throughput",
+            "slo",
+            null
+          ],
+          "description": "Which floor binds (C5). Without it the GPU count does not say what to buy more of: 'kv' means buy memory/kv pool, 'throughput' means buy compute, 'slo' means the hardware fits but misses a latency gate."
+        },
+        "headroom_factor": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 1,
+          "default": 1.15,
+          "description": "Headroom divisor used for the recommended tier (gpus_required default 1.15). MUST be stated; recommended figures from different headrooms are not comparable."
+        },
+        "utilization_at_target_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Expected utilization at the target peak load, percent."
+        },
+        "utilization_at_target_pct_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when utilization_at_target_pct is null (C1)."
+        },
+        "headroom_remaining": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Spare capacity beyond target at provisioned fleet, dimensionless ratio."
+        },
+        "floor_crossover_context_tokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Context length in tokens where the binding floor switches from throughput to KV. MUST be stated, or explicitly recorded null with the reason 'not determined' \u2014 the crossover changes with context length."
+        },
+        "floor_crossover_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when floor_crossover_context_tokens is null (C1)."
+        },
+        "provenance": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "M",
+            "I",
+            "T",
+            "U",
+            null
+          ],
+          "description": "Tag for the sizing numbers (C2); gpus_required is typically (I) and MUST name ascep.capacity.gpus_required."
+        },
+        "replica_topology_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when replica_topology is null (C1)."
+        },
+        "binding_constraint_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when binding_constraint is null (C1)."
+        },
+        "headroom_factor_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when headroom_factor is null (C1)."
+        },
+        "headroom_remaining_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when headroom_remaining is null (C1)."
+        },
+        "floor_crossover_context_tokens_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when floor_crossover_context_tokens is null (C1)."
+        }
+      }
+    },
+    "unmeasured_assumptions": {
+      "type": "array",
+      "description": "\u00a77 of the report: every (U) in this document, its blast radius, and its closure cost. A report whose conclusion flips on an unmeasured number MUST say so here in the same words a reviewer would use.",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field",
+          "value_used",
+          "impact_if_wrong",
+          "cost_to_measure"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Dotted path of the (U) field it backs, e.g. 'workload.peak_to_mean'."
+          },
+          "value_used": {
+            "description": "The value assumed."
+          },
+          "impact_if_wrong": {
+            "type": "string",
+            "description": "Concrete consequence; if it flips a conclusion (tier, binding constraint, GPU count), say which."
+          },
+          "cost_to_measure": {
+            "type": "string",
+            "description": "What it would take to close the assumption."
+          }
+        }
+      }
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "C8 reproduction bundle. Any missing artefact makes the report at best 'partial'.",
+      "required": [
+        "run_configs_path",
+        "raw_records_path",
+        "engine_logs_path",
+        "environment_capture_path",
+        "analysis_script_path",
+        "container_digest"
+      ],
+      "properties": {
+        "run_configs_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to the exact run configs."
+        },
+        "raw_records_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to per-request raw records."
+        },
+        "engine_logs_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to engine logs."
+        },
+        "environment_capture_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to environment capture."
+        },
+        "analysis_script_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to analysis notebook/script producing this report's (I) values."
+        },
+        "container_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Container digest (MUST match layers 3 and 4)."
+        },
+        "run_configs_path_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when run_configs_path is null (C1)."
+        },
+        "raw_records_path_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when raw_records_path is null (C1)."
+        },
+        "engine_logs_path_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when engine_logs_path is null (C1)."
+        },
+        "environment_capture_path_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when environment_capture_path is null (C1)."
+        },
+        "analysis_script_path_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when analysis_script_path is null (C1)."
+        },
+        "container_digest_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when container_digest is null (C1)."
+        }
+      }
+    },
+    "conformance_note": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which conformance rules are met and which are not, and why. A level claimed without a stated reason is unreviewable: the reader cannot tell a careful partial from a careless one."
+    }
+  },
+  "$defs": {
+    "capacityRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One capacity tier row, mirroring ascep.capacity.Capacity. binding_constraint is MANDATORY on every row (C5): a capacity figure without its constraint does not say what to buy and is not actionable.",
+      "required": [
+        "tier",
+        "max_concurrent_users",
+        "max_tokens_per_s",
+        "max_requests_per_s",
+        "daily_requests",
+        "binding_constraint",
+        "n_gpus",
+        "provenance"
+      ],
+      "properties": {
+        "tier": {
+          "type": "string",
+          "enum": [
+            "theoretical",
+            "measured",
+            "sustainable",
+            "recommended"
+          ],
+          "description": "Tier (C6); MUST match the envelope key it sits under."
+        },
+        "max_concurrent_users": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Supportable peak concurrent users = min(KV floor, throughput floor), never the average (capacity_at). Units: users."
+        },
+        "max_concurrent_users_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when max_concurrent_users is null (C1)."
+        },
+        "max_tokens_per_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Aggregate output tokens/s at this tier (capacity_at.max_tokens_per_s). Units: tokens/s."
+        },
+        "max_tokens_per_s_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when max_tokens_per_s is null (C1)."
+        },
+        "max_requests_per_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Requests/s at this tier. Units: 1/s."
+        },
+        "max_requests_per_s_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when max_requests_per_s is null (C1)."
+        },
+        "daily_requests": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Capacity.daily_requests: requests/day IF peak load were sustained around the clock \u2014 a headroom figure, deliberately not de-rated by peak_to_mean. Units: requests/day."
+        },
+        "binding_constraint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "weights",
+            "kv",
+            "throughput",
+            "slo",
+            null
+          ],
+          "description": "Binding floor per ascep.capacity.Constraint (C5): weights = does not fit usefully; kv = memory-bound at this context; throughput = compute-bound; slo = fits on average but misses a declared gate."
+        },
+        "n_gpus": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "GPU count this row was computed or measured at (C3). Units: devices."
+        },
+        "headroom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Headroom factor applied (required and > 1 only for the recommended tier; 1.0 elsewhere)."
+        },
+        "context_tokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Context length this capacity is valid at (C4). Units: tokens. Interpolated context values MUST cite ascep.capacity.interpolate_throughput and project beyond the measured range only with tag (U)."
+        },
+        "provenance": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "M",
+            "I",
+            "T",
+            "U",
+            null
+          ],
+          "description": "Row-level tag (C2). (I) rows MUST name the ascep.capacity function that produced them (capacity_at, gpus_required, roofline_decode_tok_s, ...)."
+        },
+        "produced_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "capacity_at",
+            "gpus_required",
+            "roofline_decode_tok_s",
+            "roofline_prefill_ttft_s",
+            "kv_capacity_tokens",
+            "measurement",
+            "other",
+            null
+          ],
+          "description": "Named source for (I)/(T) rows (C2). 'other' MUST be explained in unmeasured_assumptions."
+        },
+        "daily_requests_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when daily_requests is null (C1)."
+        },
+        "binding_constraint_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when binding_constraint is null (C1)."
+        },
+        "headroom_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when headroom is null (C1)."
+        },
+        "context_tokens_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when context_tokens is null (C1)."
+        },
+        "produced_by_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when produced_by is null (C1)."
+        }
+      }
+    }
+  }
+}

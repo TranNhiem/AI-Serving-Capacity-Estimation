@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/hardware.schema.json",
+  "title": "ASCEP Layer 1 \u2014 Hardware declaration",
+  "description": "Layer 1 of the five ASCEP layers. Declares the silicon and its interconnect independently of any model or framework. Capacity is a function of all five layers; a hardware record alone MAY NOT be used to assert any capacity figure (C3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "gpu_model",
+    "gpu_count",
+    "nodes",
+    "gpus_per_node",
+    "vram_bytes_per_gpu",
+    "interconnect_intra_node",
+    "interconnect_inter_node",
+    "node_exclusivity",
+    "driver_version",
+    "compute_runtime_version",
+    "hbm_bandwidth_bytes_s",
+    "dense_bf16_flops_per_s",
+    "cpu_model",
+    "cpu_cores",
+    "system_ram_bytes",
+    "storage_class",
+    "model_load_path"
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "ASCEP protocol version this declaration was produced under (semantic versioning; a change that alters numbers is a major bump)."
+    },
+    "gpu_model": {
+      "type": "string",
+      "description": "Accelerator model name as sold (e.g. a datacenter GPU, TPU, or Trainium generation). Vendor-neutral; no default implied."
+    },
+    "gpu_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Total accelerator devices in the deployment. Binds every capacity figure to a topology (C3)."
+    },
+    "nodes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Physical node count."
+    },
+    "gpus_per_node": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Accelerators per node. gpu_count MUST equal nodes * gpus_per_node."
+    },
+    "vram_bytes_per_gpu": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "High-bandwidth memory per device, in bytes (decimal GB, not GiB). Null only if unknown, with vram_bytes_per_gpu_u_reason set. Feeds ascep.capacity.kv_pool_bytes; a null here makes every KV figure (U)."
+    },
+    "vram_bytes_per_gpu_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when vram_bytes_per_gpu is null (C1)."
+    },
+    "interconnect_intra_node": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Intra-node interconnect and generation, e.g. 'NVLink gen4', 'PCIe gen5', 'InfinityFabric', 'other'. Affects achievable tensor-parallel width; omitting it makes TP claims non-reproducible."
+    },
+    "interconnect_inter_node": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Inter-node interconnect and rate, e.g. 'InfiniBand 400G', 'RoCE 200G', 'Ethernet', or 'n-a' for single-node."
+    },
+    "node_exclusivity": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "exclusive",
+        "shared",
+        null
+      ],
+      "description": "Whether benchmark nodes were exclusive. 'shared' invalidates cross-report comparison and MUST be surfaced in the report header."
+    },
+    "driver_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Accelerator driver version, exactly as reported by the system."
+    },
+    "compute_runtime_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Compute runtime and version (CUDA / ROCm / XLA / oneAPI / equivalent)."
+    },
+    "hbm_bandwidth_bytes_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Vendor-specified HBM bandwidth per device, in bytes/s (T). Input to ascep.capacity.roofline_decode_tok_s; without it the theoretical tier cannot be computed and the roofline_efficiency field MUST be null."
+    },
+    "hbm_bandwidth_bytes_s_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when hbm_bandwidth_bytes_s is null (C1)."
+    },
+    "dense_bf16_flops_per_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Vendor-specified dense BF16 FLOP/s per device (T). Input to ascep.capacity.roofline_prefill_ttft_s."
+    },
+    "dense_bf16_flops_per_s_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when dense_bf16_flops_per_s is null (C1)."
+    },
+    "cpu_model": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Host CPU model. CPU-side tokenization and scheduling affect measured TTFT; omitting this weakens reproducibility of layer-4 numbers."
+    },
+    "cpu_cores": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Logical CPU cores per node."
+    },
+    "cpu_cores_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when cpu_cores is null (C1)."
+    },
+    "system_ram_bytes": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Host system RAM per node, in bytes. Relevant to model load path, KV offload, and prefix-cache spill."
+    },
+    "system_ram_bytes_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when system_ram_bytes is null (C1)."
+    },
+    "storage_class": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Storage class the weights load from (local NVMe, network filesystem, object store). Affects cold-start time, a required measurement."
+    },
+    "model_load_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Path or URI used to load the model during the campaign."
+    },
+    "interconnect_intra_node_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when interconnect_intra_node is null (C1)."
+    },
+    "interconnect_inter_node_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when interconnect_inter_node is null (C1)."
+    },
+    "node_exclusivity_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when node_exclusivity is null (C1)."
+    },
+    "driver_version_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when driver_version is null (C1)."
+    },
+    "compute_runtime_version_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when compute_runtime_version is null (C1)."
+    },
+    "cpu_model_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when cpu_model is null (C1)."
+    },
+    "storage_class_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when storage_class is null (C1)."
+    },
+    "model_load_path_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when model_load_path is null (C1)."
+    }
+  }
+}

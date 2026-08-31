@@ -1,0 +1,22 @@
+{
+  "ascep_version": "0.1.0",
+  "application_type": "conversational assistant (chat), short context, single timezone, human-in-the-loop turns",
+  "daily_active_users": 10000,
+  "daily_users_tag": "U",
+  "sessions_per_user_per_day": 2,
+  "avg_session_seconds": 600,
+  "peak_to_mean": 4.0,
+  "duty_cycle": 0.4,
+  "input_tokens_per_request": 1000,
+  "output_tokens_per_request": 400,
+  "requests_per_session": 5,
+  "concurrent_users": null,
+  "concurrent_users_u_reason": "(U) no production traffic exists yet to observe peak concurrency directly, so the Little's-law derivation in peak_concurrent_users is used instead. Once the service is live this field SHOULD be replaced with the observed peak and tagged (M); it then overrides the derivation.",
+  "target_tok_s_per_user": null,
+  "target_tok_s_per_user_u_reason": "(U) the product has not fixed a per-stream rate anchor, so demand_tok_s is derived from session volume instead (output_tokens_per_request x requests_per_session / avg_session_seconds). Note what that figure is and is not: it is the average rate a concurrent user consumes across a whole session, including the pauses, and it is the correct input to the throughput floor. It is NOT a per-stream user-experience guarantee -- while a reply is actually streaming the user needs reading speed or better, and that is governed by the inter-token-latency SLO gate (chapter 4), not by this field.",
+  "peak_concurrent_users": 555.56,
+  "active_sessions": 222.22,
+  "avg_context_tokens": 1200.0,
+  "avg_context_tokens_tag": "I",
+  "demand_tok_s": 1851.85
+}

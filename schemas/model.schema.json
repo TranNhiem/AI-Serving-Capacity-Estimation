@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/model.schema.json",
+  "title": "ASCEP Layer 2 \u2014 Model declaration",
+  "description": "Layer 2 of the five ASCEP layers. Declares weights, precision, and KV geometry. The distinction total_params vs active_params is normative: weight_bytes uses total_params, roofline_decode_tok_s uses active_params \u2014 confusing them is the most common cause of a spurious roofline efficiency near 1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "model_id",
+    "revision",
+    "total_params",
+    "active_params",
+    "architecture",
+    "weight_precision",
+    "kv_precision",
+    "n_layers",
+    "attention_type",
+    "global_layer_frac",
+    "native_max_context_tokens",
+    "weight_bytes_on_disk",
+    "licence"
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "ASCEP protocol version."
+    },
+    "model_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Canonical model identifier (registry ID or repository path)."
+    },
+    "revision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Revision, commit, or content digest. Weights change silently within a model ID; without a revision the report cannot be reproduced (C8)."
+    },
+    "total_params": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Total parameters, counting every expert of an MoE (all experts must be resident). Units: dimensionless count. Input to ascep.capacity.weight_bytes. Using active params here undercounts resident memory by up to 1/top_k."
+    },
+    "total_params_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when total_params is null (C1)."
+    },
+    "active_params": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Per-token active parameters: dense = total_params; MoE = shared trunk + top_k experts. Units: dimensionless count. Input ONLY to compute models (ascep.capacity.roofline_decode_tok_s, roofline_prefill_ttft_s), never to memory models."
+    },
+    "active_params_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when active_params is null (C1)."
+    },
+    "architecture": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "dense",
+        "moe",
+        null
+      ],
+      "description": "dense / MoE. If 'moe', moe_experts and moe_top_k MUST be set."
+    },
+    "moe_experts": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 2,
+      "description": "Number of routed experts (MoE only; null for dense with moe note not required)."
+    },
+    "moe_top_k": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Experts activated per token (MoE only)."
+    },
+    "weight_precision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Stored weight element type; MUST be a key of ascep.capacity.DTYPE_BYTES (fp32, tf32, fp16, bf16, fp8, int8, fp6, nvfp4, mxfp4, int4, fp4). Quantization scales/zero-points are expressed via weight_overhead_frac.",
+      "enum": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp4",
+        "fp6",
+        "fp8",
+        "int4",
+        "int8",
+        "mxfp4",
+        "nvfp4",
+        "tf32",
+        null
+      ]
+    },
+    "weight_overhead_frac": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": 0,
+      "description": "Fractional overhead for quantization scales/zero-points/padding, dimensionless. Passed to ascep.capacity.weight_bytes(overhead_frac=...)."
+    },
+    "kv_precision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "KV cache element type; MUST be a key of ascep.capacity.DTYPE_BYTES. Distinct from weight_precision: KV quantization changes both capacity and quality and MUST be declared independently.",
+      "enum": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp4",
+        "fp6",
+        "fp8",
+        "int4",
+        "int8",
+        "mxfp4",
+        "nvfp4",
+        "tf32",
+        null
+      ]
+    },
+    "n_layers": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Transformer layer count. Input to ascep.capacity.kv_bytes_per_token."
+    },
+    "n_layers_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when n_layers is null (C1)."
+    },
+    "n_kv_heads": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "KV heads (not attention heads). Input to ascep.capacity.kv_heads_per_rank; when tensor_parallel exceeds this, heads are replicated and KV capacity falls \u2014 a wrong value here produces a per-GPU KV figure that is unusable at other TP widths (C3)."
+    },
+    "n_kv_heads_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when n_kv_heads is null (C1)."
+    },
+    "head_dim": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Per-head hidden dimension. Input to ascep.capacity.kv_bytes_per_token."
+    },
+    "head_dim_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when head_dim is null (C1)."
+    },
+    "attention_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "full",
+        "gqa",
+        "mqa",
+        "mla",
+        "sliding-window",
+        "hybrid",
+        "linear",
+        "ssm",
+        "hybrid-recurrent",
+        null
+      ],
+      "description": "Attention pattern. This field selects WHICH KV formula applies and is therefore one of the highest-leverage declarations in the protocol. full/gqa/mqa/sliding-window/hybrid use ascep.capacity.kv_bytes_per_token and require n_kv_heads and head_dim. 'mla' (multi-head latent attention, DeepSeek-style) uses kv_bytes_per_token_mla and requires kv_lora_rank and qk_rope_head_dim instead: its latent is replicated across tensor-parallel ranks rather than sharded, and applying the gqa formula to it overstates KV by ~57x. linear/ssm/hybrid-recurrent keep a fixed-size state per sequence rather than per token and require kv_bytes_per_sequence; modelling them per-token predicts a long-context cliff that does not exist. Sliding-window and hybrid MUST also set global_layer_frac."
+    },
+    "global_layer_frac": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Fraction of layers holding full-length KV, n_global_layers / n_layers; 1.0 for uniform full attention. Input to ascep.capacity.kv_bytes_per_token. Report the value used \u2014 it moves KV capacity by several times and is a common source of analytic/measured disagreement (see calibrate_memory_utilization)."
+    },
+    "global_layer_frac_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when global_layer_frac is null (C1)."
+    },
+    "native_max_context_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Native maximum context length in tokens. Serving max_model_len MUST NOT exceed this without declaration."
+    },
+    "native_max_context_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when native_max_context_tokens is null (C1)."
+    },
+    "weight_bytes_on_disk": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Measured resident weight bytes (M); tag MUST be 'M'. The protocol prefers this over ascep.capacity.weight_bytes when both exist. Units: bytes."
+    },
+    "weight_bytes_on_disk_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when weight_bytes_on_disk is null (C1)."
+    },
+    "weight_bytes_tag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "M",
+        "I",
+        "U",
+        null
+      ],
+      "description": "Provenance tag for weight_bytes_on_disk (C2); 'T' is not meaningful for weights."
+    },
+    "licence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Licence identifier (SPDX preferred). Capacity without licence context is not procurement-actionable."
+    },
+    "kv_lora_rank": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "MLA only. Rank of the compressed KV latent, verbatim from config.json (DeepSeek-V3: 512). Units: dimensionless. Input to ascep.capacity.kv_bytes_per_token_mla."
+    },
+    "qk_rope_head_dim": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "MLA only. Dimension of the decoupled RoPE key, verbatim from config.json (DeepSeek-V3: 64). Units: dimensionless. Input to ascep.capacity.kv_bytes_per_token_mla."
+    },
+    "kv_bytes_per_sequence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "linear/ssm/hybrid-recurrent only. Fixed recurrent state per sequence, independent of context length. Units: bytes. Input to ascep.capacity.kv_capacity_sessions. Hybrid stacks set this AND the per-token geometry; the costs add."
+    },
+    "model_id_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when model_id is null (C1)."
+    },
+    "revision_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when revision is null (C1)."
+    },
+    "architecture_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when architecture is null (C1)."
+    },
+    "moe_experts_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when moe_experts is null (C1)."
+    },
+    "moe_top_k_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when moe_top_k is null (C1)."
+    },
+    "weight_precision_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when weight_precision is null (C1)."
+    },
+    "weight_overhead_frac_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when weight_overhead_frac is null (C1)."
+    },
+    "kv_precision_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_precision is null (C1)."
+    },
+    "attention_type_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when attention_type is null (C1)."
+    },
+    "weight_bytes_tag_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when weight_bytes_tag is null (C1)."
+    },
+    "licence_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when licence is null (C1)."
+    },
+    "kv_lora_rank_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_lora_rank is null (C1)."
+    },
+    "qk_rope_head_dim_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when qk_rope_head_dim is null (C1)."
+    },
+    "kv_bytes_per_sequence_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_bytes_per_sequence is null (C1)."
+    },
+    "sliding_window_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Attention window in tokens for sliding-window layers. KV for those layers stops growing past this length, so a model served beyond its window has a flat KV floor that the token-linear formula would overstate."
+    },
+    "sliding_window_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when sliding_window_tokens is null (C1)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "attention_type": {
+            "enum": [
+              "full",
+              "gqa",
+              "mqa",
+              "sliding-window",
+              "hybrid"
+            ]
+          }
+        },
+        "required": [
+          "attention_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "n_kv_heads",
+          "head_dim"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "attention_type": {
+            "const": "mla"
+          }
+        },
+        "required": [
+          "attention_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "kv_lora_rank",
+          "qk_rope_head_dim"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "attention_type": {
+            "enum": [
+              "linear",
+              "ssm",
+              "hybrid-recurrent"
+            ]
+          }
+        },
+        "required": [
+          "attention_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "kv_bytes_per_sequence"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "architecture": {
+            "const": "moe"
+          }
+        },
+        "required": [
+          "architecture"
+        ]
+      },
+      "then": {
+        "required": [
+          "moe_experts",
+          "moe_top_k"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "attention_type": {
+            "enum": [
+              "sliding-window",
+              "hybrid"
+            ]
+          }
+        },
+        "required": [
+          "attention_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "sliding_window_tokens",
+          "global_layer_frac"
+        ]
+      }
+    }
+  ]
+}

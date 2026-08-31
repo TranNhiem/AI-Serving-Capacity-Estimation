@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ascep.dev/schemas/serving.schema.json",
+  "title": "ASCEP Layer 3 \u2014 Serving configuration",
+  "description": "Layer 3 of the five ASCEP layers. Declares framework, parallelism, batching and KV configuration. Topology binding (C3): every KV and throughput figure produced under this declaration is valid only at this tensor_parallel / pipeline_parallel / gpu_count triple.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ascep_version",
+    "framework",
+    "framework_version",
+    "container_digest",
+    "tensor_parallel",
+    "pipeline_parallel",
+    "gpu_count",
+    "max_model_len",
+    "memory_utilization",
+    "batching_mode",
+    "prefix_caching",
+    "kv_cache_offload",
+    "kv_cache_quantized",
+    "chunked_prefill",
+    "speculative_decoding",
+    "engine_reported_kv_cache_tokens",
+    "cold_start_to_ready_s"
+  ],
+  "properties": {
+    "ascep_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "ASCEP protocol version."
+    },
+    "framework": {
+      "type": "string",
+      "description": "Serving framework name (e.g. vLLM, SGLang, TGI, TensorRT-LLM, or other). No default assumed."
+    },
+    "framework_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Exact framework version string. 'latest' is non-conforming (C8)."
+    },
+    "container_digest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Immutable container image digest (sha256). Required by the reproduction bundle (C8)."
+    },
+    "tensor_parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Tensor-parallel width. Per-GPU KV is NOT constant across widths (ascep.capacity.kv_heads_per_rank replicates heads once TP > n_kv_heads); all figures in the run layer MUST inherit this value (C3)."
+    },
+    "pipeline_parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Pipeline-parallel depth."
+    },
+    "gpu_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Devices in one replica = tensor_parallel * pipeline_parallel unless otherwise stated. Binds capacity figures (C3)."
+    },
+    "max_model_len": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Framework maximum sequence length in tokens. A run above native_max_context_tokens without declaration invalidates context-bound throughput claims (C4)."
+    },
+    "max_model_len_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when max_model_len is null (C1)."
+    },
+    "memory_utilization": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Framework's own memory cap (vLLM gpu_memory_utilization, SGLang mem_fraction_static, or equivalent), dimensionless in (0,1]. REQUIRED and never nullable: it is the most frequently omitted number in published benchmarks, and without it a KV measurement cannot be reproduced and analytic projections disagree with it by multiples. Input to ascep.capacity.kv_pool_bytes and calibration target of calibrate_memory_utilization."
+    },
+    "batching_mode": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "continuous",
+        "static",
+        null
+      ],
+      "description": "Batching discipline. Static batching invalidates comparison against continuous-batching runs at the same concurrency."
+    },
+    "max_num_seqs": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Scheduler cap on concurrent sequences, if set. Units: sequences."
+    },
+    "max_num_seqs_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when max_num_seqs is null (C1)."
+    },
+    "max_num_batched_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "Scheduler cap on batched tokens per step, if set. Units: tokens."
+    },
+    "max_num_batched_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when max_num_batched_tokens is null (C1)."
+    },
+    "prefix_caching": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "on",
+        "off",
+        null
+      ],
+      "description": "Prefix cache state. An untracked prefix-cache hit inflates measured throughput and is a required explanation for any roofline_efficiency at or above 1.0."
+    },
+    "kv_cache_offload": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "on",
+        "off",
+        null
+      ],
+      "description": "Whether KV is offloaded to host memory. If on, calibrate_memory_utilization may return an effective utilization above 1.0 \u2014 that is a flag, not a result."
+    },
+    "kv_cache_quantized": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "on",
+        "off",
+        null
+      ],
+      "description": "Whether runtime KV quantization applies beyond model kv_precision."
+    },
+    "chunked_prefill": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "on",
+        "off",
+        null
+      ],
+      "description": "Chunked-prefill scheduling state."
+    },
+    "speculative_decoding": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "on",
+        "off",
+        null
+      ],
+      "description": "Speculative decoding state; MUST be off for protocol-comparable ITL claims unless the draft configuration is fully declared."
+    },
+    "engine_reported_kv_cache_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "KV cache size in tokens as reported by the engine at startup (M). THE number to trust: the protocol REQUIRES preferring it over the analytic memory model, and calibrate_memory_utilization SHOULD be used to reconcile before projecting to other context lengths. Units: tokens."
+    },
+    "engine_reported_kv_cache_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when engine_reported_kv_cache_tokens is null (C1). Without it, every KV-floor figure in the report is (I) at best."
+    },
+    "cold_start_to_ready_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Measured seconds from process start to ready-to-serve (M). Units: seconds."
+    },
+    "cold_start_to_ready_s_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when cold_start_to_ready_s is null (C1)."
+    },
+    "framework_version_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when framework_version is null (C1)."
+    },
+    "container_digest_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when container_digest is null (C1)."
+    },
+    "memory_utilization_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when memory_utilization is null (C1)."
+    },
+    "batching_mode_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when batching_mode is null (C1)."
+    },
+    "prefix_caching_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when prefix_caching is null (C1)."
+    },
+    "kv_cache_offload_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_cache_offload is null (C1)."
+    },
+    "kv_cache_quantized_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_cache_quantized is null (C1)."
+    },
+    "chunked_prefill_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when chunked_prefill is null (C1)."
+    },
+    "speculative_decoding_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when speculative_decoding is null (C1)."
+    }
+  }
+}

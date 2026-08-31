@@ -1,0 +1,268 @@
+{
+  "ascep_version": "0.1.0",
+  "conformance": "partial",
+  "conformance_note": "C1-C5 and C7 are met. C1 is met precisely BECAUSE the fields the original campaign never captured are recorded as null with a (U) entry rather than guessed — that is what C1 prescribes for an unknown, so an incomplete report is still C1-conforming as long as it is honest about what it does not know. C6 is met in structure but the theoretical tier is declined with a (U) reason, since the KV geometry needed for a defensible roofline was never captured. Two of those unknowns are worth naming, because they limit how far these numbers travel: the harness's percentile convention was not recorded (§4.3), so the tail figures are internally comparable but not comparable against another site's; no independent local token count was taken (§4.7.1), so the engine's usage accounting was never reconciled and an undetected tokenizer mismatch would move every context-length figure here; and no rung carries an outcome from chapter 7 §7's vocabulary, because with no telemetry-health record a clean rung and a defective one are indistinguishable after the fact — which is exactly why that vocabulary has to be recorded during the run and not reconstructed from it. C8 is not met: no run configs, raw per-request records, engine logs or environment capture were published. Per SPEC 'Conformance', a report meeting C1-C5 but not C6-C8 may be labelled partial. This example is published as partial deliberately, to show what the protocol looks like applied to a campaign that predates it.",
+
+  "hardware": {
+    "gpu_model": "NVIDIA H100 SXM5",
+    "gpu_count_per_node": 8,
+    "vram_bytes_per_gpu": 85899345920,
+    "vram_note": "80 GiB HBM3",
+    "hbm_bandwidth_bytes_s": 3350000000000,
+    "dense_bf16_flops_per_s": 989000000000000,
+    "interconnect_intra_node": "NVLink 4",
+    "interconnect_inter_node": null,
+    "inter_node_note": "(U) single-node campaign only; multi-node scaling not measured",
+    "nodes": 1,
+    "cpu_model": null,
+    "system_ram_bytes": null,
+    "storage_class": null,
+    "driver_version": null,
+    "node_exclusivity": "exclusive"
+  },
+
+  "model": {
+    "family": "Mixture-of-Experts instruction model",
+    "model_id": null,
+    "model_id_note": "(U) withheld — the model under test was a pre-release checkpoint and its identifier is not ours to publish. Every capacity figure below is reproducible against any MoE of the same total/active parameter split.",
+    "revision": null,
+    "total_params": 26000000000,
+    "active_params": 4000000000,
+    "architecture": "moe",
+    "weight_precision": "bf16",
+    "kv_precision": "bf16",
+    "n_layers": null,
+    "n_kv_heads": null,
+    "head_dim": null,
+    "kv_geometry_note": "(U) not captured. Consequence: the analytic KV model cannot be evaluated for this report, so every KV figure here is the ENGINE-REPORTED value, which the protocol requires be preferred anyway (SPEC 'Formulas'). This is the single most instructive gap in this example.",
+    "attention_type": null,
+    "global_layer_frac": null,
+    "native_max_context_tokens": null
+  },
+
+  "serving": {
+    "framework": "vllm",
+    "framework_version": null,
+    "framework_version_note": "(U) not recorded at run time. This alone downgrades the report to partial: a different engine version can change KV pool size and scheduling behaviour, so these numbers are not strictly reproducible.",
+    "container_digest": null,
+    "tensor_parallel": 2,
+    "pipeline_parallel": 1,
+    "max_model_len": 32768,
+    "memory_utilization": null,
+    "memory_utilization_note": "(U) not recorded. Use ascep.capacity.calibrate_memory_utilization against the engine-reported KV token count to recover it before projecting to any other context length.",
+    "batching_mode": "continuous",
+    "prefix_caching": null,
+    "chunked_prefill": null,
+    "kv_cache_dtype": "bf16",
+    "speculative_decoding": "off"
+  },
+
+  "measurements": {
+    "kv_by_topology": [
+      {
+        "tensor_parallel": 1,
+        "n_gpus": 1,
+        "engine_reported_kv_tokens": 574798,
+        "kv_tokens_per_gpu": 574798,
+        "provenance": "M"
+      },
+      {
+        "tensor_parallel": 2,
+        "n_gpus": 2,
+        "engine_reported_kv_tokens": 1149595,
+        "kv_tokens_per_gpu": 574798,
+        "provenance": "M"
+      }
+    ],
+    "kv_topology_note": "Per-GPU KV happens to be flat across TP=1 and TP=2 for this model. It is NOT flat in general: once tensor_parallel exceeds the model's KV head count, kv_heads_per_rank floors at 1 and total effective KV heads grow with TP, so per-GPU KV capacity falls. See ascep.capacity.kv_heads_per_rank and chapter 2. Do not generalize this row to TP=4 or TP=8 without measuring.",
+
+    "throughput_vs_context_tp2": {
+      "unit": "output tokens/s per GPU",
+      "topology": "TP=2, 2 GPUs, measured at saturation",
+      "mode": "open-loop",
+      "mode_note": "Fixed token counts with ignore_eos. This measures engine ceiling, NOT user experience. Do not compare against a closed-loop figure.",
+      "points": [
+        { "context_tokens": 1024, "tok_s_per_gpu": 1476, "provenance": "M" },
+        { "context_tokens": 4096, "tok_s_per_gpu": 1172, "provenance": "M" },
+        { "context_tokens": 8192, "tok_s_per_gpu": 751,  "provenance": "M" }
+      ],
+      "falloff_note": "Throughput falls 49% from 1k to 8k context on identical hardware. A single headline tok/s figure for this model would be meaningless, which is the point of conformance rule C4."
+    },
+
+    "latency_gates": {
+      "gates_declared_before_run": true,
+      "ttft_p95_s_max": 2.0,
+      "results": [
+        {
+          "context_tokens": 4096,
+          "ttft_p95_s": 1.3311,
+          "slo_pass": true,
+          "margin_note": "passes with 33% margin",
+          "provenance": "M"
+        },
+        {
+          "context_tokens": 8192,
+          "ttft_p95_s": 3.9903,
+          "slo_pass": false,
+          "margin_note": "exceeds the 2.0 s gate by 2.0x — this operating point is excluded from SUSTAINABLE capacity",
+          "provenance": "M"
+        }
+      ]
+    },
+
+    "scaling": {
+      "baseline": { "tensor_parallel": 1, "n_gpus": 1, "tok_s": 287, "provenance": "M" },
+      "scaled":   { "tensor_parallel": 2, "n_gpus": 2, "tok_s": 1117, "provenance": "M" },
+      "efficiency": 1.95,
+      "efficiency_verdict": "INVALID AS A SCALING RESULT",
+      "efficiency_note": "1.95x on 2x the GPUs is superlinear, which is physically impossible as a scaling gain. It means the TP=1 baseline was degraded — KV-starved at this context length, forcing small effective batches. The correct reading is 'TP=1 is broken for this workload', not 'TP=2 scales at 195%'. Reported here because catching this class of error is a design goal of the protocol (SPEC, C-rules rationale)."
+    }
+  },
+
+  "workload": {
+    "application_type": "conversational assistant, short context",
+    "concurrent_users": 400,
+    "duty_cycle": 0.40,
+    "duty_cycle_note": "Fraction of logged-in users actually generating at any instant. 400 concurrent users therefore present 160 active sessions.",
+    "input_tokens_per_request": 1500,
+    "output_tokens_per_request": 1000,
+    "avg_context_tokens": 2000,
+    "avg_context_note": "(I) input + output/2 = 1500 + 500, via Workload.avg_context_tokens()",
+    "target_tok_s_per_user": 15.0,
+    "target_note": "15 tok/s per ACTIVE session; at a 0.40 duty cycle this is 6 tok/s per concurrent user",
+    "demand_tok_s": 2400,
+    "demand_note": "(I) 400 users x 0.40 duty cycle x 15 tok/s, via Workload.demand_tok_s()"
+  },
+
+  "capacity_result": {
+    "topology": "1 replica x TP=2 (2 GPUs)",
+    "kv_tokens": 1149595,
+    "throughput_tok_s": 2759,
+    "headroom": 1.15,
+    "kv_floor_users": 1250,
+    "throughput_floor_users": 400,
+    "max_concurrent_users": 400,
+    "binding_constraint": "throughput",
+    "tier": "recommended",
+    "interpretation": "At 2,000-token average context this configuration is THROUGHPUT-bound, not KV-bound: the KV pool would hold 1,250 users' worth of context but the GPUs cannot generate fast enough to serve more than 400 of them at 6 tok/s each. Buying KV headroom here would waste money; the correct purchase is compute. The floors cross over at longer context — at 30k average context the same hardware becomes KV-bound. This crossover is why the protocol requires naming the binding constraint (C5).",
+    "provenance": "I — ascep.capacity.capacity_at()"
+  },
+
+  "unmeasured": [
+    {
+      "field": "hardware.interconnect_inter_node",
+      "why_missing": "(U) single-node campaign; no inter-node fabric was exercised",
+      "impact_if_wrong": "None for these figures, but they MUST NOT be extrapolated past 8 GPUs — cross-node collectives are 5-20x slower than NVLink and scaling efficiency will not hold.",
+      "cost_to_measure": "one 2-node run at the same shape"
+    },
+    {
+      "field": "hardware.cpu_model",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "Low. Affects tokenization and request-marshalling overhead, visible only at very high req/s with short outputs.",
+      "cost_to_measure": "free — read from the environment capture"
+    },
+    {
+      "field": "hardware.system_ram_bytes",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "Low here (no KV offload). Becomes binding if CPU KV offload is enabled.",
+      "cost_to_measure": "free — read from the environment capture"
+    },
+    {
+      "field": "hardware.storage_class",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "None for steady-state capacity. Determines cold-start time, which matters for autoscaling policy.",
+      "cost_to_measure": "free — time one cold load"
+    },
+    {
+      "field": "hardware.driver_version",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "Moderate. Kernel selection changes between driver/CUDA releases; a reproduction on a different driver may differ by single-digit percent.",
+      "cost_to_measure": "free — read from the environment capture"
+    },
+    {
+      "field": "model.model_id",
+      "why_missing": "(U) withheld — pre-release checkpoint, not ours to publish",
+      "impact_if_wrong": "The figures cannot be reproduced against this exact checkpoint. They remain valid as a demonstration of the method and as an order-of-magnitude reference for a 26B-total/4B-active MoE.",
+      "cost_to_measure": "n/a — a disclosure decision, not a measurement"
+    },
+    {
+      "field": "model.revision",
+      "why_missing": "(U) not pinned at run time",
+      "impact_if_wrong": "Moderate. Weight revisions change quality and occasionally geometry; an unpinned run is not strictly reproducible.",
+      "cost_to_measure": "free — record the commit hash before the run"
+    },
+    {
+      "field": "model.n_layers",
+      "why_missing": "(U) not captured; see kv_geometry_note",
+      "impact_if_wrong": "High for projection, none for the reported numbers. Without it the analytic KV model cannot run, so KV cannot be projected to an untested topology or context length — only the two measured topologies are defensible.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "model.n_kv_heads",
+      "why_missing": "(U) not captured; see kv_geometry_note",
+      "impact_if_wrong": "High. This is the field that determines whether per-GPU KV capacity FALLS at higher TP (kv_heads_per_rank floors at 1). Without it, the observed TP=1/TP=2 flatness cannot be safely extended to TP=4.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "model.head_dim",
+      "why_missing": "(U) not captured; see kv_geometry_note",
+      "impact_if_wrong": "High for projection, none for the reported numbers. Third of the three fields needed by kv_bytes_per_token.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "model.attention_type",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "High if the model uses sliding-window or hybrid attention: KV would then grow sub-linearly with context and the long-context KV floor quoted here would be pessimistic.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "model.global_layer_frac",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "Only relevant if attention is hybrid; see above.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "model.native_max_context_tokens",
+      "why_missing": "(U) not captured",
+      "impact_if_wrong": "Low. max_model_len was set to 32768; whether the model natively supports more affects only untested long-context operating points.",
+      "cost_to_measure": "free — read config.json"
+    },
+    {
+      "field": "serving.framework_version",
+      "why_missing": "(U) not recorded at run time",
+      "impact_if_wrong": "High. This is the main reason this report is PARTIAL rather than FULL. Engine versions change KV pool sizing and scheduler behaviour; a reproduction on a different version may not match.",
+      "cost_to_measure": "free — record it before the run. There is no excuse for this one."
+    },
+    {
+      "field": "serving.container_digest",
+      "why_missing": "(U) not recorded at run time",
+      "impact_if_wrong": "High, same reason as framework_version — the digest is the only unambiguous identifier of what actually ran.",
+      "cost_to_measure": "free — record it before the run"
+    },
+    {
+      "field": "serving.memory_utilization",
+      "why_missing": "(U) not recorded at run time",
+      "impact_if_wrong": "High for projection. Without it the KV pool cannot be re-derived analytically. Mitigated here because the ENGINE-REPORTED KV token count was captured, which the protocol requires be preferred; calibrate_memory_utilization can recover the effective value from it.",
+      "cost_to_measure": "free — it is a launch flag"
+    },
+    {
+      "field": "serving.prefix_caching",
+      "why_missing": "(U) not recorded",
+      "impact_if_wrong": "High. If prefix caching was ON and the benchmark reused prompt prefixes, measured throughput is inflated relative to production traffic with distinct prompts. This is the most dangerous unmeasured field in this report.",
+      "cost_to_measure": "free — it is a launch flag"
+    },
+    {
+      "field": "serving.chunked_prefill",
+      "why_missing": "(U) not recorded",
+      "impact_if_wrong": "Moderate. Chunked prefill trades TTFT for ITL stability under mixed load; it directly affects the 8k TTFT gate failure reported above.",
+      "cost_to_measure": "free — it is a launch flag"
+    }
+  ],
+
+  "conclusion_sensitivity": "The headline conclusion — 400 concurrent users on 2 GPUs, throughput-bound — would change materially if serving.prefix_caching was ON during the benchmark, since the measured 2,759 tok/s would then overstate production throughput. Every other (U) affects projection to untested configurations rather than the reported figures. A reviewer should attack prefix_caching first.",
+
+  "reproduce": {
+    "command": "python -m pytest tests/test_example_reproduces.py",
+    "note": "Recomputes every (I) figure above from the (M) figures using ascep.capacity only. Requires no GPU and no network."
+  }
+}

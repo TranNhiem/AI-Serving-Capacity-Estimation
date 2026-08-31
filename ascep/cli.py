@@ -1,0 +1,258 @@
+"""Command-line entry point for the ASCEP toolkit.
+
+Every subcommand works on a bare ``pip install ascep``, with one exception. ``jsonschema``
+lives in the optional ``run`` extra, so ``ascep.validation`` is imported lazily inside its
+handler and its absence is reported as an install hint rather than a traceback; ``validate``
+is the only command that genuinely needs it. ``conformance`` *uses* the schema check when it
+is available and records a finding when it is not, and ``version``, ``size`` and ``render``
+never touch it at all.
+
+That is deliberate, not incidental: the people most likely to reach for this tool are on a
+locked-down benchmark cluster where adding a dependency is a ticket, and a capacity estimate
+you cannot run is worth nothing. The ``bare-install`` CI job holds the line.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import sys
+from typing import Any
+
+from ascep import ASCEP_VERSION, __version__, capacity
+
+# Mirrors validation.LAYERS; that module is only imported lazily inside handlers, so the
+# layer choices cannot be read from it at parser-construction time.
+_LAYERS = ("hardware", "model", "serving", "run", "workload", "capacity-report")
+
+#: Derived from the dataclass rather than listed by hand. A hand-maintained allowlist silently
+#: drops any field added to Workload later, and dropping one is not a crash — it is a wrong
+#: number. Omitting requests_per_session, for instance, under-counts demand by exactly the
+#: turns-per-session figure, which is the kind of quiet 5x error this protocol exists to stop.
+_WORKLOAD_KEYS = tuple(f.name for f in dataclasses.fields(capacity.Workload))
+
+
+def _eprint(message: str) -> None:
+    """Write a diagnostic to stderr so stdout stays machine-parseable."""
+    print(message, file=sys.stderr)
+
+
+def _load_json(path: str) -> Any:
+    """Parse a JSON file; decode and IO failures surface to the caller."""
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _fmt(value: float) -> str:
+    """Render a quantity without a meaningless trailing ``.0``."""
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.2f}"
+
+
+def _severity_rank(severity: str) -> int:
+    """Sort key placing errors before warnings, robust to new levels being added later."""
+    return 0 if severity == "error" else 1
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    """Schema-validate one JSON file against the chosen layer."""
+    try:
+        instance = _load_json(args.path)
+    except (OSError, ValueError) as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    try:
+        from ascep import validation
+
+        errors = validation.validate(args.layer, instance)
+    except ImportError:
+        # jsonschema and referencing are an optional extra; an install hint is more useful
+        # than a traceback for a contributor on a fresh machine.
+        _eprint("schema validation needs the optional dependencies: pip install 'ascep[run]'")
+        return 2
+    if errors:
+        for message in errors:
+            print(message)
+        return 1
+    print("OK")
+    return 0
+
+
+def _cmd_conformance(args: argparse.Namespace) -> int:
+    """Check a report against rules C1-C8 and print findings grouped by rule."""
+    try:
+        report = _load_json(args.path)
+    except (OSError, ValueError) as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    from ascep import conformance
+
+    verdict = conformance.check(report)
+    findings = sorted(
+        verdict.findings,
+        key=lambda f: (f.rule, _severity_rank(f.severity), f.path),
+    )
+    current_rule = None
+    for finding in findings:
+        if finding.rule != current_rule:
+            print(f"{finding.rule}:")
+            current_rule = finding.rule
+        location = finding.path or "(report)"
+        print(f"  [{finding.severity}] {location}: {finding.message}")
+    if verdict.overstated:
+        # A report claiming more than the checks support must never be quietly compared
+        # against honest ones, so flag it as loudly as plain text allows.
+        print(
+            f"OVERSTATED: report claims {verdict.claimed!r} "
+            f"but the checks support only {verdict.level!r}"
+        )
+    print(f"verdict: {verdict.level} (claimed: {verdict.claimed})")
+    if verdict.level == "non-conforming":
+        return 1
+    if args.strict and verdict.findings:
+        return 1
+    return 0
+
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    """Render a report, writing to --out instead of stdout when it is given."""
+    from ascep import render
+
+    try:
+        if args.out:
+            render.render_file(args.path, out=args.out)
+        else:
+            print(render.render_file(args.path))
+    except (OSError, ValueError) as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    return 0
+
+
+def _cmd_size(args: argparse.Namespace) -> int:
+    """Compute the smallest whole-replica GPU count meeting the given workload."""
+    try:
+        data = _load_json(args.workload)
+    except (OSError, ValueError) as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    if not isinstance(data, dict):
+        _eprint("error: workload file must contain a JSON object")
+        return 1
+    # A null value means "not given", not zero; drop it so Workload's defaults apply.
+    kwargs = {key: data[key] for key in _WORKLOAD_KEYS if data.get(key) is not None}
+    try:
+        workload = capacity.Workload(**kwargs)
+        cap = capacity.gpus_required(
+            workload,
+            kv_tokens_per_gpu=args.kv_tokens,
+            throughput_tok_s_per_gpu=args.throughput_tok_s,
+            headroom=args.headroom,
+            gpus_per_replica=args.gpus_per_replica,
+        )
+        peak_users = workload.peak_concurrent_users()
+        demand_tok_s = workload.demand_tok_s()
+    except (TypeError, ValueError) as exc:
+        _eprint(f"error: {exc}")
+        return 1
+    print(f"peak_concurrent_users: {_fmt(peak_users)}")
+    print(f"demand_tok_s: {_fmt(demand_tok_s)}")
+    print(f"gpus: {cap.n_gpus}")
+    print(f"binding_constraint: {cap.binding_constraint.value}")
+    return 0
+
+
+def _cmd_version(_args: argparse.Namespace) -> int:
+    """Print the package and protocol version."""
+    print(f"ascep {__version__} (protocol {ASCEP_VERSION})")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser with all subcommands wired to their handlers."""
+    parser = argparse.ArgumentParser(
+        prog="ascep",
+        description="AI Serving Capacity Estimation Protocol tools.",
+    )
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    p_validate = sub.add_parser("validate", help="schema-validate a JSON file")
+    p_validate.add_argument("path", help="path to the JSON file")
+    p_validate.add_argument(
+        "--layer",
+        default="capacity-report",
+        choices=_LAYERS,
+        help="schema layer to validate against (default: capacity-report)",
+    )
+    p_validate.set_defaults(handler=_cmd_validate)
+
+    p_conf = sub.add_parser("conformance", help="check a report against rules C1-C8")
+    p_conf.add_argument("path", help="path to the report JSON file")
+    p_conf.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero if there is any finding at all, even warnings",
+    )
+    p_conf.set_defaults(handler=_cmd_conformance)
+
+    p_render = sub.add_parser("render", help="render a report as text")
+    p_render.add_argument("path", help="path to the report JSON file")
+    p_render.add_argument("-o", "--out", help="write output here instead of stdout")
+    p_render.set_defaults(handler=_cmd_render)
+
+    p_size = sub.add_parser("size", help="GPU count required to serve a workload")
+    p_size.add_argument("--workload", required=True, help="path to a workload JSON file")
+    p_size.add_argument(
+        "--kv-tokens",
+        type=float,
+        required=True,
+        metavar="N",
+        help="per-GPU KV pool size in tokens; MUST come from a measurement at the SAME "
+        "tensor-parallel width you will deploy at (see --gpus-per-replica), because "
+        "per-GPU KV is not constant across topologies",
+    )
+    p_size.add_argument(
+        "--throughput-tok-s",
+        type=float,
+        required=True,
+        metavar="N",
+        help="per-GPU decode throughput in tokens/s; MUST come from a measurement at the "
+        "SAME tensor-parallel width you will deploy at (see --gpus-per-replica)",
+    )
+    p_size.add_argument(
+        "--gpus-per-replica",
+        type=int,
+        default=1,
+        metavar="N",
+        help="tensor-parallel width; capacity is bought in whole replicas (default: 1)",
+    )
+    p_size.add_argument(
+        "--headroom",
+        type=float,
+        default=1.15,
+        metavar="F",
+        help="factor dividing usable capacity for the recommended tier (default: 1.15)",
+    )
+    p_size.set_defaults(handler=_cmd_size)
+
+    p_version = sub.add_parser("version", help="print the protocol and package version")
+    p_version.set_defaults(handler=_cmd_version)
+
+    return parser
+
+
+def main(argv=None) -> int:
+    """Parse arguments, dispatch to a subcommand, and return its exit code."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    handler = getattr(args, "handler", None)
+    if handler is None:
+        parser.print_help()
+        return 2
+    return handler(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

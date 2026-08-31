@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use ASCEP or publish a conforming capacity report, please cite it."
+title: "ASCEP — AI Serving Capacity Estimation Protocol"
+abstract: >-
+  A reproducible, vendor-neutral protocol for estimating and reporting the serving
+  capacity of LLM inference infrastructure. ASCEP separates hardware, model, serving,
+  measurement and workload declarations; requires every number to carry a provenance
+  tag; distinguishes theoretical, measured, sustainable and recommended capacity; and
+  requires each capacity figure to name the floor that binds it.
+type: software
+version: "0.1.0"
+license: Apache-2.0
+repository-code: "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation"
+keywords:
+  - large language models
+  - inference serving
+  - capacity planning
+  - benchmarking
+  - reproducibility
+authors:
+  - family-names: Tran
+    given-names: Nhiem
+    alias: TranNhiem
