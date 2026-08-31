@@ -545,7 +545,7 @@
       ],
       "minimum": 0.5,
       "maximum": 1,
-      "description": "Fixed ratio r_c, declared before timing, below which a rung's goodput relative to the best lower complete rung counts as throughput collapse and terminates the ladder (chapter 7 \u00a77). MUST NOT be below 0.5. Left to operator taste after the fact, 'collapse' becomes whatever keeps the ladder climbing."
+      "description": "Fixed ratio r_c, declared before timing, below which a rung's throughput relative to the best lower complete rung counts as throughput collapse and terminates the ladder (chapter 7 \u00a77). Throughput, not goodput: collapse is a queueing failure a rung can suffer whether or not its gates held, and goodput is undefined at a rung that failed them. MUST NOT be below 0.5. Left to operator taste after the fact, 'collapse' becomes whatever keeps the ladder climbing."
     },
     "throughput_collapse_ratio_u_reason": {
       "type": "string",
