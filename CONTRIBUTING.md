@@ -6,11 +6,12 @@ ASCEP is a measurement and reporting protocol. It gets more useful in exactly tw
 
 The single highest-leverage thing you can add is a capacity report under `examples/` — a real measurement of a real model on real hardware, declared against all five layers, tagged with provenance, and passing the conformance rules. One conforming report for a 2-KV-head GQA model at TP=4, showing the KV replication penalty in numbers, teaches more than a paragraph of prose ever will.
 
-Reports live in `examples/<model>-<hardware>-<framework>/` and MUST contain:
+Reports live in `examples/<model>-<hardware>-<framework>/`. Copy `examples/moe-26b-h100-tp2/` and edit it; the layout there is the one reviewers expect:
 
-- The five layer declarations, one JSON/YAML file per schema in `schemas/` (`hardware`, `model`, `serving`, `run`, `workload`).
-- The reproduction bundle required by C8: run configs, per-request raw records, engine version and container digest, environment capture.
-- `REPORT.md` presenting all four capacity tiers (theoretical, measured, sustainable, recommended), the roofline efficiency, the binding constraint for every capacity figure, and the §7 unmeasured-values list.
+- `report.json`, validating against `schemas/capacity-report.schema.json`. All five layer declarations are sections **inside** it — `hardware`, `model`, `serving`, `run`, `workload` — each validated against the matching schema in `schemas/`. One file, not five: the layers are only meaningful together, and a directory of separate files makes it possible to commit a `model` that no `run` ever measured.
+- `build_report.py`, which regenerates `report.json` from your raw measurements. Commit both. CI runs the builder and diffs the result, so a report that cannot be rebuilt from its inputs fails before review.
+- Every capacity figure carrying its tier (theoretical, measured, sustainable, recommended), its binding constraint, and its provenance tag, plus the `unmeasured_assumptions` list. `ascep render report.json` produces the Markdown presentation, so there is no `REPORT.md` to write or keep in sync.
+- The reproduction bundle required by C8 — run configs, per-request raw records, engine version and container digest, environment capture — or, where it genuinely cannot be published, the paths declared and the omission stated. Without it the report caps at `partial`. **That is a publishable verdict**, and the repository's own example carries it; the rejection is for claiming a level you did not earn, not for earning a modest one.
 
 Full hardware details MAY be coarsened to the schema (e.g. "8× 141 GB HBM GPUs, NVLink-class interconnect") — comparability requires the declared fields, not your datacentre layout.
 
