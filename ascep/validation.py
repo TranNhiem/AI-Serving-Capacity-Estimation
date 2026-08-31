@@ -18,7 +18,23 @@ import pathlib
 from collections.abc import Iterator
 from typing import Any
 
-SCHEMA_DIR = pathlib.Path(__file__).parent.parent / "schemas"
+
+def _schema_dir() -> pathlib.Path:
+    """Where the shipped schemas live, in both of the layouts this package exists in.
+
+    In a wheel they are force-included at ``ascep/schemas`` (see pyproject); in a source
+    checkout they sit at the repository root so they are browsable next to `protocol/`.
+    Resolving only the checkout layout is a bug that no editable install can reveal: `pip
+    install -e .` leaves the source tree in place, so CI stays green while `pip install ascep`
+    gives every user a FileNotFoundError on their first `ascep validate`.
+    """
+    packaged = pathlib.Path(__file__).parent / "schemas"
+    if packaged.is_dir():
+        return packaged
+    return pathlib.Path(__file__).parent.parent / "schemas"
+
+
+SCHEMA_DIR = _schema_dir()
 
 LAYERS = ("hardware", "model", "serving", "run", "workload", "capacity-report")
 

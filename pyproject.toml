@@ -49,6 +49,14 @@ Issues = "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["ascep"]
 
+# The schemas are runtime data, not documentation: `ascep validate` and the conformance
+# checker read them. They live at the repository root so they are browsable next to
+# `protocol/`, which means the wheel would otherwise ship without them and every
+# `pip install ascep` would fail on the first validate. An editable install cannot expose
+# this — the source tree is still there — so CI builds a real wheel instead.
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "ascep/schemas"
+
 [tool.ruff]
 line-length = 100
 target-version = "py39"

@@ -112,6 +112,38 @@ jobs:
           for b in examples/*/build_*.py; do python "$b"; done
           git diff --exit-code -- examples/
 
+  wheel:
+    name: a real wheel works outside the source tree
+    runs-on: ubuntu-latest
+    # Every other job installs with `pip install -e .`, which leaves the checkout in place and
+    # therefore cannot see a packaging bug: the schemas live at the repository root, so for one
+    # release they were absent from the wheel entirely and `ascep validate` raised
+    # FileNotFoundError for anyone who installed normally. This job installs the built artifact
+    # into a clean environment and runs it from a directory that contains no ASCEP source.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install build && python -m build --wheel
+      - name: the wheel actually contains the schemas
+        run: |
+          python - <<'EOF'
+          import glob, zipfile
+          names = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[-1]).namelist()
+          shipped = sorted(n for n in names if n.endswith(".schema.json"))
+          print("\n".join(shipped) or "(none)")
+          assert len(shipped) == 6, f"expected 6 schemas in the wheel, found {len(shipped)}"
+          EOF
+      - name: install it clean and run from elsewhere
+        run: |
+          python -m venv /tmp/wenv
+          /tmp/wenv/bin/pip install "$(ls dist/*.whl)" jsonschema
+          mkdir -p /tmp/away && cp examples/moe-26b-h100-tp2/report.json /tmp/away/
+          cd /tmp/away
+          /tmp/wenv/bin/ascep version
+          /tmp/wenv/bin/ascep validate report.json
+          /tmp/wenv/bin/ascep conformance report.json
+
   no-secrets:
     name: no credentials, hostnames or pricing
     runs-on: ubuntu-latest
