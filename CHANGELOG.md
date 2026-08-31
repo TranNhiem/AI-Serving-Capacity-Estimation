@@ -74,6 +74,37 @@ cross-version comparisons valid.
 - `ascep.init`'s docstring claimed `if`/`then` requirements surface through
   `decisions()`; only `anyOf`/`oneOf` ever did. The docstring now says what
   actually happens and why it is the right behaviour.
+- **Goodput was defined as uncomputable.** Chapter 4 §4.2 defined it as counting
+  "only requests that met every SLO gate", but every gate in `slo_gates` is a
+  window-level p95 or a window-level rate — no individual request meets or fails
+  a percentile, so there was no per-request pass/fail to filter on. Goodput is
+  now the throughput of a window in which every gate held, undefined where any
+  failed, matching how §4.2 and the sustainable tier already used it. A report
+  wanting a per-request filter must declare its own thresholds and must not call
+  the result goodput.
+- Chapter 7 §7 tested throughput collapse on **goodput**, while the declared knob
+  is `throughput_collapse_ratio` and the same sentence called it throughput.
+  Collapse is a queueing failure independent of the gates, so on the corrected
+  goodput definition the old wording made every gate failure indistinguishable
+  from a collapse and terminated the ladder before the measured-tier ceiling.
+- Chapter 4 §4.2.1 stated one error at two magnitudes in one sentence — "2.33×
+  the figure used" and "nearly 2.5× too high". For 400 hidden + 300 visible
+  tokens the factor is 700/300 = 2.33, and it is the same 2.33 on both sides
+  because per-user demand is the divisor in the throughput floor.
+- Chapter 7 §5 required "at least one additional independent repetition" to
+  confirm the boundary rung, while §1 and §6 require three at every reported
+  operating point — the most load-bearing rung in the campaign appeared to have
+  the weakest evidence requirement. The confirmation is now explicitly *in
+  addition to* the three, must itself pass, and is justified by the selection
+  bias it actually corrects: the boundary is the rung the search stopped at
+  because it passed.
+- Chapter 7 §6 gave the error-rate denominator as every request "issued or
+  admitted". Those populations are identical below saturation and diverge
+  exactly under overload, which is the only regime the error rate exists to
+  expose: a server rejecting a third of its offered load reported itself
+  error-free on the admitted reading. **Issued** is now normative, refusals at
+  admission count as failures, and an admitted-only rate may be reported
+  alongside but never substituted.
 
 ### Security
 
