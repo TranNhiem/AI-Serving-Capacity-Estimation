@@ -112,7 +112,11 @@ def _merged(node: dict, root: dict) -> tuple[dict, list]:
     required = list(node.get("required") or [])
     for branch in node.get("allOf") or []:
         if "$ref" in branch:
-            branch, root = _resolve(branch, root)
+            # Resolve into a local, never back into `root`. Rebinding it would make a later
+            # `#/$defs/...` branch resolve against whichever file the previous branch pointed
+            # at -- a KeyError if the name is absent there, and silently the wrong subschema
+            # if it happens to exist.
+            branch, _ = _resolve(branch, root)
         props.update(branch.get("properties") or {})
         required += [r for r in (branch.get("required") or []) if r not in required]
     return props, required
@@ -128,8 +132,20 @@ def _types(node: dict) -> list:
 def _value(node: dict, root: dict, depth: int, path: str, notes: list) -> Any:
     """The placeholder for one leaf, in the precedence order the module docstring implies."""
     if depth > _MAX_DEPTH:
-        return None
-    if "$ref" in node:
+        # Raising rather than returning None: a null here is indistinguishable from an honest
+        # unknown, so a $ref cycle would ship as a skeleton quietly missing a whole subtree.
+        raise ValueError(
+            f"schema nesting exceeded {_MAX_DEPTH} at {path or '(root)'}; this is a $ref cycle, "
+            "not a deep schema -- the real ones nest five levels"
+        )
+    # A $ref may point at another $ref, so follow the chain rather than one hop: stopping
+    # early leaves a node with no `type`, which falls through every branch below and returns
+    # None -- a subtree silently replaced by an honest-looking unknown.
+    for hop in range(_MAX_DEPTH + 1):
+        if "$ref" not in node:
+            break
+        if hop == _MAX_DEPTH:
+            raise ValueError(f"$ref cycle at {path or '(root)'}: {node['$ref']}")
         # Keywords sitting beside a $ref narrow it rather than being replaced by it, which is
         # how the four capacity rows share one shape while each pinning its own `tier` const.
         # Dropping the siblings would make the skeleton emit "TODO" for a value the schema

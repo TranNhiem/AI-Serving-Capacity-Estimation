@@ -300,3 +300,12 @@ def test_an_empty_string_is_not_a_declaration():
     report = {"hardware": {"gpu_model": "   "}}
     paths = {f.path for f in conformance.check(report).findings if f.severity == "error"}
     assert "hardware.gpu_model" in paths
+
+
+def test_a_ref_cycle_raises_instead_of_shipping_a_truncated_skeleton():
+    """A null at the depth cap is indistinguishable from an honest unknown, so a cycle would
+    silently produce a skeleton missing a whole subtree. Loud beats plausible."""
+    with pytest.raises(ValueError, match="cycle"):
+        init._value(
+            {"$ref": "#/$defs/loop"}, {"$defs": {"loop": {"$ref": "#/$defs/loop"}}}, 0, "", []
+        )
