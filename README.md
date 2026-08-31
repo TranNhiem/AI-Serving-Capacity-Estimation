@@ -147,9 +147,12 @@ specifies the procedure so you can run it with your existing harness, and
 
 ## Applying it to your stack
 
-ASCEP is deliberately thin on assumptions. It has been designed against NVIDIA H100 + vLLM
-with both a dense and a Mixture-of-Experts model, but nothing in the protocol is specific to
-those. To adapt it:
+ASCEP is deliberately thin on assumptions. It was designed against NVIDIA H100 + vLLM, from a
+campaign covering both a dense and a Mixture-of-Experts model, but nothing in the protocol is
+specific to those. Be aware of the distinction: **one** worked report is published so far
+(`examples/moe-26b-h100-tp2`, the MoE half), so every row below is supported by the schemas and
+the formulas but not yet demonstrated by a second published example. Reports that close those
+rows are the contribution this project most wants. To adapt it:
 
 | you have | what to do |
 |---|---|

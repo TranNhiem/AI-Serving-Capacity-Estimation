@@ -66,10 +66,13 @@ Initial draft release.
   campaign. Chapter 7 specifies the procedure so an existing harness can be
   used, and `examples/*/build_report.py` shows how to map results onto the
   schema.
-- **Designed against NVIDIA H100 with vLLM.** Other accelerators and frameworks
-  are supported by declaration — the protocol never assumes either — but no
-  conforming report for a non-H100, non-vLLM configuration has been published
-  yet.
+- **One published configuration.** `examples/moe-26b-h100-tp2` is the only worked
+  report: NVIDIA H100, vLLM, MoE, bf16, TP=2. Other accelerators, frameworks,
+  attention families, precisions and topologies are supported by declaration —
+  the protocol never assumes any of them, and the schemas and formulas cover
+  them — but "supported by declaration" is a weaker claim than "demonstrated",
+  and the difference is not something the repository should blur. A dense-model
+  report on the same hardware is the nearest gap.
 - **The published example report is deliberately `partial`.** It documents a
   campaign that predates the protocol, so several declarations (engine version,
   memory-utilization flag, prefix-caching state) are recorded as `null` with a
