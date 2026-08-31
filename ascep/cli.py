@@ -4,8 +4,10 @@ Every subcommand works on a bare ``pip install ascep``, with one exception. ``js
 lives in the optional ``run`` extra, so ``ascep.validation`` is imported lazily inside its
 handler and its absence is reported as an install hint rather than a traceback; ``validate``
 is the only command that genuinely needs it. ``conformance`` *uses* the schema check when it
-is available and records a finding when it is not, and ``version``, ``size`` and ``render``
-never touch it at all.
+is available and records a finding when it is not, and ``version``, ``size``, ``render`` and
+``init`` never touch it at all. ``init`` does import ``ascep.validation``, but only for
+``load_schema`` — reading the shipped JSON is plain stdlib; it is validating against it that
+needs the extra.
 
 That is deliberate, not incidental: the people most likely to reach for this tool are on a
 locked-down benchmark cluster where adding a dependency is a ticket, and a capacity estimate
@@ -17,6 +19,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import pathlib
 import sys
 from typing import Any
 
@@ -164,6 +167,39 @@ def _cmd_size(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    """Write a schema-derived skeleton and name the choices it could not make."""
+    from ascep import init as init_mod
+
+    text = init_mod.render(args.layer)
+    if args.out:
+        path = pathlib.Path(args.out)
+        # Refusing to clobber is not politeness. The file this would overwrite is a report
+        # someone spent GPU-hours on, and `init` is the command a new user runs twice while
+        # working out the flags.
+        if path.exists() and not args.force:
+            _eprint(f"error: {args.out} exists; pass --force to overwrite it")
+            return 2
+        path.write_text(text, encoding="utf-8")
+        _eprint(f"wrote {args.out}")
+    else:
+        sys.stdout.write(text)
+
+    # Straight to stderr so stdout stays a pipeable JSON document.
+    for note in init_mod.decisions(args.layer):
+        options = " OR ".join(" + ".join(fields) for fields in note["options"])
+        _eprint(f"decide: {note['path']} needs {options} — no placeholder can be honest here")
+
+    # A fresh skeleton deliberately fails validation, so say so here rather than letting the
+    # first `ascep validate` read as a broken tool. The errors ARE the fill-in list.
+    target = args.out or "the file"
+    _eprint(f"every other value is null or {init_mod.TODO} — a skeleton is not yet valid.")
+    _eprint(f"what is still unfilled:  ascep validate {target} --layer {args.layer}")
+    if args.layer == "capacity-report":
+        _eprint(f"how it grades:           ascep conformance {target}")
+    return 0
+
+
 def _cmd_version(_args: argparse.Namespace) -> int:
     """Print the package and protocol version."""
     print(f"ascep {__version__} (protocol {ASCEP_VERSION})")
@@ -236,6 +272,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="factor dividing usable capacity for the recommended tier (default: 1.15)",
     )
     p_size.set_defaults(handler=_cmd_size)
+
+    p_init = sub.add_parser("init", help="write a fillable report skeleton")
+    p_init.add_argument("-o", "--out", help="write the skeleton here instead of stdout")
+    p_init.add_argument(
+        "--layer",
+        default="capacity-report",
+        choices=_LAYERS,
+        help="which schema to scaffold (default: capacity-report, the whole report)",
+    )
+    p_init.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite --out if it already exists",
+    )
+    p_init.set_defaults(handler=_cmd_init)
 
     p_version = sub.add_parser("version", help="print the protocol and package version")
     p_version.set_defaults(handler=_cmd_version)

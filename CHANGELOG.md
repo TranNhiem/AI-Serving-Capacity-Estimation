@@ -15,6 +15,18 @@ cross-version comparisons valid.
 
 ### Added
 
+- `ascep init` writes a fillable report skeleton derived from the schemas, for any
+  single layer or the whole `capacity-report`. It refuses to overwrite an existing
+  file without `--force`, writes the document to stdout so it can be piped, and
+  puts its diagnostics on stderr. The skeleton is deliberately *invalid*: every
+  value is `null` or `TODO`, so `ascep validate` reads as the fill-in list. Where
+  a schema disjunction demands a choice no placeholder can make honestly — a
+  workload's sizing basis, a measurement point's context length — `init` names the
+  fields instead of inventing values.
+- `capacity_tiers.<name>.tier` is now pinned to a `const` matching its key.
+  Copying a tier row and forgetting to relabel it previously validated and passed
+  every conformance gate, leaving two rows claiming to be the same tier.
+
 ### Changed
 
 ### Deprecated

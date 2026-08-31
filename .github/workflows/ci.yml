@@ -58,6 +58,11 @@ jobs:
       # is a ticket, so this is the install that has to work.
       - run: pip install -e .
       - run: ascep version
+      # `init` is the first command a new contributor runs. If it needed the extras, the
+      # protocol would be unreachable from exactly the locked-down clusters it targets.
+      - run: |
+          ascep init --layer hardware > /tmp/hw.json
+          python -c "import json; json.load(open('/tmp/hw.json'))"
       - run: |
           ascep size --workload examples/chatbot-10k-dau/workload.json \
                      --kv-tokens 574798 --throughput-tok-s 1459 --gpus-per-replica 2

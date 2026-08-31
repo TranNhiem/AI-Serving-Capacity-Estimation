@@ -75,19 +75,43 @@
       "properties": {
         "theoretical": {
           "$ref": "#/$defs/capacityRow",
-          "description": "Roofline tier (T): bandwidth-bound decode via ascep.capacity.roofline_decode_tok_s; FLOP-bound prefill via roofline_prefill_ttft_s. Always an upper bound."
+          "description": "Roofline tier (T): bandwidth-bound decode via ascep.capacity.roofline_decode_tok_s; FLOP-bound prefill via roofline_prefill_ttft_s. Always an upper bound.",
+          "properties": {
+            "tier": {
+              "const": "theoretical",
+              "description": "Pinned: this row IS the theoretical tier. Copying another row here and forgetting to relabel it is the one way to make the four tiers disagree silently."
+            }
+          }
         },
         "measured": {
           "$ref": "#/$defs/capacityRow",
-          "description": "Best observed tier (M), SLO ignored, via ascep.capacity.capacity_at(tier=Tier.MEASURED)."
+          "description": "Best observed tier (M), SLO ignored, via ascep.capacity.capacity_at(tier=Tier.MEASURED).",
+          "properties": {
+            "tier": {
+              "const": "measured",
+              "description": "Pinned: this row IS the measured tier. Copying another row here and forgetting to relabel it is the one way to make the four tiers disagree silently."
+            }
+          }
         },
         "sustainable": {
           "$ref": "#/$defs/capacityRow",
-          "description": "Measured restricted to points where every SLO gate held for the full window; capacity_at(slo_pass=false) maps to Constraint.SLO."
+          "description": "Measured restricted to points where every SLO gate held for the full window; capacity_at(slo_pass=false) maps to Constraint.SLO.",
+          "properties": {
+            "tier": {
+              "const": "sustainable",
+              "description": "Pinned: this row IS the sustainable tier. Copying another row here and forgetting to relabel it is the one way to make the four tiers disagree silently."
+            }
+          }
         },
         "recommended": {
           "$ref": "#/$defs/capacityRow",
-          "description": "sustainable \u00f7 headroom via capacity_at(headroom=...). The row MUST record its headroom factor."
+          "description": "sustainable \u00f7 headroom via capacity_at(headroom=...). The row MUST record its headroom factor.",
+          "properties": {
+            "tier": {
+              "const": "recommended",
+              "description": "Pinned: this row IS the recommended tier. Copying another row here and forgetting to relabel it is the one way to make the four tiers disagree silently."
+            }
+          }
         }
       }
     },

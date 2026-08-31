@@ -118,6 +118,7 @@ what has to be true for the answer to hold and which assumption breaks it first.
 Then grade and publish the result:
 
 ```bash
+ascep init -o report.json           # a fillable skeleton of every field the schemas require
 ascep validate report.json          # structure and vocabulary, against the schemas
 ascep conformance report.json       # C1–C8, and whether the report overstates itself
 ascep render report.json -o report.md
@@ -136,6 +137,13 @@ ascep size --workload examples/chatbot-10k-dau/workload.json \
 `ascep conformance` is the one to run before you show anyone a number. It reports the level it
 computes — conforming, partial or non-conforming — alongside the level the report *claims*, and
 says so loudly when those differ.
+
+`ascep init` deliberately produces a document that does **not** validate. Every value is `null`
+or `TODO`, so the validation errors are the fill-in list, and the two places where the schemas
+demand a choice — a workload's sizing basis, a measurement point's context length — are printed
+by name rather than guessed at. A skeleton that validated would be one that had invented a
+`gpu_count` on your behalf, and a half-filled report claiming a single-GPU deployment is exactly
+the confusion the rest of this protocol exists to prevent.
 
 Only `validate` needs the optional extras (`pip install 'ascep[run]'`, for `jsonschema`). The
 rest run on a bare install, because the machines where capacity questions get asked are often
