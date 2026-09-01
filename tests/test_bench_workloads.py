@@ -15,11 +15,13 @@ import json
 
 import pytest
 
+from ascep.bench.adapters.base import RequestSpec
 from ascep.bench.workloads import (
     CACHE_POLICIES,
     FixedOutput,
     JsonlCorpus,
     ModelDecidedOutput,
+    MultimodalJsonlCorpus,
     SyntheticCorpus,
     Workload,
 )
@@ -423,3 +425,254 @@ def test_the_temperature_is_passed_through_untouched():
     make two runs of the same declared workload measure different things."""
     assert _workload().for_repetition(0)(0).temperature is None
     assert _workload(temperature=0.0).for_repetition(0)(0).temperature == 0.0
+
+
+# --- multimodal corpora: the markers are honoured, not stripped ---------------------
+
+# A few bytes of magic are enough: nothing in the loader decodes the payload, and the
+# point of these tests is that the loader touches real paths, so the filesystem is not
+# mocked.
+_JPEG = b"\xff\xd8\xff\xe0" + bytes(16)
+_PNG = b"\x89PNG\r\n\x1a\n" + bytes(16)
+
+
+def _mm_record(rel_path, width, height, answer="A lathe.", rid="r1"):
+    return {
+        "image": rel_path,
+        "width": width,
+        "height": height,
+        "conversations": [
+            {"from": "human", "value": "<image>\nWhat is happening?"},
+            {"from": "gpt", "value": answer},
+        ],
+        "id": rid,
+    }
+
+
+def _mm_corpus(tmp_path, records, media=()):
+    root = tmp_path / "media"
+    root.mkdir(exist_ok=True)
+    for rel, data in media:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    path = tmp_path / "mm.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    return path, root
+
+
+def test_a_multimodal_corpus_reports_its_markers_as_honoured_not_stripped(tmp_path):
+    """media_placeholders_stripped=False is not a missing feature here, it is the truth.
+
+    The markers were replaced by real content parts, so the run that happened is the media
+    run. Reporting True would describe the text-only variant -- a workload nobody ran --
+    and a reader comparing the two reports would subtract numbers that were never measured.
+    """
+    path, root = _mm_corpus(
+        tmp_path,
+        [
+            _mm_record("images/a.jpg", 1920, 1080, rid="r1"),
+            _mm_record("images/b.png", 768, 432, rid="r2"),
+        ],
+        media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    assert corpus.size == 2
+    assert corpus.media_placeholders_stripped is False
+
+
+def test_render_content_replaces_the_marker_with_a_real_image_part(tmp_path):
+    """The text part must not still carry "<image>": sent as text it is the five-token
+    prompt MEDIA_PLACEHOLDER exists to refuse, and every input_tokens, TTFT and prefill
+    figure in the report would describe a workload nobody ran."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    parts = corpus.render_content(seed_material=1, prefix=None)
+    assert parts[0] == {"type": "text", "text": "What is happening?"}
+    assert parts[1]["type"] == "image_url"
+    assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_the_data_url_mime_type_is_guessed_from_the_actual_file(tmp_path):
+    """A png mislabeled as jpeg is a request the server may decode differently than the
+    corpus intended, and the wrong prefix would be invisible in every record the run
+    writes."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/b.png", 768, 432)],
+        media=[("images/b.png", _PNG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    parts = corpus.render_content(seed_material=1, prefix=None)
+    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_url_transport_sends_a_fetchable_url_and_embeds_no_bytes(tmp_path):
+    """With transport="url" the server fetches the media, so the request body must carry
+    the prefix-joined URL and nothing else. Exact equality here is what proves no file
+    bytes were read: a base64 payload would be a different transport than the one the
+    manifest declares."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(
+        path=path, media_root=root, transport="url", url_prefix="http://host/media"
+    )
+    parts = corpus.render_content(seed_material=1, prefix=None)
+    assert parts[1] == {
+        "type": "image_url",
+        "image_url": {"url": "http://host/media/images/a.jpg"},
+    }
+
+
+def test_render_refuses_to_turn_a_media_benchmark_into_a_text_one(tmp_path):
+    """Returning the text alone would quietly turn a media benchmark into a text benchmark,
+    and it would still produce plausible numbers -- lower prefill, faster TTFT, all of it
+    measured on a workload nobody declared. The error has to name the way out, or the next
+    caller will catch it and carry on with the text."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    with pytest.raises(ValueError) as exc:
+        corpus.render(seed_material=1, prefix=None)
+    assert "render_content" in str(exc.value)
+    assert "strip_media_placeholders" in str(exc.value)
+
+
+def test_media_shape_reports_absent_video_as_zero_never_as_null(tmp_path):
+    """0.0 means measured and genuinely absent; None means not reported. media_shape feeds
+    the workload declaration directly, so emitting None here would put an unmeasurable
+    claim into a published report -- and section 9.6 makes a reader trust that null really
+    means nobody looked."""
+    reasoning = _mm_record(
+        "images/b.png",
+        768,
+        432,
+        answer={"reasoning": "the workpiece spins", "answer": "A lathe."},
+        rid="r2",
+    )
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080, rid="r1"), reasoning],
+        media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    assert corpus.media_shape() == {
+        "images_per_request": 1.0,
+        "videos_per_request": 0.0,
+        "records": 2,
+        "records_with_reasoning": 1,
+        "image_resolution_mix": [
+            {"width": 768, "height": 432, "share": 0.5},
+            {"width": 1920, "height": 1080, "share": 0.5},
+        ],
+    }
+
+
+def test_a_record_whose_markers_and_media_disagree_is_refused_with_counts_and_line(tmp_path):
+    """Silently skipping the record is exactly the failure media_arrival_check exists to
+    catch after the fact: the run would publish a media capacity figure measured on less
+    media than it claims. Refusing at load time is cheaper than discovering it in a
+    report, and the error has to say which line and how far apart the counts were."""
+    bad = _mm_record("images/a.jpg", 1920, 1080, rid="r2")
+    bad["conversations"][0]["value"] = "<image>\n<image>\nWhat is happening?"
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080, rid="r1"), bad],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    with pytest.raises(ValueError) as exc:
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    message = str(exc.value)
+    assert "line 2" in message
+    assert "2 <image>" in message
+    assert "1 image" in message
+
+
+def test_a_missing_media_file_is_refused_with_its_path_and_line(tmp_path):
+    """A record whose media cannot be read is a media benchmark quietly becoming a text
+    one -- the failure media_arrival_check exists to catch after the fact. Skipping it
+    would publish a media capacity figure measured on less media than the report claims,
+    so the loader refuses and names the path it could not find."""
+    missing = _mm_record("images/gone.jpg", 1920, 1080, rid="r2")
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080, rid="r1"), missing],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    with pytest.raises(ValueError) as exc:
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    message = str(exc.value)
+    assert "gone.jpg" in message
+    assert "line 2" in message
+
+
+def test_an_unknown_transport_is_refused(tmp_path):
+    """The serving layer declares image_input_transport from the same vocabulary, so a
+    transport outside it is one the report cannot name -- not a weaker option to coerce."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    with pytest.raises(ValueError, match="transport"):
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="ftp")
+
+
+def test_url_transport_without_a_url_prefix_is_refused(tmp_path):
+    """Without url_prefix the corpus's relative paths resolve to nothing the server can
+    fetch; accepting it would build requests whose media never arrives and report the
+    resulting text-only answers as a media run."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    with pytest.raises(ValueError, match="url_prefix"):
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="url")
+
+
+def test_max_records_truncates_the_corpus_and_the_digest_says_so(tmp_path):
+    """Two runs over "the same corpus" that saw different numbers of records are not
+    comparable, and a digest that ignored the cap would assert they were. Truncation is a
+    legitimate smoke run, but it is a different corpus and both the digest and the draw
+    rule have to say so."""
+    records = [
+        _mm_record("images/a.jpg", 1920, 1080, rid="r1"),
+        _mm_record("images/a.jpg", 1920, 1080, rid="r2"),
+        _mm_record("images/a.jpg", 1920, 1080, rid="r3"),
+    ]
+    path, root = _mm_corpus(tmp_path, records, media=[("images/a.jpg", _JPEG)])
+    full = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    capped = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64", max_records=2)
+    assert capped.size == 2
+    assert "truncated" in capped.sampler_rule
+    assert capped.digest != full.digest
+
+
+def test_a_text_only_source_produces_a_byte_identical_request_spec(tmp_path):
+    """render_content was added to PromptSource and Workload.next_spec now calls it instead
+    of render. Every published run depends on the text path being untouched: a change here
+    would silently rewrite results that are already citable. The content must stay a plain
+    string -- a list of parts would be a different request on the wire -- and the id, the
+    token budget and the extras must be exactly what the old code path produced."""
+    path = _corpus_file(tmp_path, ["only prompt"])
+    corpus = JsonlCorpus(path=path, field="question")
+    spec = _workload(source=corpus, seed=11).for_repetition(2)(3)
+    assert spec == RequestSpec(
+        request_id="t-r2-i3",
+        messages=[{"role": "user", "content": "only prompt"}],
+        max_tokens=128,
+        temperature=None,
+        extra={"ignore_eos": True},
+    )
+    assert isinstance(spec.messages[0]["content"], str)

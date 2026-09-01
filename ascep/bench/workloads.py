@@ -11,8 +11,10 @@ calls.
 from __future__ import annotations
 
 import abc
+import base64
 import hashlib
 import json
+import mimetypes
 import random
 import re
 from dataclasses import dataclass
@@ -30,6 +32,12 @@ CACHE_POLICIES = frozenset({"disabled", "cleared", "unique-prefix", "declared-wo
 #: endpoint turns a fifteen-hundred-token prompt into a five-token one -- so input_tokens,
 #: TTFT and every prefill figure in the report describe a workload nobody ran.
 MEDIA_PLACEHOLDER = re.compile(r"<\s*/?\s*(image|img|video|audio|vision)[^>]*>", re.IGNORECASE)
+
+#: Per-modality marker patterns, so a multimodal reader can check that the text's markers
+#: and the record's media references agree one modality at a time. A record with two
+#: markers and one image sends a prompt the model cannot align.
+_IMAGE_MARKER = re.compile(r"<\s*/?\s*(image|img)[^>]*>", re.IGNORECASE)
+_VIDEO_MARKER = re.compile(r"<\s*/?\s*video[^>]*>", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,16 @@ class PromptSource(abc.ABC):
     @abc.abstractmethod
     def render(self, *, seed_material: int, prefix: str | None) -> str:
         """Produce the prompt text for one request, deterministically from seed_material."""
+
+    def render_content(self, *, seed_material: int, prefix: str | None) -> str | list[dict]:
+        """Produce the message content for one request: plain text, or structured parts.
+
+        Concrete rather than abstract for the same reason field_path is: a third party's
+        text-only source must keep working now that the protocol can carry media, and for
+        such a source the content of a request is exactly the text render, so the default
+        is not a convenience but the correct answer.
+        """
+        return self.render(seed_material=seed_material, prefix=prefix)
 
 
 @dataclass
@@ -291,6 +309,300 @@ class JsonlCorpus(PromptSource):
         return f"{prefix} {text}" if prefix else text
 
 
+def _media_list(record: dict, key: str, lineno: int) -> list[str]:
+    """Normalise a record's ``image`` or ``video`` entry to a list of relative paths.
+
+    The corpus writes a lone string for the common one-image record and a list when there
+    are several; anything else is a record this reader cannot represent.
+    """
+    value = record.get(key)
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(v, str) for v in value):
+        return list(value)
+    raise ValueError(
+        f"line {lineno}: {key!r} must be a relative path or a list of them, "
+        f"got {type(value).__name__}"
+    )
+
+
+@dataclass(frozen=True)
+class _MediaRef:
+    """One media reference with the geometry the corpus declares inline for it. The token
+    cost of an image request is predictable from width and height without opening the
+    file, so they are kept rather than re-derived."""
+
+    kind: str
+    rel_path: str
+    width: int | None
+    height: int | None
+
+
+@dataclass(frozen=True)
+class _MmRecord:
+    """One parsed corpus line: the prompt text with its markers removed, the media those
+    markers stood for, and whether the gpt turn marked the record as thinking-mode."""
+
+    text: str
+    media: tuple[_MediaRef, ...]
+    has_reasoning: bool
+
+
+@dataclass
+class MultimodalJsonlCorpus(PromptSource):
+    """A LLaVA/ShareGPT-shaped JSONL corpus whose media markers are honoured, not stripped.
+
+    Each record names its media by relative path and carries the prompt in a conversation
+    list, with an ``<image>`` or ``<video>`` marker where the content belongs. This reader
+    removes the marker from the text and emits a real content part in its place: sending
+    the marker itself is the five-token prompt MEDIA_PLACEHOLDER exists to refuse, and
+    dropping the media is a text benchmark wearing a media benchmark's name.
+    """
+
+    path: Path
+    #: The corpus references its media relative to this root; without one the paths in
+    #: the file resolve against whatever directory the driver happened to start in.
+    media_root: Path
+    #: How the media reaches the server, mirroring the serving layer's
+    #: image_input_transport: the bytes inline as a data URL, or a URL the server fetches.
+    transport: str
+    #: Base URL the server fetches from when transport is "url". Forbidden otherwise:
+    #: with base64 the bytes travel in the request body and a prefix would be dead
+    #: configuration that misdescribes the run.
+    url_prefix: str | None = None
+    #: Dotted path to the conversation list; the prompt is the first turn from "human".
+    prompt_field: str = "conversations"
+    #: Cap for a smoke run. Truncation changes the corpus, so it changes the digest and
+    #: is named in the sampler rule.
+    max_records: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.transport not in ("base64", "url"):
+            raise ValueError(
+                f"transport must be 'base64' or 'url', got {self.transport!r}; the serving "
+                "layer declares image_input_transport from the same vocabulary and "
+                "anything else is a transport the report cannot name"
+            )
+        if self.transport == "url" and not self.url_prefix:
+            raise ValueError(
+                "transport 'url' requires url_prefix: the server fetches the media from "
+                "that base URL, and without it the corpus's relative paths resolve to nothing"
+            )
+        if self.transport != "url" and self.url_prefix is not None:
+            raise ValueError(
+                "url_prefix is only meaningful with transport 'url'; with 'base64' the "
+                "bytes travel in the request body and the prefix would never be used"
+            )
+        if self.max_records is not None and (
+            not isinstance(self.max_records, int) or self.max_records <= 0
+        ):
+            raise ValueError(
+                f"max_records must be a positive int or None, got {self.max_records!r}"
+            )
+        self.path = Path(self.path)
+        self.media_root = Path(self.media_root)
+        data = self.path.read_bytes()
+        # The digest covers what the server receives, not only what is on disk: the same
+        # file over a different transport, or truncated to a different max_records, is a
+        # different workload.
+        digest = hashlib.sha256()
+        digest.update(data)
+        digest.update(f"transport={self.transport};max_records={self.max_records}".encode())
+        self._digest = digest.hexdigest()
+        steps = self.prompt_field.split(".")
+        records: list[_MmRecord] = []
+        truncated = False
+        for lineno, line in enumerate(data.decode("utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            if self.max_records is not None and len(records) >= self.max_records:
+                truncated = True
+                break
+            records.append(self._parse_record(json.loads(line), lineno, steps))
+        if not records:
+            raise ValueError(f"corpus {self.path} is empty")
+        self._records = records
+        self._truncated = truncated
+
+    def _parse_record(self, record: dict, lineno: int, steps: list[str]) -> _MmRecord:
+        turns = _resolve(record, steps, lineno, self.prompt_field)
+        if not isinstance(turns, list):
+            raise ValueError(
+                f"line {lineno}: field {self.prompt_field!r} must be a list of "
+                f"conversation turns, got {type(turns).__name__}"
+            )
+        text: str | None = None
+        has_reasoning = False
+        for turn in turns:
+            if not isinstance(turn, dict):
+                raise ValueError(
+                    f"line {lineno}: field {self.prompt_field!r} -- a conversation turn "
+                    f"must be an object, got {type(turn).__name__}"
+                )
+            speaker = turn.get("from")
+            value = turn.get("value")
+            if speaker == "human" and text is None:
+                if not isinstance(value, str):
+                    raise ValueError(
+                        f"line {lineno}: the human turn's value must be text, "
+                        f"got {type(value).__name__}"
+                    )
+                text = value
+            # A dict-shaped gpt value carrying "reasoning" is the corpus declaring a
+            # thinking-mode record; counted so the run's reasoning_mode is declared
+            # from evidence rather than guessed.
+            if speaker == "gpt" and isinstance(value, dict) and "reasoning" in value:
+                has_reasoning = True
+        if text is None:
+            raise ValueError(
+                f"line {lineno}: no human turn in {self.prompt_field!r}; the prompt has "
+                "nowhere to come from"
+            )
+        images = _media_list(record, "image", lineno)
+        videos = _media_list(record, "video", lineno)
+        image_markers = len(_IMAGE_MARKER.findall(text))
+        video_markers = len(_VIDEO_MARKER.findall(text))
+        if image_markers != len(images) or video_markers != len(videos):
+            raise ValueError(
+                f"line {lineno}: {image_markers} <image> and {video_markers} <video> "
+                f"marker(s) but {len(images)} image and {len(videos)} video "
+                "reference(s); a record whose markers and media disagree sends a prompt "
+                "the model cannot align, and the resulting token count is meaningless"
+            )
+        width = record.get("width")
+        height = record.get("height")
+        if not isinstance(width, int) or not isinstance(height, int):
+            width = height = None
+        media: list[_MediaRef] = []
+        for kind, rel_paths in (("image", images), ("video", videos)):
+            for rel in rel_paths:
+                resolved = self.media_root / rel
+                if not resolved.is_file():
+                    # Refusing at load is cheaper than discovering the substitution in a
+                    # report: a skipped record is a media benchmark quietly becoming a
+                    # text one, the failure media_arrival_check exists to catch after
+                    # the fact.
+                    raise ValueError(f"line {lineno}: media file {resolved} does not exist")
+                media.append(
+                    _MediaRef(
+                        kind=kind,
+                        rel_path=rel,
+                        width=width if kind == "image" else None,
+                        height=height if kind == "image" else None,
+                    )
+                )
+        return _MmRecord(
+            text=MEDIA_PLACEHOLDER.sub(" ", text).strip(),
+            media=tuple(media),
+            has_reasoning=has_reasoning,
+        )
+
+    @property
+    def name(self) -> str:
+        return self.path.name
+
+    @property
+    def digest(self) -> str:
+        return self._digest
+
+    @property
+    def size(self) -> int:
+        return len(self._records)
+
+    @property
+    def absorbs_prefix(self) -> bool:
+        # File text is fixed, so the prefix lengthens the text part of every request.
+        return False
+
+    @property
+    def sampler_rule(self) -> str:
+        if self._truncated:
+            # A corpus silently reduced to its first N records is a different corpus;
+            # the draw rule has to say so.
+            return (
+                f"uniform-with-replacement over the first {len(self._records)} "
+                "records (truncated by max_records)"
+            )
+        return "uniform-with-replacement"
+
+    @property
+    def field_path(self) -> str:
+        return self.prompt_field
+
+    @property
+    def media_placeholders_stripped(self) -> bool:
+        # The markers were honoured -- replaced by real content parts -- not stripped.
+        # Reporting True here would misdescribe the run as the text-only variant.
+        return False
+
+    def render(self, *, seed_material: int, prefix: str | None) -> str:
+        raise ValueError(
+            "MultimodalJsonlCorpus produces structured content parts, not plain text; "
+            "returning the text alone would quietly turn a media benchmark into a text "
+            "benchmark. Use render_content, or JsonlCorpus with "
+            "strip_media_placeholders=True for the declared text-only variant."
+        )
+
+    def _media_part(self, ref: _MediaRef) -> dict:
+        if self.transport == "url":
+            url = f"{self.url_prefix.rstrip('/')}/{ref.rel_path}"
+        else:
+            resolved = self.media_root / ref.rel_path
+            mime, _ = mimetypes.guess_type(resolved.name)
+            if mime is None:
+                raise ValueError(
+                    f"cannot guess a MIME type for {resolved}; refusing to default to "
+                    "jpeg, because a wrong type is a request the server may decode "
+                    "differently than the corpus intended"
+                )
+            encoded = base64.b64encode(resolved.read_bytes()).decode("ascii")
+            url = f"data:{mime};base64,{encoded}"
+        key = "image_url" if ref.kind == "image" else "video_url"
+        return {"type": key, key: {"url": url}}
+
+    def render_content(self, *, seed_material: int, prefix: str | None) -> list[dict]:
+        rng = random.Random(seed_material)
+        record = self._records[rng.randrange(len(self._records))]
+        text = f"{prefix} {record.text}" if prefix else record.text
+        parts: list[dict] = [{"type": "text", "text": text}]
+        parts.extend(self._media_part(ref) for ref in record.media)
+        return parts
+
+    def media_shape(self) -> dict:
+        """The media-shape declaration chapter 9 section 9.8 requires alongside any media
+        throughput figure, computed from the corpus rather than recollected.
+
+        Video duration is deliberately absent: reading it needs a demuxer, which would
+        break this module's stdlib-only promise, and chapter 9 section 9.3 already
+        requires the effective sampling rate to be measured from the corpus and declared
+        rather than derived here. A 0 below means the modality was measured and is
+        absent; it is never None, because section 9.6 makes null mean "not reported".
+        """
+        n = len(self._records)
+        total_images = sum(1 for r in self._records for m in r.media if m.kind == "image")
+        total_videos = sum(1 for r in self._records for m in r.media if m.kind == "video")
+        resolutions: dict[tuple[int, int], int] = {}
+        for r in self._records:
+            for m in r.media:
+                if m.kind == "image" and m.width is not None and m.height is not None:
+                    key = (m.width, m.height)
+                    resolutions[key] = resolutions.get(key, 0) + 1
+        total_sized = sum(resolutions.values())
+        mix = [
+            {"width": w, "height": h, "share": round(count / total_sized, 4)}
+            for (w, h), count in sorted(resolutions.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        return {
+            "images_per_request": total_images / n,
+            "videos_per_request": total_videos / n,
+            "image_resolution_mix": mix,
+            "records": n,
+            "records_with_reasoning": sum(1 for r in self._records if r.has_reasoning),
+        }
+
+
 @dataclass(frozen=True)
 class Workload:
     """Everything section 7.2 and 7.3 require a run to declare before it may generate a
@@ -361,7 +673,7 @@ class Workload:
                 # repetition 0's prompts measures cache state, not variance.
                 token = random.Random(material).getrandbits(48)
                 prefix = f"upx-{self.seed}-{tag}-{index}-{token:012x}"
-            text = self.source.render(seed_material=material, prefix=prefix)
+            content = self.source.render_content(seed_material=material, prefix=prefix)
             if isinstance(self.output_plan, FixedOutput):
                 max_tokens: int | None = self.output_plan.output_tokens
                 extra = {"ignore_eos": self.output_plan.ignore_eos}
@@ -374,7 +686,7 @@ class Workload:
                 # Encodes run, window and index because records from every window of every
                 # rung share one bundle; a collision would let dedupe drop a real request.
                 request_id=f"{self.run_label}-{tag}-i{index}",
-                messages=[{"role": "user", "content": text}],
+                messages=[{"role": "user", "content": content}],
                 max_tokens=max_tokens,
                 temperature=self.temperature,
                 extra=extra,
