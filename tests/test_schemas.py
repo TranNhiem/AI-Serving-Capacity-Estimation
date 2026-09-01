@@ -398,3 +398,51 @@ def test_a_reported_itl_percentile_must_name_its_population():
     assert not list(validator.iter_errors(labelled))
 
     assert list(validator.iter_errors(with_first_result(itl_population="mean-of-medians")))
+
+
+# --- the pixel budget is a total count, and notes carry value-justifications ----------
+
+SERVING_SCHEMA = json.loads((ROOT / "schemas" / "serving.schema.json").read_text())
+HARDWARE_SCHEMA = json.loads((ROOT / "schemas" / "hardware.schema.json").read_text())
+EXAMPLE_REPORT = json.loads((ROOT / "examples" / "moe-26b-h100-tp2" / "report.json").read_text())
+
+
+def test_the_pixel_budget_is_named_for_the_quantity_it_measures():
+    """A field named like an edge length invites a value 4,096 times too small, on the one
+    serving setting chapter 9 says binds silently; the name must say total pixels."""
+    block = SERVING_SCHEMA["properties"]["media_preprocessing"]
+    assert "image_pixel_budget_px" in block["required"]
+    assert "image_pixel_budget_px" in block["properties"]
+    assert "image_longest_edge_px" not in json.dumps(SERVING_SCHEMA)
+
+
+def test_every_declaration_layer_takes_notes_on_its_declared_values():
+    """Chapter 9.10 says every declaration layer gains the object. A layer that missed the
+    rename would reject the note an author was told to write, at the moment they write it."""
+    for name in ("hardware", "model", "serving", "workload"):
+        schema = json.loads((ROOT / "schemas" / f"{name}.schema.json").read_text())
+        notes = schema["properties"].get("notes")
+        assert notes, f"{name} declares no notes object"
+        assert notes["additionalProperties"] == {"type": "string", "minLength": 1}
+
+
+def test_a_note_on_a_declared_value_validates_and_the_suffix_spelling_does_not():
+    """notes is the one slot for value-justifications, so additionalProperties: false must
+    still refuse <field>_note -- otherwise the rejected mechanism validates too, and a
+    typo'd note key survives exactly where review cannot see it."""
+    validator = Validator(HARDWARE_SCHEMA)
+    hardware = EXAMPLE_REPORT["hardware"]
+    assert not list(validator.iter_errors(hardware)), "the published example must still validate"
+    noted = {**hardware, "notes": {"cpu_cores": "Cluster QoS allocation, not the node count"}}
+    assert not list(validator.iter_errors(noted))
+    suffix = {**hardware, "cpu_cores_note": "the rejected mechanism, typed anyway"}
+    errors = list(validator.iter_errors(suffix))
+    assert errors and any(e.validator == "additionalProperties" for e in errors)
+
+
+def test_an_empty_note_is_refused_because_it_says_nothing():
+    """A key with no sentence behind it is the (U)-tag failure repeated: the slot is filled,
+    review sees a note, and the reader learns nothing about why the value is what it is."""
+    validator = Validator(HARDWARE_SCHEMA)
+    blank = {**EXAMPLE_REPORT["hardware"], "notes": {"cpu_cores": ""}}
+    assert list(validator.iter_errors(blank))

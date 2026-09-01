@@ -136,7 +136,7 @@
         "null"
       ],
       "minimum": 1,
-      "description": "Logical CPU cores per node."
+      "description": "Logical CPU cores per node. Under an image or video workload the host CPU decodes and patchifies every image, so this is a capacity input, not an inventory fact: C1 then requires a notes entry saying whether the number is the machine's core count or an allocation's."
     },
     "cpu_cores_u_reason": {
       "type": "string",
@@ -198,6 +198,14 @@
     "model_load_path_u_reason": {
       "type": "string",
       "description": "(U) justification required when model_load_path is null (C1)."
+    },
+    "notes": {
+      "type": "object",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that cpu_cores is a cluster allocation rather than the node's core count. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade. Optional except where a rule says otherwise: C1 requires a cpu_cores note on any report declaring image or video input.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   }
 }

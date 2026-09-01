@@ -542,6 +542,14 @@
     "video_temporal_merge_u_reason": {
       "type": "string",
       "description": "(U) justification required when video_temporal_merge is null (C1)."
+    },
+    "notes": {
+      "type": "object",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that a vision geometry was read from the served checkpoint's own preprocessor config rather than carried over from a sibling model. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "allOf": [

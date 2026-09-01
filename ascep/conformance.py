@@ -195,6 +195,23 @@ def _scaling_rows(report: dict) -> Iterator[tuple[int, dict]]:
                 yield index, row
 
 
+def _input_modalities(report: dict) -> list:
+    """The model layer's declared input modalities, normalised to a list.
+
+    Section 9's obligations gate on image or video appearing in this one list, and two
+    readers deriving it independently would drift on exactly the malformed cases --
+    absent key, string instead of list -- that a grader must survive without raising.
+    """
+    modalities = _get(_get(report, "model"), "input_modalities")
+    return modalities if isinstance(modalities, list) else []
+
+
+def _report_declares_media(report: dict) -> bool:
+    """Whether section 9's modality gate fires: the model declares image or video input."""
+    modalities = _input_modalities(report)
+    return "image" in modalities or "video" in modalities
+
+
 # ----------------------------------------------------------------------- C1 completeness
 
 
@@ -206,6 +223,7 @@ def _check_c1(report: dict, findings: list[Finding]) -> None:
             if isinstance(entry, dict) and isinstance(entry.get("field"), str):
                 assumption_fields.add(entry["field"])
     _walk_nulls(report, "", assumption_fields, findings)
+    _check_c1_cpu_cores_note(report, findings)
     _walk_placeholders(report, "", findings)
     _check_schema(report, findings)
 
@@ -342,6 +360,9 @@ _TAG_PADDING = " \t.:;-—,"
 
 
 def _null_is_justified(node: dict, key: str, path: str, assumption_fields: set) -> bool:
+    # A 'notes' entry beside the null is deliberately not consulted: notes explain why a
+    # declared value is what it is. Letting one satisfy C1 would give a missing value a way
+    # to look justified while never saying the (U) that marks it as unknown.
     reason = node.get(key + _U_REASON_SUFFIX)
     # The tag alone is not the justification, the sentence after it is. Accepting a bare "(U)"
     # turned C1 into a formality: pasting four characters beside every null cleared the whole
@@ -351,6 +372,44 @@ def _null_is_justified(node: dict, key: str, path: str, assumption_fields: set) 
     # Entries may name the full dotted path or, for rows inside arrays, the leaf field.
     leaf = path.rsplit(".", 1)[-1]
     return any(field in (path, leaf) for field in assumption_fields)
+
+
+def _check_c1_cpu_cores_note(report: dict, findings: list[Finding]) -> None:
+    """Require a media report to say what its declared cpu_cores actually is.
+
+    The null walk cannot carry this obligation, because the value is never null in
+    practice: under a media workload the host CPU decodes and patchifies every image, so
+    cpu_cores is a capacity input, and a bare integer is the compliant-looking shape of the
+    omission. Without a note saying whether the number is the machine's core count or an
+    allocation's, the report publishes a ceiling no reader can attribute to the GPU or the
+    host.
+    """
+    if not _report_declares_media(report):
+        return
+    hardware = _get(report, "hardware")
+    if not isinstance(hardware, dict) or hardware.get("cpu_cores") is None:
+        # A null cpu_cores is the null walk's business, which already demands its (U)
+        # reason; firing here too would report one omission as two findings.
+        return
+    notes = hardware.get("notes")
+    note = notes.get("cpu_cores") if isinstance(notes, dict) else None
+    if isinstance(note, str) and note.strip():
+        return
+    findings.append(
+        Finding(
+            rule="C1",
+            severity="error",
+            path="hardware.cpu_cores",
+            message=(
+                "Add a note for hardware.cpu_cores: put a 'cpu_cores' key in the hardware "
+                "layer's 'notes' object saying whether this is the machine's core count or "
+                "an allocation's. This report declares image or video input, so the host CPU "
+                "decodes and patchifies every image and cpu_cores is a capacity input, not "
+                "an inventory fact; without the note the report has published a CPU-bound "
+                "ceiling nobody can attribute."
+            ),
+        )
+    )
 
 
 def _check_schema(report: dict, findings: list[Finding]) -> None:
@@ -609,9 +668,7 @@ def _check_c4_media_and_reasoning(report: dict, findings: list[Finding]) -> None
     run = _get(report, "run")
     if not isinstance(workload, dict):
         return
-    modalities = _get(model, "input_modalities")
-    if not isinstance(modalities, list):
-        modalities = []
+    modalities = _input_modalities(report)
     reasoning_modes = _get(model, "reasoning_modes")
     if not isinstance(reasoning_modes, list):
         reasoning_modes = []

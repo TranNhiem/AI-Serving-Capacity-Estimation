@@ -244,7 +244,7 @@
       "description": "Deployment-level media preprocessing: sampling rate, frame cap and pixel budget are fixed at server start and shared by every client of the endpoint, exactly like max_model_len, because the engine measured for this protocol refuses per-request media overrides (addendum A1). OPTIONAL at this level because a text-only deployment has no media preprocessing to declare; the obligation for a multimodal deployment to declare it is enforced in the report schema, not in this file.",
       "additionalProperties": false,
       "required": [
-        "image_longest_edge_px",
+        "image_pixel_budget_px",
         "per_request_override_supported"
       ],
       "properties": {
@@ -264,13 +264,13 @@
           "minimum": 1,
           "description": "Hard cap on sampled frames per request, fixed at server start. Null means unbounded, which means the context length is unbounded."
         },
-        "image_longest_edge_px": {
+        "image_pixel_budget_px": {
           "type": [
             "integer",
             "null"
           ],
           "minimum": 1,
-          "description": "Pixel budget of the preprocessor per image or per sampled frame set, fixed at server start. This is the setting that binds silently: when measured prompt tokens stop responding to input size, the number being measured is this cap, not the workload, and a capacity model fed that column sizes the cluster for a workload nobody can run. Required whenever the served model accepts image or video; null only with a (U) reason."
+          "description": "Total pixel budget of the preprocessor per image or per sampled frame set, fixed at server start: a count of pixels (width times height per image, or the summed frame budget after sampling), never an edge length. A realistic value has the shape of 16777216 (4096 x 4096); a reader who mistakes the quantity for a longest-edge limit writes 4096, which as a pixel budget is a 64 x 64 image, roughly 4,096 times too small. This is the setting that binds silently: when measured prompt tokens stop responding to input size, the number being measured is this cap, not the workload, and a capacity model fed that column sizes the cluster for a workload nobody can run. Required whenever the served model accepts image or video; null only with a (U) reason."
         },
         "mm_processor_cache_gb": {
           "type": [
@@ -283,6 +283,14 @@
         "per_request_override_supported": {
           "type": "boolean",
           "description": "Whether the engine honours per-request media-processing overrides at all. The default assumption is false: the engine measured for this protocol answers per-request mm_processor_kwargs with HTTP 400, so declaring true while clients send per-request settings publishes a workload the server did not run."
+        },
+        "notes": {
+          "type": "object",
+          "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that mm_processor_cache_gb is 0 on purpose, so every request pays host-side decode and patchify rather than hiding preprocessing behind a cache. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -302,6 +310,14 @@
     "image_input_transport_u_reason": {
       "type": "string",
       "description": "(U) justification required when image_input_transport is null (C1)."
+    },
+    "notes": {
+      "type": "object",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that an attention backend was a forced substitution rather than a tuning choice, so a reader can tell a fallback from a decision. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   }
 }

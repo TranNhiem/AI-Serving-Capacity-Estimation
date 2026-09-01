@@ -499,3 +499,99 @@ def test_a_malformed_modalities_value_and_a_missing_workload_do_not_crash_c4(rep
     ):
         assert ("C4", "error", path) not in findings
         assert ("C4", "warning", path) not in findings
+
+
+# --- C1: notes explain declared values, never nulls ------------------------------------
+
+
+def test_a_note_beside_a_null_does_not_justify_the_null(report):
+    """notes explain why a declared value is what it is; they are not a (U) reason. A null
+    justified by a note alone would let a report carry an unknown with prose that never
+    admits the value is missing -- the skeleton would validate."""
+    report["serving"]["batching_mode"] = None
+    report["serving"].pop("batching_mode_u_reason", None)
+    report["serving"]["notes"] = {"batching_mode": "deployment runs whatever the engine picks"}
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "serving.batching_mode" in errors
+
+
+def test_a_note_on_a_declared_value_is_not_flagged_as_stale(report):
+    """A note beside a solid number must not be reported like a stale (U) reason: the value
+    is declared, the note says why, and there is nothing to remove."""
+    report["serving"]["notes"] = {"batching_mode": "continuous is the only mode this engine has"}
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "serving.notes" not in errors
+    assert "serving.batching_mode" not in errors
+
+
+def _declare_image_input(report: dict) -> dict:
+    """Turn the text-only example into a schema-valid image report with cores declared.
+
+    The published example leaves cpu_cores null with a (U) reason, which is the one shape
+    the note rule deliberately stays out of, so a test that only flipped input_modalities
+    would pass while measuring nothing. Declaring image also pulls in the model layer's
+    vision gates; without them the report is schema-invalid and every C1 finding is the
+    schema error, not the rule under test.
+    """
+    report["model"]["input_modalities"] = ["text", "image"]
+    report["model"]["image_token_policy"] = "fixed-grid"
+    report["model"]["image_tokens_fixed"] = 256
+    report["model"]["vision_encoder_params"] = 675_000_000
+    report["model"]["vision_encoder_replicated_per_rank"] = True
+    report["hardware"]["cpu_cores"] = 12
+    report["hardware"].pop("cpu_cores_u_reason", None)
+    return report
+
+
+def test_the_multimodal_fixture_is_schema_valid_so_the_note_rule_is_what_is_measured(report):
+    """If declaring image left the report schema-invalid, the tests below would see a C1
+    schema error and could pass with the note rule deleted."""
+    _declare_image_input(report)
+    assert not [f for f in check(report).errors if f.path.startswith("$.")]
+
+
+def test_a_multimodal_report_without_a_cpu_cores_note_is_a_c1_error(report):
+    """Under a media workload the host CPU decodes every image, so a bare integer here
+    publishes a ceiling nobody can attribute, and the finding must say that."""
+    _declare_image_input(report)
+    errors = {f.path: f.message for f in check(report).errors if f.rule == "C1"}
+    assert "hardware.cpu_cores" in errors
+    assert "capacity input" in errors["hardware.cpu_cores"]
+    assert "notes" in errors["hardware.cpu_cores"]
+
+
+def test_a_cpu_cores_note_satisfies_the_multimodal_obligation(report):
+    """The obligation is a note, nothing more: one sentence saying what the number is."""
+    _declare_image_input(report)
+    report["hardware"]["notes"] = {"cpu_cores": "Cluster QoS grants 12 per GPU; node has 112."}
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "hardware.cpu_cores" not in errors
+
+
+def test_a_typoed_note_key_does_not_satisfy_the_cpu_cores_obligation(report):
+    """notes keys are free-form strings, so the schema cannot catch cpu_corees; the
+    obligation keys on the field name, or the typo would publish the same unattributed
+    ceiling the rule exists against."""
+    _declare_image_input(report)
+    report["hardware"]["notes"] = {"cpu_corees": "cluster QoS allocation, misspelt"}
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "hardware.cpu_cores" in errors
+
+
+def test_a_null_cpu_cores_is_reported_once_as_a_missing_value_not_a_missing_note(report):
+    """Two findings for one omission trains a reader to skim C1. The null walk owns the
+    null; the note rule owns the declared integer nobody attributed."""
+    _declare_image_input(report)
+    report["hardware"]["cpu_cores"] = None
+    paths = [f.path for f in check(report).errors if f.rule == "C1"]
+    assert paths.count("hardware.cpu_cores") == 1
+
+
+def test_a_text_only_report_needs_no_cpu_cores_note(report):
+    """Without media the host CPU is not co-limiting the way chapter 9 measures, so
+    requiring the note here would be paperwork on reports that are already correct."""
+    report["hardware"]["cpu_cores"] = 12
+    report["hardware"].pop("cpu_cores_u_reason", None)
+    assert report["model"]["input_modalities"] == ["text"]
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "hardware.cpu_cores" not in errors

@@ -513,6 +513,14 @@
     "max_output_tokens_u_reason": {
       "type": "string",
       "description": "(U) justification required when max_output_tokens is null (C1)."
+    },
+    "notes": {
+      "type": "object",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that an input length is one observed datapoint rather than a fleet average. Complements the (U) mechanism, which can only justify a null; before this object existed, authors wrote value-justifications into _u_reason fields beside values that were not null, which is the abuse it replaces. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   }
 }

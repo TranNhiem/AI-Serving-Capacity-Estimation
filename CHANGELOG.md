@@ -15,6 +15,28 @@ cross-version comparisons valid.
 
 ### Added
 
+- **Declared-value notes (`notes`).** Every declaration layer -- hardware,
+  model, serving, workload, and the nested `media_preprocessing` block -- gains
+  an optional `notes` object, keyed by field name, recording why a non-null
+  declared value is what it is: the attention backend that was a forced
+  substitution rather than a tuning choice, the `mm_processor_cache_gb` of 0 set
+  on purpose so preprocessing cost stays inside the measurement, the `cpu_cores`
+  that is a cluster allocation and not the node's. The `(U)` mechanism could
+  only ever justify a null, and authors were already abusing `(U)` reason fields
+  to carry value-justifications; a convention people have to abuse is a missing
+  feature. Three rules keep notes honest: a note never substitutes for a value
+  (a null still needs its `(U)` sentence, and a note beside a null does not
+  satisfy C1), a note is not evidence and upgrades no tier, and a note lives in
+  one named object per layer so its presence is visible without diffing against
+  the schema. See [§9.10](protocol/09-multimodal-and-reasoning.md).
+- **Breaking for existing multimodal reports: C1 now requires a note on the
+  hardware layer's `cpu_cores` whenever `input_modalities` contains image or
+  video.** Under a media workload the host CPU decodes and patchifies every
+  image, so the core count is a capacity input rather than an inventory fact --
+  measured at 11.33 of 12 cores busy while the GPU sat at 91% at concurrency 32,
+  the host was co-limiting and the ceiling was unattributable to a reader. An
+  existing multimodal report without the note now grades non-conforming. Nothing
+  published here is affected: the only example report is text-only.
 - **Multimodal and reasoning-mode capacity**, as [chapter 9](protocol/09-multimodal-and-reasoning.md)
   plus the declarations and formulas it governs. `input_modalities` and
   `reasoning_modes` are now required and non-nullable in the model layer, because a
@@ -78,6 +100,20 @@ cross-version comparisons valid.
 
 ### Changed
 
+- **Breaking rename in `media_preprocessing`: the pixel-budget field is now
+  `image_pixel_budget_px`.** The 0.1.0 name, "image_longest_edge_px", described
+  something the field is not, and the two quantities differ by orders of
+  magnitude: on the H100 VLM run that prompted this the correct value was
+  16,777,216 (4096 x 4096, a total-pixel cap), while a reader following the old
+  name writes 4096 -- which, as a pixel budget, is a 64 x 64 image, roughly
+  4,096 times too small -- into the one field chapter 9 says binds silently.
+  Two days after 0.1.0, before the first multimodal worked example bakes the
+  name in, is the last cheap moment to fix it. The old name is not aliased and
+  is refused outright: a schema that accepts both names accepts both meanings.
+  Reports declaring media preprocessing under 0.1.0 must rename the field; the
+  schema description and chapter 9 now name the quantity explicitly. No example
+  under `examples/` is affected -- the published report is text-only and
+  declares no `media_preprocessing` block.
 - **C4 (context binding) now covers media and reasoning.** A throughput figure MUST
   additionally carry the media shape it was measured at, the `reasoning_mode` the run was
   driven in, and -- for a thinking or mixed workload -- both `max_output_tokens` and the
