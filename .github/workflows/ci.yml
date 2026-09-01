@@ -25,10 +25,15 @@ jobs:
       - name: Unit tests
         run: pytest -q
       - name: the auditable modules must import with no third-party deps
-        # Two promises, one mechanism. `capacity` is the formula set: if it grows a
+        # Three promises, one mechanism. `capacity` is the formula set: if it grows a
         # dependency, anyone wanting to check the maths has to adopt our stack first.
         # `bench.records` is the published record format: re-deriving someone else's
         # percentiles from their records must not require our HTTP client either.
+        # `bench.adapters.base` is the contract a third party implements to support their own
+        # framework, so it must be readable and subclassable without installing ours -- which
+        # also pins the package initialiser, since one eager re-export of the concrete
+        # adapter would pull httpx in behind it and break the promise from a file that never
+        # mentions it.
         # Third-party means "came out of site-packages", not "absent from
         # sys.stdlib_module_names": that attribute is 3.10+ and this job runs on the
         # 3.9 leg of the matrix too, where it raised AttributeError and failed the
@@ -52,7 +57,12 @@ jobs:
               assert not extra, f"{target} pulled in non-stdlib modules: {sorted(extra)}"
               print(f"{target} is stdlib-only")
           """)
-          for target in ("ascep.capacity", "ascep.bench.records"):
+          targets = (
+              "ascep.capacity",
+              "ascep.bench.records",
+              "ascep.bench.adapters.base",
+          )
+          for target in targets:
               rc = subprocess.run([sys.executable, "-c", code, target]).returncode
               if rc:
                   sys.exit(rc)

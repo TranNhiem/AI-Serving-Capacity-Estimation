@@ -34,7 +34,10 @@ run = [
 ]
 dev = [
   "pytest>=8.0",
-  "pytest-asyncio>=0.23",
+  # 0.24 is the floor: asyncio_default_fixture_loop_scope is unrecognised before it, and an
+  # unrecognised option is a warning rather than an error, so the setting would silently
+  # not apply on the one leg of the matrix that resolved an older pin.
+  "pytest-asyncio>=0.24",
   "ruff>=0.6",
 ]
 
@@ -67,3 +70,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Strict, so an async test that loses its marker fails loudly instead of being collected,
+# reported as passed, and never actually awaited.
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
