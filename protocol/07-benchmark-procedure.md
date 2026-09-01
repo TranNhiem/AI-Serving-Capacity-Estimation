@@ -194,6 +194,80 @@ The reproduction bundle MUST include:
 16. Apply a declared headroom only in the Recommended tier, using `capacity_at`.
 17. Publish the report, all raw records, environment capture and validity checklist.
 
+## 10. Reference harness configuration (`ascep bench`)
+
+`ascep bench` (implemented in `ascep/bench/run.py`) is one implementation of this chapter, not the chapter itself. §1–§9 specify the procedure; a conforming harness MAY be anyone's, provided it honours them. The reference harness exists because this command produces evidence rather than grading it, so its contract is inverted relative to the rest of the toolkit: refuse to run rather than run under-specified, never invent a value the operator did not declare, and never grade its own output.
+
+The config is a single JSON object with exactly seven sections. Every section and every key is required; the declarations in §1 have no honest defaults. A worked config with its four declaration documents lives at [`examples/bench-config/`](../examples/bench-config/) and is not repeated here.
+
+| Section | Key | Type | Declares |
+|---|---|---|---|
+| `endpoint` | `base_url` | string | The **server root** of the endpoint under test. The adapter appends `/v1/chat/completions`, so a value already carrying the API route is refused. |
+| `endpoint` | `model` | string | The model identifier to request. |
+| `endpoint` | `timeout_s` | number, > 0 | Per-request timeout. |
+| `declarations` | `hardware`, `model`, `serving`, `workload` | string | Paths to the four layer documents the run is bound to (**C3**). Each MUST parse and pass schema validation. |
+| `workload` | `corpus` | string | `"synthetic"`, or a path to a JSONL corpus replayed from its `messages` field. |
+| `workload` | `input_tokens` | integer, > 1 | Target input length per request (§2). |
+| `workload` | `output_tokens` | integer, > 1 | Target output length per request (§2). |
+| `workload` | `ignore_eos` | boolean | Whether output length is fixed (`true`) or model-decided (`false`) (§2). |
+| `workload` | `cache_policy` | string | Cache handling, from the closed vocabulary in `ascep.bench.workloads.CACHE_POLICIES` (§3). |
+| `workload` | `seed` | integer | Workload sampling seed. |
+| `workload` | `think_time_s` | number, >= 0 | Closed-loop think time (§2). |
+| `workload` | `run_label` | string | Label carried into the bundle. |
+| `window` | `window_s` | number, > 0 | Steady-state window duration (§4). |
+| `window` | `drain_deadline_s` | number, > 0 | Drain deadline for straddlers (§6). |
+| `window` | `warmup_requests` | integer, >= 0 | Discarded warm-up requests per window (§3). |
+| `ladder` | `concurrency` | list of positive integers, strictly increasing | The rungs, fixed before timing (§5). |
+| `ladder` | `repetitions` | integer, >= 3 | Independent repetitions per rung (§6). |
+| `ladder` | `throughput_collapse_ratio` | number in [0.5, 1.0) | Collapse test ratio (§7). |
+| `slo_gates` | `ttft_p95_max_s`, `itl_p95_max_s`, `e2e_p95_max_s` | number > 0, or null | Latency gates; null means no gate for that metric. |
+| `slo_gates` | `error_rate_max_pct` | number in [0, 100], or null | Error-rate gate. |
+| `slo_gates` | `declared_before_run` | boolean, literally `true` | Attestation that the gates predate the first request (**C7**). |
+| `output` | `bundle_dir` | string | Reproduction bundle destination (**C8**). MUST NOT already exist. |
+| `output` | `report_path` | string | Draft report destination. |
+| `output` | `engine_logs_path` | string | The engine's own log, hashed into the bundle (**C8**). |
+| `output` | `container_digest` | string or null | Serving container digest. |
+
+Paths resolve against two different directories, deliberately. `declarations.*` and a file-backed `workload.corpus` resolve relative to the config file's directory, so a config and the documents it is bound to move between machines together. The `output.*` paths resolve relative to the working directory, because they are where a particular invocation puts its results rather than part of the declaration being replayed. `output.engine_logs_path` resolves relative to the bundle's parent and MUST resolve to a file underneath it: a log elsewhere on the filesystem could only be named in the reproduction table by a path that resolves on the machine that ran the benchmark and nowhere else.
+
+### Refusal rules
+
+Every refusal below is reported before the first request is sent, and exits 2:
+
+- **Unknown section or key.** A `drain_deadline_s` misspelt as *drain_deadline_sec* is otherwise indistinguishable from omitting the real key, and the run would proceed on a default the operator believes they overrode.
+- **Missing key.** Each refusal names the citation requiring the key; running on a default would measure a run the operator never declared.
+- **Wrong type.** A boolean is rejected anywhere a number is wanted: `true` silently satisfying `input_tokens: int` is exactly the lie about what was declared that this command exists to refuse.
+- **`declared_before_run` MUST be literally `true`.** Gates chosen after the numbers are in produce a Sustainable tier that cannot be published (**C7**).
+- **At least one non-null SLO gate.** Four nulls plus `declared_before_run: true` is the most dangerous config this command would otherwise accept: every window passes by definition, every rung grades COMPLETE, and the Sustainable tier becomes the Measured tier wearing an SLO label.
+- **`cache_policy` MUST be in the declared vocabulary** (§3).
+- **`base_url` MUST NOT end in the API route.** `http://host:8000/v1` is what every OpenAI client example puts in front of a user, and it would request `/v1/v1/chat/completions`; the 404s are scored as server errors, so the ladder climbs every rung against a URL that serves nothing and publishes a 100% error rate as a property of the endpoint.
+- **`concurrency` MUST be non-empty and strictly increasing.** A repeated rung pools independent repetitions into one operating point published as a single row while the ladder declaration still lists two; a descending ladder has no lower COMPLETE rung, so the collapse test silently stops being tested at all.
+- **Numeric floors.** `window_s` > 0, `drain_deadline_s` > 0, `warmup_requests` >= 0, `input_tokens` > 1, `output_tokens` > 1, `think_time_s` >= 0 (a quiet clamp of a negative value to zero would turn the closed loop into an unthrottled one), and `timeout_s` > 0 (a non-positive timeout aborts every request before the first token and reports a 100% error rate as a property of the server).
+- **The grading policy MUST be constructible from the config.** `repetitions` >= 3 (§6) and 0.5 <= `throughput_collapse_ratio` < 1.0 (§7) are enforced at config time rather than at grading time. At the upper end the refusal matters as much as at the lower: at 1.0, any rung merely matching the best lower COMPLETE rung grades as a collapse, so the ladder terminates at the plateau every saturating system produces and reports the last rung before the plateau as the boundary. Discovering either when the grading call raises has already spent the GPU hours.
+- **`engine_logs_path` MUST NOT be null and MUST name a readable file inside the report directory** (**C8**). The engine log is the only record of the run written by the server rather than by the load generator, and it is the one C8 artifact the harness cannot produce itself. If the engine wrote none, say so in a file and point at that.
+- **`bundle_dir` MUST NOT already exist.** The GPU hours behind an existing bundle are spent and its records cannot be regenerated, so overwrite is a refusal, not an option.
+
+### The confirmatory repetition at the boundary
+
+After the ladder finishes, the harness runs one further window at the rung the search selected, labelled with the repetition index one past the counted repetitions so its request identifiers and bundle label cannot collide, and graded as post-search evidence rather than as one of that rung's declared repetitions. The boundary is the rung the search chose *because* it passed, so the windows behind it are the evidence the selection conditioned on; the confirmation is the first window at that concurrency the choice did not depend on. Absent one, no Sustainable tier is published at all. If no rung passed its gates there is no boundary to confirm, and the harness says so rather than confirming the top rung by default.
+
+### What a run produces
+
+The reproduction bundle (**C8**) holds `records.jsonl` (per-request records), `run_configs.json`, `environment.json`, `manifest.json`, `bench-config.json` — the operator's config as raw bytes, because a re-serialisation records what the harness understood rather than what the operator wrote — and `declarations/*.json`, the four layer documents as bytes, so the manifest covers them and the **C3** binding stays checkable after publication.
+
+Alongside it, `report_path` receives a DRAFT capacity report claiming `non-conforming`. That is the weakest claim the schema offers, and it grades the report rather than the hardware: a load generator observes latency and throughput over HTTP and nothing else, so the roofline comparison, the sizing result, the scaling table and the Theoretical and Recommended tiers are left unknown with reasons rather than estimated. `ascep conformance` is the command that MAY raise the claim; a harness that graded its own output would be asserting the one thing it is not in a position to know.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Clean: `--dry-run` printed the plan and wrote nothing, or the ladder completed as declared and the draft validates. |
+| 1 | Nothing was written: no window completed, or the bundle write failed — in which case the partial bundle is removed, so the failure does not also block the retry. |
+| 2 | Refused rather than measured: any config refusal, an existing `bundle_dir`, an unusable engine log, or an endpoint adapter that could not be built. |
+| 3 | Ran but did not complete as declared: the ladder was censored (interrupt, SIGTERM, abort), the draft fails its own schema, or the draft could not be written while the bundle survived. |
+
+3 is deliberately not 0. These runs are submitted as batch jobs, and the question the wrapper script asks afterwards is `$?`. A truncated ladder exiting 0 gets swept into the results directory beside the complete ones, and the caveat that its concurrency figures are a lower bound (§5) survives only in a report nobody re-reads. For the same reason SIGTERM — `scancel`, or the job's wall clock — is raised as an interrupt so it takes the path a Ctrl-C already takes: completed windows are bundled and the ladder is marked censored, instead of hours of measurement ending where the process stood.
+
 ## Run-validity checklist
 
 - [ ] All required layer fields are present, with unknowns recorded as `null` and `(U)` (**C1**).

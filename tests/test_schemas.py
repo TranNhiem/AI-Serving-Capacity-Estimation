@@ -204,6 +204,15 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
             for member in [obj, *(vars(obj).values() if inspect.isclass(obj) else [])]:
                 if inspect.isfunction(member):
                     ours |= set(inspect.signature(member).parameters)
+    # The bench config is a declaration format we own, but the loader refuses against a table
+    # rather than a JSON schema, so chapter 7 documenting `bundle_dir` would otherwise read as
+    # an invented field. Take the vocabulary from the table itself: a key the chapter documents
+    # and the loader does not accept is precisely what this test exists to catch.
+    from ascep.bench.run import _KEY_CITATIONS
+
+    ours |= set(_KEY_CITATIONS)
+    for section_keys in _KEY_CITATIONS.values():
+        ours |= set(section_keys)
     ours |= {
         # Intermediate names the chapters use when walking through a derivation by hand; they
         # are prose variables, so no signature will ever contain them.

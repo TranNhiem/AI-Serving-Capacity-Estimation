@@ -145,13 +145,33 @@ by name rather than guessed at. A skeleton that validated would be one that had 
 `gpu_count` on your behalf, and a half-filled report claiming a single-GPU deployment is exactly
 the confusion the rest of this protocol exists to prevent.
 
-Only `validate` needs the optional extras (`pip install 'ascep[run]'`, for `jsonschema`). The
-rest run on a bare install, because the machines where capacity questions get asked are often
-the ones where you cannot install anything.
+Only `validate` and `bench` need the optional extras (`pip install 'ascep[run]'`, for
+`jsonschema` and `httpx`). The rest run on a bare install, because the machines where capacity
+questions get asked are often the ones where you cannot install anything.
 
-The benchmark driver that produces `report.json` from a live endpoint is not in v0.1; chapter 7
-specifies the procedure so you can run it with your existing harness, and
-`examples/*/build_report.py` shows how to map results onto the schema. See **Status** below.
+`ascep bench` runs the chapter 7 procedure against any OpenAI-compatible endpoint: a declared
+concurrency ladder, three repetitions a rung, SLO gates fixed before the first request, a
+reproduction bundle, and a draft `report.json`.
+
+```bash
+ascep bench bench.json --dry-run   # the plan, the window count, the wall clock it implies
+ascep bench bench.json
+```
+
+It reads your `hardware.json`, `model.json`, `serving.json` and `workload.json` rather than
+inventing a topology, and it schema-checks all four before the first request goes out --
+discovering after four hours of Slurm time that `serving.json` was malformed is discovering it
+too late. What it emits is a *draft*: a load generator sees latency over HTTP and nothing else,
+so the roofline, the sizing result, the scaling table and the theoretical and recommended tiers
+are left null with reasons, and the report claims `non-conforming` until `ascep conformance`
+says otherwise.
+
+[`examples/bench-config/`](examples/bench-config/) is a complete input set — a `bench.json`
+plus the four declarations it binds to — meant to be copied and edited; every key it can
+contain, every refusal it can trigger, and what each exit code means are specified in
+[chapter 7 §10](protocol/07-benchmark-procedure.md). If you would rather keep your own harness,
+chapter 7 specifies the procedure and not the tool: `examples/*/build_report.py` shows how to
+map results from it onto the schema instead. See **Status** below.
 
 ## Applying it to your stack
 

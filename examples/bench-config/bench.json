@@ -1,0 +1,46 @@
+{
+  "endpoint": {
+    "base_url": "http://127.0.0.1:8000",
+    "model": "moe-26b",
+    "timeout_s": 300
+  },
+  "declarations": {
+    "hardware": "hardware.json",
+    "model": "model.json",
+    "serving": "serving.json",
+    "workload": "workload.json"
+  },
+  "workload": {
+    "corpus": "synthetic",
+    "input_tokens": 1500,
+    "output_tokens": 1000,
+    "ignore_eos": true,
+    "cache_policy": "unique-prefix",
+    "seed": 20260311,
+    "think_time_s": 1.5,
+    "run_label": "moe-26b-h100x2-tp2-chat"
+  },
+  "window": {
+    "window_s": 300,
+    "drain_deadline_s": 60,
+    "warmup_requests": 20
+  },
+  "ladder": {
+    "concurrency": [4, 8, 16, 32, 64, 128, 256],
+    "repetitions": 3,
+    "throughput_collapse_ratio": 0.7
+  },
+  "slo_gates": {
+    "ttft_p95_max_s": 2.5,
+    "itl_p95_max_s": 0.1,
+    "e2e_p95_max_s": 120,
+    "error_rate_max_pct": 1.0,
+    "declared_before_run": true
+  },
+  "output": {
+    "bundle_dir": "runs/bundle",
+    "report_path": "runs/report.json",
+    "engine_logs_path": "engine.log",
+    "container_digest": null
+  }
+}
