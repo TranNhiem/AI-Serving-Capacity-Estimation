@@ -50,6 +50,31 @@ cross-version comparisons valid.
   8,192 / 24,576 / 57,344, truncating 74.6% / 59.1% / 46.4% of requests at prompts
   averaging only ~2,530 tokens. A throughput figure that averages truncated and completed
   requests together counts tokens no user received.
+- **The benchmark driver can send media instead of refusing it.**
+  `ascep.bench.workloads.MultimodalJsonlCorpus` replays a LLaVA/ShareGPT-shaped JSONL
+  corpus, emitting OpenAI content parts with the media inlined as base64 or referenced by
+  URL. It honours the `<image>` / `<video>` marker rather than stripping it: the marker
+  count MUST match the record's media references and a missing media file raises at load
+  time, naming the line, because silently dropping unreadable media is exactly what
+  `media_arrival_check` exists to catch after the GPU hours are spent. Its `media_shape()`
+  measures `images_per_request`, `videos_per_request`, the resolution mix and the count of
+  records carrying a `reasoning` turn straight off the corpus, and a multimodal run carries
+  that dict into its workload manifest -- so the numbers C4 requires come from the corpus
+  rather than from someone's recollection. `PromptSource` gains a concrete `render_content`
+  hook, defaulting to `render`, so a third party's source keeps working; a text-only source
+  still produces a byte-identical `RequestSpec`. `JsonlCorpus` still refuses an unflagged
+  media marker: the new class is how a run says "I meant to send it", not a reason to
+  soften that refusal.
+- Bench configs can select it, through five optional `workload` keys -- `media_root`,
+  `image_input_transport`, `media_url_prefix`, `media_max_records` and `prompt_field`, all
+  cited to chapter 9. A non-null `media_root` is what selects the multimodal corpus;
+  everything else behaves exactly as before. This required splitting the config validator's
+  single key table into required and optional halves, because a protocol that grows
+  capabilities cannot make every new key a breaking change to every operator's published
+  config -- while an unknown key is still rejected by name, since that is how a typo
+  becomes a run nobody declared. Four misdeclarations are refused before the first request:
+  a `media_root` on a synthetic corpus, a `media_root` that is not a directory, `url`
+  transport without a prefix, and a prefix that `base64` transport would silently ignore.
 
 ### Changed
 

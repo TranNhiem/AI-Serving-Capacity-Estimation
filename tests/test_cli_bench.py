@@ -36,6 +36,7 @@ import re
 
 import pytest
 
+from ascep.bench import run as bench_run
 from ascep.cli import main
 
 pytest.importorskip("httpx", reason="ascep bench needs the [run] extra")
@@ -644,3 +645,210 @@ def _run_offline(
             )
 
     monkeypatch.setattr(cli, "_bench_adapter", lambda config: _Fake(), raising=False)
+
+
+def _media_corpus(tmp_path: pathlib.Path) -> None:
+    """Write a one-record multimodal corpus and the image it names, as real files.
+
+    Nothing here decodes the JPEG; the point is that the loader resolves and touches the
+    same relative paths an operator's corpus would name.
+    """
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\xff\xd9")
+    record = {
+        "image": "images/a.jpg",
+        "width": 1920,
+        "height": 1080,
+        "conversations": [
+            {"from": "human", "value": "<image>\nWhat is happening?"},
+            {"from": "gpt", "value": "A lathe."},
+        ],
+        "id": "r1",
+    }
+    (tmp_path / "corpus.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+
+def _media_workload(tmp_path: pathlib.Path, **overrides):
+    """Build the workload for the one-record corpus, through the real config path."""
+    _media_corpus(tmp_path)
+    config = _config(
+        tmp_path,
+        **{
+            "workload.corpus": "corpus.jsonl",
+            "workload.media_root": ".",
+            "workload.media_max_records": None,
+            **overrides,
+        },
+    )
+    return bench_run._build_workload(config, str(tmp_path))
+
+
+# --- the text path every published run came through does not move ---------------------
+
+
+def test_a_text_only_config_still_builds_the_plain_workload_and_a_string_prompt(tmp_path):
+    """Every published run in this repository was produced by the text path, and the
+    optional-key split touched the validator every one of those configs goes through. A
+    change that made those configs invalid, or that quietly altered the RequestSpec they
+    generate, would rewrite results that are already citable."""
+    workload = bench_run._build_workload(_config(tmp_path), str(tmp_path))
+    assert type(workload).__name__ == "Workload"
+    assert "media_shape" not in workload.manifest()
+    content = workload.for_repetition(0)(0).messages[0]["content"]
+    assert isinstance(content, str)
+
+
+# --- a media run declares its measured media shape ------------------------------------
+
+
+def test_a_media_run_carries_the_measured_media_shape_in_its_manifest(tmp_path):
+    """C4 requires images_per_request and its kin beside any throughput figure, and the
+    only version of those numbers that is not someone's recollection is the one measured
+    off the corpus. An absent key and a zeroed one say different things, which is why the
+    text run has no media_shape at all rather than a zeroed one."""
+    workload = _media_workload(tmp_path)
+    assert type(workload).__name__ == "_MediaShapeWorkload"
+    assert type(workload.source).__name__ == "MultimodalJsonlCorpus"
+    assert workload.manifest()["media_shape"] == {
+        "images_per_request": 1.0,
+        "videos_per_request": 0.0,
+        "image_resolution_mix": [{"width": 1920, "height": 1080, "share": 1.0}],
+        "records": 1,
+        "records_with_reasoning": 0,
+    }
+    assert workload.manifest()["media_placeholders_stripped"] is False
+
+
+def test_a_media_request_sends_the_image_as_base64_and_strips_the_marker(tmp_path):
+    """The request that reaches the server is the workload being measured. If the marker
+    survived into the text part, or the image part went missing, the ladder would publish
+    a media run that was really a text run with extra tokens."""
+    workload = _media_workload(tmp_path)
+    content = workload.for_repetition(0)(0).messages[0]["content"]
+    assert isinstance(content, list)
+    assert [part["type"] for part in content] == ["text", "image_url"]
+    assert content[0]["text"].startswith("upx-")
+    assert "<image>" not in content[0]["text"]
+    assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_url_transport_sends_the_declared_prefix_and_never_reads_the_image_bytes(tmp_path):
+    """With url transport the server fetches the media, so the client has no business
+    reading the file after the corpus is loaded. A client that still reads the bytes is
+    paying the base64 cost while claiming the url one."""
+    workload = _media_workload(
+        tmp_path,
+        **{
+            "workload.image_input_transport": "url",
+            "workload.media_url_prefix": "http://h/m/",
+        },
+    )
+    (tmp_path / "images" / "a.jpg").unlink()
+    content = workload.for_repetition(0)(0).messages[0]["content"]
+    assert content[1]["image_url"]["url"] == "http://h/m/images/a.jpg"
+
+
+# --- media misdeclarations are refused while refusing is still free -------------------
+
+
+def test_media_root_on_a_synthetic_corpus_is_refused_as_a_text_run_under_a_media_label(
+    tmp_path, capsys
+):
+    """That config asks for a media run and would otherwise get a text run, publishing
+    text numbers under a media label."""
+    assert _dry_run(tmp_path, **{"workload.media_root": "."}) != 0
+    err = capsys.readouterr().err
+    assert "'media_root' is set but 'corpus' is 'synthetic'" in err
+    assert "would silently measure a text one" in err
+
+
+def test_a_media_root_that_is_not_a_directory_is_refused_before_the_first_request(tmp_path, capsys):
+    """A run that cannot find its images does not fail, it measures something else.
+    Refusing before the first request is the whole point, because the alternative is
+    discovering it in a report after the GPU hours are spent."""
+    _media_corpus(tmp_path)
+    overrides = {"workload.corpus": "corpus.jsonl", "workload.media_root": "nowhere"}
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "workload media_root is not an existing directory" in err
+    assert "measures a text workload under a media label" in err
+
+
+def test_url_transport_without_a_url_prefix_is_refused_as_a_url_that_resolves_to_nothing(
+    tmp_path, capsys
+):
+    """The server fetches the media from that base URL. Without it every request carries
+    a URL that resolves to nothing, and the run measures 404s rather than images."""
+    overrides = {
+        "workload.corpus": "corpus.jsonl",
+        "workload.media_root": ".",
+        "workload.image_input_transport": "url",
+    }
+    _media_corpus(tmp_path)
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "'image_input_transport' is 'url' but 'media_url_prefix' is not set" in err
+
+
+def test_a_url_prefix_with_base64_transport_is_refused_because_it_would_be_ignored(
+    tmp_path, capsys
+):
+    """The key would be silently ignored, and a config whose keys do not all take effect
+    is a config the operator misread."""
+    _media_corpus(tmp_path)
+    overrides = {
+        "workload.corpus": "corpus.jsonl",
+        "workload.media_root": ".",
+        "workload.media_url_prefix": "http://h/m/",
+    }
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "'media_url_prefix' is set but 'image_input_transport' is 'base64'" in err
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        (
+            {"workload.media_root": 5},
+            "config key 'media_root' (section 'workload') must be str or null; got 5",
+        ),
+        (
+            {"workload.media_max_records": "10"},
+            "config key 'media_max_records' (section 'workload') must be int or null; got '10'",
+        ),
+    ],
+)
+def test_a_media_key_with_the_wrong_json_type_is_refused_with_its_citation(
+    tmp_path, capsys, override, expected
+):
+    """A string that looks like a number is not a number, and accepting it would let the
+    config declare one thing while the run does another."""
+    assert _dry_run(tmp_path, **override) != 0
+    err = capsys.readouterr().err
+    assert expected in err
+    assert "section 9" in err
+
+
+def test_an_unknown_workload_key_is_still_an_error_after_the_optional_keys_were_added(
+    tmp_path, capsys
+):
+    """The optional-key split widened the permitted set, and the risk it introduces is
+    that a typo becomes a run nobody declared. The refusal has to survive the widening."""
+    assert _dry_run(tmp_path, **{"workload.bogus": 1}) != 0
+    err = capsys.readouterr().err
+    assert "unknown key 'bogus' in section 'workload' of the bench config" in err
+    assert "expected keys:" in err
+    assert "media_root" in err
+
+
+def test_a_missing_required_workload_key_is_still_named_after_the_optional_keys_were_added(
+    tmp_path, capsys
+):
+    """The required loop is the one every published config was validated against. Adding
+    optional keys must not turn a missing cache_policy into an accepted default."""
+    overrides = {"workload.cache_policy": _DROP, "workload.media_root": "."}
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "bench config is missing 'cache_policy' (section 'workload')" in err
+    assert "section 7 requires it" in err

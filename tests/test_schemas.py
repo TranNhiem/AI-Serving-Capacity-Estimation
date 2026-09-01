@@ -175,13 +175,14 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
     import ascep.bench.ladder as ladder
     import ascep.bench.metrics as metrics
     import ascep.bench.records as records
+    import ascep.bench.workloads as workloads
     import ascep.capacity as capacity
 
     # Every stdlib-only module a reader is expected to run. Their public names are our
     # vocabulary too: prose that says `apply_boundary_rules` is naming a function a reader
     # can call, not inventing a declaration field, and a check that could not tell the
     # difference would push writers to stop backticking real API names.
-    modules = (capacity, records, metrics, ladder, driver)
+    modules = (capacity, records, metrics, ladder, driver, workloads)
 
     declared = set()
     for path in sorted((ROOT / "schemas").glob("*.schema.json")):
@@ -213,11 +214,15 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
     # rather than a JSON schema, so chapter 7 documenting `bundle_dir` would otherwise read as
     # an invented field. Take the vocabulary from the table itself: a key the chapter documents
     # and the loader does not accept is precisely what this test exists to catch.
-    from ascep.bench.run import _KEY_CITATIONS
+    # Both halves of the table. The optional half exists so a new capability is not a breaking
+    # change to every operator's config; leaving it out here would make accurate prose about
+    # `media_root` fail while a typo for it passed, which is the wrong way round.
+    from ascep.bench.run import _KEY_CITATIONS, _OPTIONAL_KEY_CITATIONS
 
-    ours |= set(_KEY_CITATIONS)
-    for section_keys in _KEY_CITATIONS.values():
-        ours |= set(section_keys)
+    for table in (_KEY_CITATIONS, _OPTIONAL_KEY_CITATIONS):
+        ours |= set(table)
+        for section_keys in table.values():
+            ours |= set(section_keys)
     ours |= {
         # Intermediate names the chapters use when walking through a derivation by hand; they
         # are prose variables, so no signature will ever contain them.

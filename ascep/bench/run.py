@@ -120,6 +120,29 @@ _KEY_CITATIONS = {
     },
 }
 
+#: Keys a config may add but is not required to, in the same {section: {key: citation}}
+#: shape as _KEY_CITATIONS. They live in a parallel mapping because a protocol that grows
+#: capabilities cannot make every new key a breaking change to every operator's config:
+#: adding the media keys to the required mapping would invalidate every published bench
+#: config overnight, including configs whose runs are already cited. But silently accepting
+#: unknown keys is how a typo becomes a run nobody declared, so _check_shape permits
+#: exactly required | optional and still refuses anything outside the union by name.
+_OPTIONAL_KEY_CITATIONS = {
+    "workload": {
+        # Directory the corpus's relative media paths resolve against; its presence is
+        # what selects the multimodal corpus.
+        "media_root": "section 9",
+        # "base64" or "url", mirroring the serving layer's image_input_transport.
+        "image_input_transport": "section 9",
+        # Base URL the server fetches media from; required when transport is "url".
+        "media_url_prefix": "section 9",
+        # Cap on records, for a smoke run.
+        "media_max_records": "section 9",
+        # Where the prompt text lives in each record; default "conversations".
+        "prompt_field": "section 9",
+    },
+}
+
 #: Expected JSON types per key. bool is rejected anywhere a number is wanted, because
 #: ``True`` silently satisfying ``input_tokens: int`` is exactly the kind of lie about what
 #: was declared that this command exists to refuse.
@@ -139,6 +162,11 @@ _TYPES = {
     ("workload", "seed"): (int,),
     ("workload", "think_time_s"): (int, float),
     ("workload", "run_label"): (str,),
+    ("workload", "media_root"): (str, type(None)),
+    ("workload", "image_input_transport"): (str,),
+    ("workload", "media_url_prefix"): (str, type(None)),
+    ("workload", "media_max_records"): (int, type(None)),
+    ("workload", "prompt_field"): (str,),
     ("window", "window_s"): (int, float),
     ("window", "drain_deadline_s"): (int, float),
     ("window", "warmup_requests"): (int,),
@@ -202,11 +230,16 @@ def _check_shape(config):
                 f"section '{section}' of the bench config must be a JSON object with the "
                 f"keys: {expected} ({cite})"
             )
+        # The permitted set is required | optional; the required loop below is exactly
+        # the one that has always run, so a missing required key still raises the
+        # message every published run was validated against.
+        optional = _OPTIONAL_KEY_CITATIONS.get(section, {})
+        permitted = ", ".join(list(keys) + [key for key in optional if key not in keys])
         for key in body:
-            if key not in keys:
+            if key not in keys and key not in optional:
                 raise ConfigError(
                     f"unknown key '{key}' in section '{section}' of the bench config; "
-                    f"expected keys: {expected} (section 7)"
+                    f"expected keys: {permitted} (section 7)"
                 )
         for key, key_cite in keys.items():
             if key not in body:
@@ -220,12 +253,16 @@ def _check_shape(config):
 def _check_values(config):
     """Reject values that parse but would silently change what is measured."""
     for (section, key), types in _TYPES.items():
+        if key not in config[section]:
+            # Optional and absent: there is no value to type-check, and the default is
+            # applied in _build_workload, where it can be named rather than smuggled in.
+            continue
         value = config[section][key]
         allows_bool = any(t is bool for t in types)
         if not isinstance(value, types) or (isinstance(value, bool) and not allows_bool):
             names = [t.__name__ for t in types if t is not type(None)]
             label = "/".join(names) + (" or null" if type(None) in types else "")
-            cite = _KEY_CITATIONS[section][key]
+            cite = _KEY_CITATIONS[section].get(key) or _OPTIONAL_KEY_CITATIONS[section][key]
             raise ConfigError(
                 f"config key '{key}' (section '{section}') must be {label}; got {value!r} ({cite})"
             )
@@ -465,10 +502,78 @@ def plan_lines(config):
     ]
 
 
+class _MediaShapeWorkload(workloads.Workload):
+    """A Workload whose manifest also carries the corpus's measured media shape.
+
+    C4 requires images_per_request, videos_per_request and their kin beside any throughput
+    figure, and the only version of those numbers that is not someone's recollection is the
+    one measured off the corpus itself. Text workloads keep the plain manifest with the key
+    absent entirely: an absent key and a zeroed one say different things, and a run that
+    carried no media has no media shape to declare.
+    """
+
+    def manifest(self):
+        return {**super().manifest(), "media_shape": self.source.media_shape()}
+
+
+def _build_multimodal_corpus(wl, corpus_path, media_root, config_dir):
+    """Construct the multimodal corpus, refusing every media misdeclaration while it is free.
+
+    A media benchmark that degrades to text at request time publishes text numbers under a
+    media label, so every check here happens before the first request is sent.
+    """
+    root = Path(media_root)
+    if not root.is_absolute():
+        root = Path(config_dir) / root
+    if not root.is_dir():
+        raise ConfigError(
+            f"workload media_root is not an existing directory: '{root}' (section 9). "
+            "The corpus's relative media paths resolve against it, and a run that "
+            "cannot find its images measures a text workload under a media label"
+        )
+    transport = wl.get("image_input_transport", "base64")
+    url_prefix = wl.get("media_url_prefix")
+    if transport == "url" and not url_prefix:
+        raise ConfigError(
+            "'image_input_transport' is 'url' but 'media_url_prefix' is not set "
+            "(section 9): the server fetches the media from that base URL, and without "
+            "it every request would carry a URL that resolves to nothing"
+        )
+    if transport != "url" and url_prefix is not None:
+        raise ConfigError(
+            f"'media_url_prefix' is set but 'image_input_transport' is {transport!r} "
+            "(section 9): with 'base64' the bytes travel in the request body and the "
+            "prefix would be ignored, and a config whose keys do not all take effect "
+            "is a config the operator misread"
+        )
+    try:
+        return workloads.MultimodalJsonlCorpus(
+            path=corpus_path,
+            media_root=root,
+            transport=transport,
+            url_prefix=url_prefix,
+            prompt_field=wl.get("prompt_field", "conversations"),
+            max_records=wl.get("media_max_records"),
+        )
+    except ValueError as exc:
+        raise ConfigError(
+            f"the multimodal corpus '{corpus_path}' cannot be replayed: {exc}. Refusing "
+            "before the first request is the point: a marker/reference mismatch "
+            "discovered at request time has already spent the GPU hours"
+        ) from exc
+
+
 def _build_workload(config, config_dir):
     """Construct the Workload the ladder will replay, from the declared config only."""
     wl = config["workload"]
     corpus = wl["corpus"]
+    media_root = wl.get("media_root")
+    if media_root is not None and corpus == "synthetic":
+        raise ConfigError(
+            "'media_root' is set but 'corpus' is 'synthetic': a synthetic corpus has no "
+            "media, so this config asks for a media run and would silently measure a "
+            "text one (section 9)"
+        )
     if corpus == "synthetic":
         # Whitespace, not characters-per-token. SyntheticCorpus pads one filler word at a
         # time and refuses to publish a prompt that misses the target exactly, so an oracle
@@ -489,12 +594,20 @@ def _build_workload(config, config_dir):
                 f"workload corpus file not found: '{corpus}' (section 7). Refusing to "
                 "spend GPU hours against a corpus that cannot be replayed"
             )
-        source = workloads.JsonlCorpus(corpus_path, field="messages")
+        if media_root is None:
+            source = workloads.JsonlCorpus(corpus_path, field="messages")
+        else:
+            source = _build_multimodal_corpus(wl, corpus_path, media_root, config_dir)
     if wl["ignore_eos"]:
         output_plan = workloads.FixedOutput(int(wl["output_tokens"]), True)
     else:
         output_plan = workloads.ModelDecidedOutput()
-    return workloads.Workload(
+    workload_cls = (
+        _MediaShapeWorkload
+        if isinstance(source, workloads.MultimodalJsonlCorpus)
+        else workloads.Workload
+    )
+    return workload_cls(
         source=source,
         output_plan=output_plan,
         cache_policy=wl["cache_policy"],
