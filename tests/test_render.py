@@ -243,3 +243,127 @@ def test_every_table_block_is_well_formed(markdown):
         assert separator_chars <= set("|-: "), f"second table line is not a separator: {block[1]!r}"
         widths = {line.replace("\\|", "").count("|") for line in block}
         assert len(widths) == 1, f"ragged table (pipe counts {widths}): {block[0]!r}"
+
+
+# --- rung outcomes and reasons --------------------------------------------------------
+
+
+def _benchmark_rows(markdown: str) -> list[str]:
+    """Return the data rows of the §4 results table, in report order."""
+    lines = markdown.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("| shape (in/out)"))
+    rows = []
+    for line in lines[start + 2 :]:
+        if not line.startswith("|"):
+            break
+        rows.append(line)
+    return rows
+
+
+def _cells(table_line: str) -> list[str]:
+    """Split on real separators only; `\\|` inside a cell is content, not a boundary."""
+    return [cell.strip() for cell in table_line.replace("\\|", "").strip("|").split("|")]
+
+
+def test_a_rung_that_passed_its_window_but_did_not_complete_says_both(report):
+    """`slo_pass` and `outcome` answer different questions: the pooled window can meet
+    every gate while a counted repetition fails (§5). A bare "pass" for such a rung
+    publishes a rung that did not complete as if it had — the row must carry both
+    verdicts or the page is thinner than the JSON it came from."""
+    rung = report["run"]["results"][0]
+    rung["slo_pass"] = True
+    rung["outcome"] = "failed"
+    rung["reasons"] = [
+        "Repetition 2 of 3 breached the TTFT p95 gate, so the rung does not complete "
+        "under the worst-served-user rule of §5."
+    ]
+    markdown = render.render(report)
+    slo_cell = _cells(_benchmark_rows(markdown)[0])[-1]
+    assert slo_cell != "pass", "a rung that did not complete rendered as a bare pass"
+    assert "pass" in slo_cell
+    assert "**failed**" in slo_cell
+
+
+def test_the_reason_a_rung_did_not_complete_is_printed_verbatim(report):
+    """The reasons block is where a reviewer learns why the capacity boundary sits where
+    it does, keyed back to the table by the rung's concurrency. Paraphrasing would alter
+    a recorded measurement claim, so the sentence must reach the page exactly as
+    recorded."""
+    reason = "Repetition 3 of 3 returned errors for 14 requests, so the rung is invalid (§5)."
+    rung = report["run"]["results"][1]
+    rung["slo_pass"] = False
+    rung["outcome"] = "invalid"
+    rung["reasons"] = [reason]
+    markdown = render.render(report)
+    assert reason in markdown
+    label = render._field(rung, "concurrency")
+    assert f"- concurrency {label} · **invalid**: {reason}" in markdown
+
+
+def test_a_report_in_which_every_rung_completed_prints_no_reasons_block(report, markdown):
+    """Most reports have nothing to explain here, and their output must stay
+    byte-identical to before the block existed: no heading, no placeholder, not even a
+    blank line."""
+    assert all(rung.get("outcome") in (None, "complete") for rung in report["run"]["results"]), (
+        "fixture now carries a non-COMPLETE rung; this test no longer exercises the quiet path"
+    )
+    assert "Rungs that did not complete" not in markdown
+    assert "pooled sustained window" not in markdown
+
+
+def test_a_completed_outcome_adds_nothing_to_the_slo_cell_or_the_document(report):
+    """The outcome suffix exists to expose disagreement between the two verdicts; a rung
+    that genuinely completed has no disagreement to expose, so its cell must read exactly
+    as it always has."""
+    results = report["run"]["results"]
+    results[0]["slo_pass"] = True
+    results[1]["slo_pass"] = False
+    for rung in results:
+        rung["outcome"] = "complete"
+    markdown = render.render(report)
+    assert "Rungs that did not complete" not in markdown
+    rows = [_cells(line) for line in _benchmark_rows(markdown)]
+    assert rows[0][-1] == "pass"
+    assert rows[1][-1] == "**fail**"
+    assert all("·" not in row[-1] for row in rows)
+
+
+@pytest.mark.parametrize("reasons", [None, []])
+def test_a_failed_rung_without_a_recorded_reason_still_names_the_gap(report, reasons):
+    """Such a row is schema-invalid, but the renderer is the debugging surface for
+    half-finished reports: it must say, in the module's own missing-value idiom, that no
+    reason was recorded. Crashing or printing an empty bullet erases a rung that did not
+    complete."""
+    rung = report["run"]["results"][0]
+    rung["slo_pass"] = True
+    rung["outcome"] = "failed"
+    rung["reasons"] = reasons
+    markdown = render.render(report)
+    bullets = [line for line in markdown.splitlines() if line.startswith("- concurrency")]
+    assert len(bullets) == 1
+    assert render._MISSING in bullets[0]
+    assert "**failed**" in bullets[0]
+    offenders = [
+        cell
+        for line in markdown.splitlines()
+        if line.startswith("|")
+        for cell in line.replace("\\|", "").split("|")
+        if cell.strip().strip("`*_ ") == "None"
+    ]
+    assert not offenders, offenders
+
+
+def test_an_unwindowed_failed_rung_keeps_its_missing_reason_and_outcome(report):
+    """A null `slo_pass` must still run the missing-value machinery when an outcome is
+    present; swallowing the (U) just because the row failed trades a documented gap for
+    an undocumented one."""
+    rung = report["run"]["results"][2]
+    rung["slo_pass"] = None
+    rung.pop("slo_pass_u_reason", None)
+    rung["outcome"] = "failed"
+    rung["reasons"] = ["Repetition 1 of 3 failed, so the rung does not complete under §5."]
+    markdown = render.render(report)
+    slo_cell = _cells(_benchmark_rows(markdown)[2])[-1]
+    assert slo_cell.startswith("— *(U)")
+    assert render._MISSING in slo_cell
+    assert "**failed**" in slo_cell

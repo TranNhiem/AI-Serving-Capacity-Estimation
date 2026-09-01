@@ -148,6 +148,19 @@ cross-version comparisons valid.
 
 ### Fixed
 
+- **The rendered Markdown report showed a rung that did not complete as a clean
+  pass.** The benchmark table's SLO column was driven by `slo_pass` alone, which
+  grades only the pooled sustained window, so a rung whose `outcome` was `failed`
+  -- any single counted repetition having failed, section 5 -- printed `pass` and
+  nothing else. The document a reviewer actually reads was thinner than the JSON
+  it came from: it could certify a capacity boundary grounded in an unfinished
+  rung without ever saying so, let alone why. The SLO cell now carries the
+  completion outcome beside the window verdict whenever the two can disagree, and
+  a "Rungs that did not complete" block after the gates line prints each such
+  rung's recorded reason verbatim, keyed by concurrency. Reports whose rungs all
+  completed render byte-identically to before: no heading, no placeholder, not
+  even a blank line.
+
 - **`ascep bench` computed, and then discarded, the reason for every failed or
   invalid ladder rung.** `grade_rung` and `grade_ladder` build `RungResult.reasons`
   as full sentences with section citations -- which repetition failed, on which gate

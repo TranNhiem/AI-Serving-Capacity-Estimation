@@ -391,13 +391,19 @@ def _section_benchmark(lines: list[str], run: Mapping[str, Any]) -> None:
     lines.append("")
 
     results = run.get("results")
-    if not isinstance(results, list) or not results:
+    if not isinstance(results, list):
+        results = []
+    if not results:
         lines.append("not reported")
     else:
         _benchmark_table(lines, results)
 
     lines.append("")
     _slo_gates(lines, _mapping(run.get("slo_gates")))
+    # The reasons block goes after the gates sentence, not between table and gates: that
+    # sentence defines the SLO column the table just used and must stay adjacent to it,
+    # while the block already presupposes the definition.
+    _rung_reasons(lines, results)
 
 
 def _benchmark_table(lines: list[str], results: list[Any]) -> None:
@@ -425,6 +431,13 @@ def _benchmark_table(lines: list[str], results: list[Any]) -> None:
             slo_cell = _dash(row, "slo_pass")
         else:
             slo_cell = "pass" if slo else "**fail**"
+        # SLO judges only the pooled window; completion is a separate verdict, and §5 fails
+        # the rung on any single failed repetition. Printing the window verdict alone once
+        # published a concurrency-8 rung that never completed as a clean pass — the two
+        # must sit side by side so the disagreement cannot be read as one result.
+        outcome = row.get("outcome")
+        if outcome in ("failed", "invalid"):
+            slo_cell = f"{slo_cell} · **{_clean(outcome)}**"
         cells = [
             shape,
             _field(row, "concurrency"),
@@ -453,6 +466,46 @@ def _slo_gates(lines: list[str], gates: Mapping[str, Any]) -> None:
         "all must hold for the full window."
     )
     lines.append(f"Declared before run: {declared}.")
+
+
+def _rung_reasons(lines: list[str], results: list[Any]) -> None:
+    """List, rung by rung, the recorded reason for every rung that did not complete."""
+    flagged = [
+        row
+        for row in (_mapping(item) for item in results)
+        if row.get("outcome") in ("failed", "invalid")
+    ]
+    # Reports whose rungs all completed must render byte-identically to before this block
+    # existed, so nothing below may run for them — not a heading, not even a blank line.
+    if not flagged:
+        return
+    lines.extend(
+        [
+            "",
+            "**Rungs that did not complete**",
+            "",
+            "Per §5 of the protocol, `slo_pass` judges the pooled sustained window against "
+            "the declared gates, while a rung's `outcome` is failed the moment any single "
+            "counted repetition fails — capacity is defined by the worst served user, not "
+            "best-of-N. A rung can therefore pass its window and still not complete; both "
+            "verdicts stand, and the recorded reason for every such rung follows.",
+            "",
+        ]
+    )
+    for row in flagged:
+        concurrency = _field(row, "concurrency")
+        outcome = _clean(row["outcome"])
+        reasons = row.get("reasons")
+        if isinstance(reasons, list):
+            recorded = [_clean(reason) for reason in reasons if reason]
+        else:
+            recorded = []
+        # `outcome: failed` with no reasons is schema-invalid, but a crash or an empty
+        # bullet here would erase a rung that did not complete; name the gap instead.
+        if not recorded:
+            recorded = [_dash_text("")]
+        for reason in recorded:
+            lines.append(f"- concurrency {concurrency} · **{outcome}**: {reason}")
 
 
 def _section_scaling(lines: list[str], scaling: Any) -> None:
