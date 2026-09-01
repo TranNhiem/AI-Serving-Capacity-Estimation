@@ -91,6 +91,11 @@ BASE_MODEL = dict(
     native_max_context_tokens=32768,
     weight_bytes_on_disk=52_000_000_000,
     licence="apache-2.0",
+    # Both are required and non-nullable: a model that does not say which modalities it accepts
+    # and which reasoning modes it has is one whose token cost per request cannot be predicted
+    # at all, and thinking mode alone moves output length by two orders of magnitude.
+    input_modalities=["text"],
+    reasoning_modes=["non-thinking"],
 )
 
 

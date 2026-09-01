@@ -83,6 +83,35 @@ def build() -> dict:
         "avg_context_tokens": round(WORK.avg_context_tokens(), 2),
         "avg_context_tokens_tag": "I",
         "demand_tok_s": round(WORK.demand_tok_s(), 2),
+        # --- media and reasoning shape ---------------------------------------------------
+        # 0 and null are different answers and the schema keeps them apart: 0 is measured and
+        # genuinely none, null is not reported. This workload demonstrably sends no media, so
+        # the counts are 0; there is no sampling rate to state at all, so those are null.
+        "images_per_request": 0,
+        "image_resolution_mix": None,
+        "image_resolution_mix_u_reason": (
+            "(U) no images are sent, so there is no resolution mix to declare"
+        ),
+        "videos_per_request": 0,
+        "video_seconds_per_request": None,
+        "video_seconds_per_request_u_reason": "(U) no video is sent",
+        "video_sampling_fps": None,
+        "video_sampling_fps_u_reason": "(U) no video is sent",
+        "video_max_frames": None,
+        "video_max_frames_u_reason": "(U) no video is sent",
+        "media_tokens_per_request": 0,
+        # A capacity figure that does not name its reasoning mode is not comparable to one that
+        # does: on the same weights and the same server, turning thinking on has been measured
+        # to move completion tokens per request from 120 to 33,829.
+        "reasoning_mode": "non-thinking",
+        "reasoning_share": None,
+        "reasoning_share_u_reason": ("(U) reasoning_share is meaningful only for a mixed workload"),
+        "reasoning_tokens_per_request": 0,
+        "max_output_tokens": None,
+        "max_output_tokens_u_reason": (
+            "(U) no output cap was declared for this run; output length was governed by the "
+            "model's own stop condition"
+        ),
     }
 
 

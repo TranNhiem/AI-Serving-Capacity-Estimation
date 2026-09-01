@@ -45,7 +45,13 @@
     "native_max_context_tokens": 8192,
     "weight_bytes_on_disk": 26000000000,
     "weight_bytes_tag": "M",
-    "licence": "Apache-2.0"
+    "licence": "Apache-2.0",
+    "input_modalities": [
+      "text"
+    ],
+    "reasoning_modes": [
+      "non-thinking"
+    ]
   },
   "serving": {
     "ascep_version": "0.1.0",
@@ -64,7 +70,8 @@
     "chunked_prefill": "on",
     "speculative_decoding": "off",
     "engine_reported_kv_cache_tokens": 163000,
-    "cold_start_to_ready_s": 95.0
+    "cold_start_to_ready_s": 95.0,
+    "image_input_transport": "n-a"
   },
   "run": {
     "ascep_version": "0.1.0",
@@ -185,7 +192,24 @@
     "active_sessions": 6,
     "avg_context_tokens": 4096,
     "avg_context_tokens_tag": "I",
-    "demand_tok_s": 90.0
+    "demand_tok_s": 90.0,
+    "images_per_request": 0,
+    "image_resolution_mix": null,
+    "image_resolution_mix_u_reason": "(U) no images are sent, so there is no resolution mix to declare",
+    "videos_per_request": 0,
+    "video_seconds_per_request": null,
+    "video_seconds_per_request_u_reason": "(U) no video is sent",
+    "video_sampling_fps": null,
+    "video_sampling_fps_u_reason": "(U) no video is sent",
+    "video_max_frames": null,
+    "video_max_frames_u_reason": "(U) no video is sent",
+    "media_tokens_per_request": 0,
+    "reasoning_mode": "non-thinking",
+    "reasoning_share": null,
+    "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload",
+    "reasoning_tokens_per_request": 0,
+    "max_output_tokens": null,
+    "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition"
   },
   "capacity_tiers": {
     "theoretical": {

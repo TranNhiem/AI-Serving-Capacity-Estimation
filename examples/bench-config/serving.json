@@ -22,5 +22,6 @@
   "speculative_decoding": "off",
   "engine_reported_kv_cache_tokens": 1149595,
   "cold_start_to_ready_s": null,
-  "cold_start_to_ready_s_u_reason": "(U) not timed"
+  "cold_start_to_ready_s_u_reason": "(U) not timed",
+  "image_input_transport": "n-a"
 }

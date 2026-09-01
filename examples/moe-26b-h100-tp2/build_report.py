@@ -299,6 +299,12 @@ def build() -> dict:
             "weight_bytes_on_disk_u_reason": "(U) not recorded",
             "licence": None,
             "licence_u_reason": "(U) pre-release checkpoint; licence not public",
+            # Required and non-nullable, because both change what a token costs. A text-only
+            # checkpoint with no thinking branch is the cheap corner of that space, and saying
+            # so is what makes this report comparable to a multimodal one rather than mistaken
+            # for it.
+            "input_modalities": ["text"],
+            "reasoning_modes": ["non-thinking"],
         },
         "serving": {
             "ascep_version": VERSION,
@@ -328,6 +334,10 @@ def build() -> dict:
             "engine_reported_kv_cache_tokens": kv,
             "cold_start_to_ready_s": None,
             "cold_start_to_ready_s_u_reason": "(U) not timed",
+            # No media crossed the wire, so there is no transport to argue about. On a
+            # multimodal endpoint this is load-bearing: base64 inflates request bodies by
+            # roughly 4/3 and can saturate the client before the server notices.
+            "image_input_transport": "n-a",
         },
         "run": {
             "ascep_version": VERSION,
@@ -431,6 +441,33 @@ def build() -> dict:
             # full weight in the session count.
             "avg_context_tokens_tag": "I",
             "demand_tok_s": work.demand_tok_s(),
+            # 0 and null part company here: 0 is measured and genuinely none, null is not
+            # reported. This campaign sent text and nothing else, so the counts are 0 and only
+            # the settings that never existed are null.
+            "images_per_request": 0,
+            "image_resolution_mix": None,
+            "image_resolution_mix_u_reason": (
+                "(U) no images are sent, so there is no resolution mix to declare"
+            ),
+            "videos_per_request": 0,
+            "video_seconds_per_request": None,
+            "video_seconds_per_request_u_reason": "(U) no video is sent",
+            "video_sampling_fps": None,
+            "video_sampling_fps_u_reason": "(U) no video is sent",
+            "video_max_frames": None,
+            "video_max_frames_u_reason": "(U) no video is sent",
+            "media_tokens_per_request": 0,
+            "reasoning_mode": "non-thinking",
+            "reasoning_share": None,
+            "reasoning_share_u_reason": (
+                "(U) reasoning_share is meaningful only for a mixed workload"
+            ),
+            "reasoning_tokens_per_request": 0,
+            "max_output_tokens": None,
+            "max_output_tokens_u_reason": (
+                "(U) no output cap was declared for this run; output length was governed by "
+                "the model's own stop condition"
+            ),
         },
         "capacity_tiers": {
             "theoretical": _row(Tier.THEORETICAL, None, NO_ROOFLINE),

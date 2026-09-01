@@ -20,5 +20,22 @@
   "active_sessions": 160.0,
   "avg_context_tokens": 2000.0,
   "avg_context_tokens_tag": "I",
-  "demand_tok_s": 2400.0
+  "demand_tok_s": 2400.0,
+  "images_per_request": 0,
+  "image_resolution_mix": null,
+  "image_resolution_mix_u_reason": "(U) no images are sent, so there is no resolution mix to declare",
+  "videos_per_request": 0,
+  "video_seconds_per_request": null,
+  "video_seconds_per_request_u_reason": "(U) no video is sent",
+  "video_sampling_fps": null,
+  "video_sampling_fps_u_reason": "(U) no video is sent",
+  "video_max_frames": null,
+  "video_max_frames_u_reason": "(U) no video is sent",
+  "media_tokens_per_request": 0,
+  "reasoning_mode": "non-thinking",
+  "reasoning_share": null,
+  "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload",
+  "reasoning_tokens_per_request": 0,
+  "max_output_tokens": null,
+  "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition"
 }

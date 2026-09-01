@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ascep.dev/schemas/workload.schema.json",
-  "title": "ASCEP Layer 5 \u2014 Application workload declaration",
-  "description": "Layer 5 of the five ASCEP layers, mirroring ascep.capacity.Workload field-for-field. Turns a product question into a serving question: N concurrent sessions, M tokens/s. The highest-leverage input is avg_context_tokens \u2014 override the input + output/2 default whenever real conversation-length data exists.",
+  "title": "ASCEP Layer 5 — Application workload declaration",
+  "description": "Layer 5 of the five ASCEP layers, mirroring ascep.capacity.Workload field-for-field. Turns a product question into a serving question: N concurrent sessions, M tokens/s. The highest-leverage input is avg_context_tokens — override the input + output/2 default whenever real conversation-length data exists.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,18 @@
     "peak_concurrent_users",
     "active_sessions",
     "avg_context_tokens",
-    "demand_tok_s"
+    "demand_tok_s",
+    "images_per_request",
+    "image_resolution_mix",
+    "videos_per_request",
+    "video_seconds_per_request",
+    "video_sampling_fps",
+    "video_max_frames",
+    "media_tokens_per_request",
+    "reasoning_mode",
+    "reasoning_share",
+    "reasoning_tokens_per_request",
+    "max_output_tokens"
   ],
   "anyOf": [
     {
@@ -47,6 +58,78 @@
         "daily_active_users",
         "avg_session_seconds"
       ]
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "reasoning_mode": {
+            "enum": [
+              "thinking",
+              "mixed"
+            ]
+          }
+        },
+        "required": [
+          "reasoning_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "max_output_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_output_tokens"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reasoning_mode": {
+            "const": "mixed"
+          }
+        },
+        "required": [
+          "reasoning_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasoning_share": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "reasoning_share"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "videos_per_request": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "videos_per_request"
+        ]
+      },
+      "then": {
+        "properties": {
+          "video_seconds_per_request": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "video_seconds_per_request"
+        ]
+      }
     }
   ],
   "properties": {
@@ -125,7 +208,7 @@
         "null"
       ],
       "minimum": 1,
-      "description": "Peak-hour rate \u00f7 daily-average rate, dimensionless (Workload.peak_to_mean). 1.0 ('flat load') is almost never real; 3-6 is typical. Sizing to the mean with peak_to_mean=1 underprovisions by exactly this ratio."
+      "description": "Peak-hour rate ÷ daily-average rate, dimensionless (Workload.peak_to_mean). 1.0 ('flat load') is almost never real; 3-6 is typical. Sizing to the mean with peak_to_mean=1 underprovisions by exactly this ratio."
     },
     "duty_cycle": {
       "type": [
@@ -134,7 +217,7 @@
       ],
       "exclusiveMinimum": 0,
       "maximum": 1,
-      "description": "Fraction of a concurrent session actually generating, dimensionless (Workload.duty_cycle). capacity_at applies it to the KV floor but NOT to per-user token demand \u2014 applying it twice overprovisions by 1/duty_cycle, dropping it entirely underprovisions by the same."
+      "description": "Fraction of a concurrent session actually generating, dimensionless (Workload.duty_cycle). capacity_at applies it to the KV floor but NOT to per-user token demand — applying it twice overprovisions by 1/duty_cycle, dropping it entirely underprovisions by the same."
     },
     "input_tokens_per_request": {
       "type": [
@@ -269,6 +352,167 @@
     "avg_context_tokens_tag_u_reason": {
       "type": "string",
       "description": "(U) justification required when avg_context_tokens_tag is null (C1)."
+    },
+    "images_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Mean images per request, dimensionless. Feeds media_tokens_per_request; a workload that declares images in prose but leaves this null has no media term in avg_context_tokens, so the KV floor gets sized for text."
+    },
+    "images_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when images_per_request is null (C1)."
+    },
+    "image_resolution_mix": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "width",
+          "height",
+          "fraction"
+        ],
+        "properties": {
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "fraction": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "description": "Resolution distribution of declared images as {width, height, fraction} entries; fractions SHOULD sum to 1. On a dynamic-resolution model a single mean resolution hides a 10x token spread, so the mix is the declaration and the mean is not."
+    },
+    "image_resolution_mix_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_resolution_mix is null (C1)."
+    },
+    "videos_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Mean video clips per request, dimensionless. A value greater than 0 with a null video_seconds_per_request leaves the media term uncomputable, which is why the schema gates the two together."
+    },
+    "videos_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when videos_per_request is null (C1)."
+    },
+    "video_seconds_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Mean source clip duration per request, seconds. With video_sampling_fps it sets the frame count, and the frame count sets the media token term; null here makes videos_per_request unactionable."
+    },
+    "video_seconds_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when video_seconds_per_request is null (C1)."
+    },
+    "video_sampling_fps": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Frames sampled per second of source video that the APPLICATION requires, dimensionless. This is a declared sampling choice, not a property of the clip, and it is the single biggest lever on context length. The delivered value lives in serving media_preprocessing.video_sampling_fps; a disagreement between the two without a note means the report describes a workload the server did not run (addendum A1)."
+    },
+    "video_sampling_fps_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when video_sampling_fps is null (C1)."
+    },
+    "video_max_frames": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Hard frame cap per request that the APPLICATION requires, frames. Null means unbounded, which means the context length is unbounded. The delivered cap lives in serving media_preprocessing.video_max_frames; a disagreement without a note means the report describes a workload the server did not run (addendum A1)."
+    },
+    "video_max_frames_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when video_max_frames is null (C1)."
+    },
+    "media_tokens_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Total media expansion per request, tokens (M) from server-reported prompt_tokens on the real corpus or (I) from ascep.capacity.media_tokens_per_request, tagged inline as for peak_concurrent_users. This is the field that enters avg_context_tokens. 0 means measured and genuinely none; null means not reported. Conflating them turns an unmeasured workload into a text-only one, so the distinction is load-bearing."
+    },
+    "media_tokens_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when media_tokens_per_request is null (C1)."
+    },
+    "reasoning_mode": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "non-thinking",
+        "thinking",
+        "mixed",
+        null
+      ],
+      "description": "Which mode the workload runs in. Thinking and non-thinking are two capacity profiles of one model, because reasoning tokens consume decode time and KV exactly like visible tokens; a single capacity number that does not name its mode is meaningless for a model that has both."
+    },
+    "reasoning_mode_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when reasoning_mode is null (C1)."
+    },
+    "reasoning_share": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of requests served in thinking mode, dimensionless in [0,1]. Only meaningful when reasoning_mode is mixed, and the schema requires it non-null there; under any other reasoning_mode it is noise."
+    },
+    "reasoning_share_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when reasoning_share is null (C1)."
+    },
+    "reasoning_tokens_per_request": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Mean reasoning tokens per request, tokens (M) from the server's usage fields or (I) from a named estimator, tagged inline as for peak_concurrent_users. 0 means measured-and-none; null means the server did not report it. Reasoning tokens are frequently not returned in the response content, so a harness counting visible characters under-counts output by the entire reasoning volume."
+    },
+    "reasoning_tokens_per_request_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when reasoning_tokens_per_request is null (C1)."
+    },
+    "max_output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "Output token cap per request, tokens. Under thinking or mixed mode the traces expand to fill whatever budget they are given, so a mean output length reported without the cap that produced it is not reproducible: the number describes the harness as much as the model (addendum A3). Required and non-null when reasoning_mode is thinking or mixed."
+    },
+    "max_output_tokens_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when max_output_tokens is null (C1)."
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "ascep_version": "0.1.0",
   "model_id": null,
-  "model_id_u_reason": "(U) withheld \u2014 the model under test was a pre-release checkpoint and its identifier is not ours to publish. Every capacity figure below is reproducible against any MoE of the same total/active parameter split.",
+  "model_id_u_reason": "(U) withheld — the model under test was a pre-release checkpoint and its identifier is not ours to publish. Every capacity figure below is reproducible against any MoE of the same total/active parameter split.",
   "revision": null,
   "revision_u_reason": "(U) not pinned at run time",
   "total_params": 26000000000,
@@ -20,7 +20,7 @@
   "head_dim": null,
   "head_dim_u_reason": "(U) not captured. Third of the three fields kv_bytes_per_token needs; see n_layers.",
   "attention_type": null,
-  "attention_type_u_reason": "(U) not captured. Without it the applicable KV formula cannot even be selected, let alone evaluated \u2014 see chapter 2, Attention families.",
+  "attention_type_u_reason": "(U) not captured. Without it the applicable KV formula cannot even be selected, let alone evaluated — see chapter 2, Attention families.",
   "global_layer_frac": null,
   "global_layer_frac_u_reason": "(U) attention type unknown, so not applicable",
   "native_max_context_tokens": null,
@@ -28,5 +28,11 @@
   "weight_bytes_on_disk": null,
   "weight_bytes_on_disk_u_reason": "(U) not recorded",
   "licence": null,
-  "licence_u_reason": "(U) pre-release checkpoint; licence not public"
+  "licence_u_reason": "(U) pre-release checkpoint; licence not public",
+  "input_modalities": [
+    "text"
+  ],
+  "reasoning_modes": [
+    "non-thinking"
+  ]
 }

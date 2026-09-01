@@ -19,7 +19,9 @@
     "global_layer_frac",
     "native_max_context_tokens",
     "weight_bytes_on_disk",
-    "licence"
+    "licence",
+    "input_modalities",
+    "reasoning_modes"
   ],
   "properties": {
     "ascep_version": {
@@ -341,6 +343,205 @@
     "sliding_window_tokens_u_reason": {
       "type": "string",
       "description": "(U) justification required when sliding_window_tokens is null (C1)."
+    },
+    "input_modalities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ]
+      },
+      "description": "What the model accepts. Non-nullable: a report that cannot say whether it is a VLM cannot be interpreted at all, and unlike layer geometry this costs nothing to know."
+    },
+    "reasoning_modes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "non-thinking",
+          "thinking"
+        ]
+      },
+      "description": "Modes the model supports. A model supporting both declares both, and MUST be measured and reported per mode - they are two capacity profiles."
+    },
+    "reasoning_mode_control": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "chat-template-flag",
+        "request-field",
+        "separate-model-id",
+        "always-on",
+        "n-a",
+        null
+      ],
+      "description": "How a mode is selected. Without it a reader cannot reproduce the mode the numbers were taken in."
+    },
+    "reasoning_mode_control_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when reasoning_mode_control is null (C1)."
+    },
+    "vision_encoder_params": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Parameters of the vision tower. They land on the weights floor, and they are not in total_params for every published model - check, do not assume."
+    },
+    "vision_encoder_params_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when vision_encoder_params is null (C1)."
+    },
+    "vision_encoder_replicated_per_rank": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "True when the encoder is resident on EVERY tensor-parallel rank rather than sharded. Its VRAM then multiplies by tensor_parallel, which is a real and commonly-missed sizing error."
+    },
+    "vision_encoder_replicated_per_rank_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when vision_encoder_replicated_per_rank is null (C1)."
+    },
+    "image_token_policy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "fixed-grid",
+        "dynamic-resolution",
+        "declared-table",
+        null
+      ],
+      "description": "Selects the token predictor, exactly as attention_type selects the KV formula."
+    },
+    "image_token_policy_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_token_policy is null (C1)."
+    },
+    "image_tokens_fixed": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Tokens per image under fixed-grid."
+    },
+    "image_tokens_fixed_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_tokens_fixed is null (C1)."
+    },
+    "vision_patch_px": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Patch edge in pixels under dynamic-resolution."
+    },
+    "vision_patch_px_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when vision_patch_px is null (C1)."
+    },
+    "vision_spatial_merge": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The k of a k x k spatial pooling applied after patching; token count divides by k squared."
+    },
+    "vision_spatial_merge_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when vision_spatial_merge is null (C1)."
+    },
+    "image_tokens_min": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Lower clamp under dynamic-resolution."
+    },
+    "image_tokens_min_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_tokens_min is null (C1)."
+    },
+    "image_tokens_max": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Upper clamp under dynamic-resolution. This is the field that bounds the worst case, so a null here means the worst case is unbounded."
+    },
+    "image_tokens_max_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_tokens_max is null (C1)."
+    },
+    "image_token_table": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "width",
+          "height",
+          "tokens"
+        ],
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          }
+        }
+      },
+      "description": "Required under declared-table: the measured expansion at each supported resolution."
+    },
+    "image_token_table_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_token_table is null (C1)."
+    },
+    "video_frame_policy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "uniform-fps",
+        "uniform-count",
+        "native-timestamped",
+        "n-a",
+        null
+      ],
+      "description": "How a clip becomes frames."
+    },
+    "video_frame_policy_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when video_frame_policy is null (C1)."
+    },
+    "video_temporal_merge": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Frames merged in time before tokenisation; frame count divides by it."
+    },
+    "video_temporal_merge_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when video_temporal_merge is null (C1)."
     }
   },
   "allOf": [
@@ -443,6 +644,158 @@
         "required": [
           "sliding_window_tokens",
           "global_layer_frac"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "input_modalities": {
+            "anyOf": [
+              {
+                "contains": {
+                  "const": "image"
+                }
+              },
+              {
+                "contains": {
+                  "const": "video"
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "input_modalities"
+        ]
+      },
+      "then": {
+        "required": [
+          "image_token_policy",
+          "vision_encoder_params",
+          "vision_encoder_replicated_per_rank"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "image_token_policy": {
+            "const": "fixed-grid"
+          }
+        },
+        "required": [
+          "image_token_policy"
+        ]
+      },
+      "then": {
+        "required": [
+          "image_tokens_fixed"
+        ],
+        "properties": {
+          "image_tokens_fixed": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "image_token_policy": {
+            "const": "dynamic-resolution"
+          }
+        },
+        "required": [
+          "image_token_policy"
+        ]
+      },
+      "then": {
+        "required": [
+          "vision_patch_px",
+          "vision_spatial_merge",
+          "image_tokens_max"
+        ],
+        "properties": {
+          "vision_patch_px": {
+            "type": "integer"
+          },
+          "vision_spatial_merge": {
+            "type": "integer"
+          },
+          "image_tokens_max": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "image_token_policy": {
+            "const": "declared-table"
+          }
+        },
+        "required": [
+          "image_token_policy"
+        ]
+      },
+      "then": {
+        "required": [
+          "image_token_table"
+        ],
+        "properties": {
+          "image_token_table": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "input_modalities": {
+            "contains": {
+              "const": "video"
+            }
+          }
+        },
+        "required": [
+          "input_modalities"
+        ]
+      },
+      "then": {
+        "required": [
+          "video_frame_policy"
+        ],
+        "properties": {
+          "video_frame_policy": {
+            "enum": [
+              "uniform-fps",
+              "uniform-count",
+              "native-timestamped"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reasoning_modes": {
+            "contains": {
+              "const": "thinking"
+            }
+          }
+        },
+        "required": [
+          "reasoning_modes"
+        ]
+      },
+      "then": {
+        "required": [
+          "reasoning_mode_control"
         ]
       }
     }

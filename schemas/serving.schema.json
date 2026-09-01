@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ascep.dev/schemas/serving.schema.json",
-  "title": "ASCEP Layer 3 \u2014 Serving configuration",
+  "title": "ASCEP Layer 3 — Serving configuration",
   "description": "Layer 3 of the five ASCEP layers. Declares framework, parallelism, batching and KV configuration. Topology binding (C3): every KV and throughput figure produced under this declaration is valid only at this tensor_parallel / pipeline_parallel / gpu_count triple.",
   "type": "object",
   "additionalProperties": false,
@@ -22,7 +22,8 @@
     "chunked_prefill",
     "speculative_decoding",
     "engine_reported_kv_cache_tokens",
-    "cold_start_to_ready_s"
+    "cold_start_to_ready_s",
+    "image_input_transport"
   ],
   "properties": {
     "ascep_version": {
@@ -142,7 +143,7 @@
         "off",
         null
       ],
-      "description": "Whether KV is offloaded to host memory. If on, calibrate_memory_utilization may return an effective utilization above 1.0 \u2014 that is a flag, not a result."
+      "description": "Whether KV is offloaded to host memory. If on, calibrate_memory_utilization may return an effective utilization above 1.0 — that is a flag, not a result."
     },
     "kv_cache_quantized": {
       "type": [
@@ -237,6 +238,70 @@
     "speculative_decoding_u_reason": {
       "type": "string",
       "description": "(U) justification required when speculative_decoding is null (C1)."
+    },
+    "media_preprocessing": {
+      "type": "object",
+      "description": "Deployment-level media preprocessing: sampling rate, frame cap and pixel budget are fixed at server start and shared by every client of the endpoint, exactly like max_model_len, because the engine measured for this protocol refuses per-request media overrides (addendum A1). OPTIONAL at this level because a text-only deployment has no media preprocessing to declare; the obligation for a multimodal deployment to declare it is enforced in the report schema, not in this file.",
+      "additionalProperties": false,
+      "required": [
+        "image_longest_edge_px",
+        "per_request_override_supported"
+      ],
+      "properties": {
+        "video_sampling_fps": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Frames sampled per second of source video, fixed at server start. This is the delivered rate; the workload layer declares the requested rate, and a report where the two disagree without a note describes a workload the server did not run."
+        },
+        "video_max_frames": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Hard cap on sampled frames per request, fixed at server start. Null means unbounded, which means the context length is unbounded."
+        },
+        "image_longest_edge_px": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Pixel budget of the preprocessor per image or per sampled frame set, fixed at server start. This is the setting that binds silently: when measured prompt tokens stop responding to input size, the number being measured is this cap, not the workload, and a capacity model fed that column sizes the cluster for a workload nobody can run. Required whenever the served model accepts image or video; null only with a (U) reason."
+        },
+        "mm_processor_cache_gb": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Size of the engine's cache of processed media tensors, in GiB. A benchmark replaying identical media hits this cache and reports a speedup the production workload will never see, and nothing in the response reveals it."
+        },
+        "per_request_override_supported": {
+          "type": "boolean",
+          "description": "Whether the engine honours per-request media-processing overrides at all. The default assumption is false: the engine measured for this protocol answers per-request mm_processor_kwargs with HTTP 400, so declaring true while clients send per-request settings publishes a workload the server did not run."
+        }
+      }
+    },
+    "image_input_transport": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "base64",
+        "url",
+        "n-a",
+        null
+      ],
+      "description": "How image bytes reach the server. Base64 inflates a request body by about 4/3, so a 1 MB JPEG becomes roughly 1.37 MB of JSON per request; at high concurrency that saturates the client and the report blames the server."
+    },
+    "image_input_transport_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when image_input_transport is null (C1)."
     }
   }
 }
