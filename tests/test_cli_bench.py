@@ -274,6 +274,118 @@ def test_an_engine_log_that_is_not_there_is_refused_before_the_run_not_after_it(
     assert "nowhere.log" in err and "C8" in err
 
 
+# --- a config is self-contained: outputs land beside it, from any working directory ---
+
+
+def test_a_run_from_a_foreign_working_directory_writes_beside_the_config_not_the_cwd(
+    tmp_path, monkeypatch
+):
+    """The behaviour being pinned: outputs used to resolve against the process cwd while
+    inputs resolved against the config's directory, so a config declaring `bundle` was
+    self-contained on exactly one side, and a run launched from anywhere else split its
+    bundle from the declarations it was measured against. The run must chdir for real --
+    asserting on path strings without a foreign cwd would pass against the old code, which
+    was correct precisely when the cwd happened to be the config's directory. The zero
+    return also asserts that the C8 engine-log check passes on a relative
+    engine_logs_path from that foreign cwd, since that check gates the run."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    path = _write(
+        config_dir,
+        _config(
+            config_dir,
+            **{
+                "output.bundle_dir": "bundle",
+                "output.report_path": "report.json",
+                "output.engine_logs_path": "engine.log",
+            },
+        ),
+    )
+    _run_offline(monkeypatch)
+    monkeypatch.chdir(elsewhere)
+    assert main(["bench", path]) == 0
+    assert (config_dir / "bundle").is_dir(), "the bundle belongs beside the config"
+    assert (config_dir / "report.json").is_file(), "the draft belongs beside the config"
+    assert not (elsewhere / "bundle").exists()
+    assert not (elsewhere / "report.json").exists()
+
+
+def test_the_reproduction_table_names_the_declared_engine_log_not_the_resolved_path(
+    tmp_path, monkeypatch
+):
+    """A report that names an absolute path from the machine that produced it cannot be
+    checked by anyone else. The harness needs the resolved path to hash the file; what it
+    publishes is the string the operator wrote."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    path = _write(config_dir, _config(config_dir, **{"output.engine_logs_path": "engine.log"}))
+    _run_offline(monkeypatch)
+    assert main(["bench", path]) == 0
+    report = json.loads((config_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["reproduction"]["engine_logs_path"] == "engine.log"
+
+
+def test_the_c8_refusal_names_both_the_declared_string_and_where_it_resolved(
+    tmp_path, monkeypatch, capsys
+):
+    """The refusal that cost a live run said `calib/vllm_server.out is not a file`, which
+    was true of the working directory and false of the config's, and told the operator
+    nothing about which was meant. The message must carry the declared string, the path it
+    resolved to, and the rule that produced it."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    path = _write(config_dir, _config(config_dir, **{"output.engine_logs_path": "nowhere.log"}))
+    _run_offline(monkeypatch)
+    monkeypatch.chdir(elsewhere)
+    assert main(["bench", path]) == 2
+    err = capsys.readouterr().err
+    assert "nowhere.log" in err
+    expected = pathlib.Path(path).resolve().parent / "nowhere.log"
+    assert str(expected) in err, f"the refusal must say where it actually looked: {err}"
+    assert "config file's directory" in err, f"the refusal must state the rule: {err}"
+
+
+def test_an_absolute_bundle_dir_is_honoured_verbatim_from_a_foreign_working_directory(
+    tmp_path, monkeypatch
+):
+    """Path.joinpath's absolute-wins rule is the only thing standing between a declared
+    absolute bundle path and the harness silently relocating it under the config's
+    directory. It falls out of the expression, which is exactly why it needs its own
+    assertion: a regression here breaks every published config with absolute outputs
+    without touching a relative one."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    target = tmp_path / "absolute-target"
+    target.mkdir()
+    # Beside the absolute bundle, not beside the config: C8 requires the log to sit under
+    # the report directory, and that directory is wherever the absolute path put it.
+    (target / "engine.log").write_text("fixture engine log\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    path = _write(
+        config_dir,
+        _config(
+            config_dir,
+            **{
+                "output.bundle_dir": str(target / "bundle"),
+                "output.report_path": str(target / "report.json"),
+                "output.engine_logs_path": "engine.log",
+            },
+        ),
+    )
+    _run_offline(monkeypatch)
+    monkeypatch.chdir(elsewhere)
+    assert main(["bench", path]) == 0
+    assert (target / "bundle").is_dir(), "an absolute bundle_dir must not be relocated"
+    assert (target / "report.json").is_file()
+    assert not (config_dir / "bundle").exists()
+    assert not (elsewhere / "bundle").exists()
+
+
 def test_an_unknown_key_in_the_config_is_an_error_not_a_shrug(tmp_path, capsys):
     """A typo in `drain_deadline_sec` is otherwise indistinguishable from omitting it, and the
     run proceeds on a default the operator believes they overrode."""

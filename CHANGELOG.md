@@ -119,6 +119,28 @@ cross-version comparisons valid.
   without `kv_per_token`. It previously returned `True` as soon as the weights
   loaded, so a caller who explicitly asked for a KV floor got a "fits" verdict
   for a configuration nobody had checked.
+- **`ascep bench` resolves every path in the config against the config file's own
+  directory, outputs included.** This reverses a deliberate, documented decision
+  rather than fixing an oversight: chapter 7 stated the two-anchor rule outright and
+  argued for it -- `output.*` resolved against the working directory "because they are
+  where a particular invocation puts its results rather than part of the declaration
+  being replayed". The argument is coherent and it did not survive contact with C8.
+  `output.engine_logs_path` resolves against the bundle's parent and MUST sit
+  underneath it, so a floating `bundle_dir` floated the C8 check with it. Measured: a
+  live H100 run invoked from the repository root against a config in `vlm/` declaring
+  `calib/bundle` and `vllm_server.out` loaded its corpus correctly from `vlm/` while
+  the bundle was created under the repository root, and C8 refused the run with
+  `the declared engine log calib/vllm_server.out is not a file` -- true of the working
+  directory, false of the config's. The run was correct in every respect except the
+  directory it was launched from, and the only cure was an undocumented `cd` that has
+  to be rediscovered by having a run fail. `output.bundle_dir` and `output.report_path`
+  now join the config's directory, `output.engine_logs_path` keeps resolving against
+  the bundle's parent, which now moves with it, and the C8 refusal names the declared
+  string, the path it resolved to, and the rule. The reproduction table still records
+  paths as declared, never resolved, so a report stays checkable off the machine that
+  produced it. **What this costs:** redirecting a config's outputs by changing
+  directory no longer works. An absolute path is still honoured verbatim, which is the
+  supported way to send one config's results somewhere else.
 
 ### Deprecated
 

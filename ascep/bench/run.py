@@ -492,27 +492,39 @@ def _declaration_bytes(config, config_dir):
     return files
 
 
-def _engine_log_problem(path, report_dir):
+def _engine_log_problem(path, report_dir, declared):
     """Say why the declared engine log cannot go into the bundle, or return None.
 
     Checked before the first request, because ``write_bundle`` hashes this file after the
     last one: a typo in the path, or a log outside the report directory, would otherwise
     surface at the one moment when the records exist nowhere but in RAM.
+
+    ``declared`` is the string the operator wrote and ``path`` is where it resolved. A
+    refusal that prints only one of them tells the operator nothing about which tree the
+    harness looked in: ``calib/vllm_server.out is not a file`` was true of the working
+    directory and false of the config's, and it refused a run that was correct in every
+    respect except the directory it was launched from.
     """
     if not path.is_file():
-        return f"the declared engine log {path} is not a file"
+        return (
+            f"the declared engine log '{declared}', resolved against the config file's "
+            f"directory to {path}, is not a file; every relative path in a bench config "
+            "resolves against the config file's directory, not the working directory "
+            "the command was invoked from"
+        )
     try:
         with path.open("rb"):
             pass
     except OSError as exc:
-        return f"the declared engine log {path} cannot be read: {exc}"
+        return f"the declared engine log '{declared}', resolved to {path}, cannot be read: {exc}"
     try:
         path.resolve().relative_to(report_dir.resolve())
     except ValueError:
         return (
-            f"the declared engine log {path} is outside the report directory {report_dir}, "
-            "so the reproduction table would have to name it with a path that resolves "
-            "only on this machine; copy it under the report directory before the run"
+            f"the declared engine log '{declared}', resolved to {path}, is outside the "
+            f"report directory {report_dir}, so the reproduction table would have to name "
+            "it with a path that resolves only on this machine; copy it under the report "
+            "directory before the run"
         )
     return None
 
@@ -855,7 +867,13 @@ def _bench(config_path, *, dry_run, adapter_factory, out, err):
         return 0
 
     output = config["output"]
-    bundle_dir = Path(output["bundle_dir"])
+    # Outputs resolve against the config's directory exactly as inputs do; the process cwd
+    # is otherwise part of the run's meaning, and a run launched from the wrong directory
+    # splits the bundle from the declarations it was measured against. An absolute declared
+    # value must not be dragged under the config directory either: Path.joinpath returns the
+    # right operand when it is absolute, which is what saves it, but a reader will wonder,
+    # so it is said here rather than discovered.
+    bundle_dir = Path(config_dir) / output["bundle_dir"]
     if bundle_dir.exists():
         # The GPU hours behind an existing bundle are already spent and the records cannot
         # be regenerated, so overwrite is a refusal rather than an option.
@@ -866,10 +884,17 @@ def _bench(config_path, *, dry_run, adapter_factory, out, err):
         )
         return 2
 
+    # bundle_dir.parent is now anchored at the config, so a relative engine log moves with
+    # the bundle instead of with the cwd: the old anchor let the C8 check hunt the log in
+    # the tree the command was launched from while the bundle landed in another. Both sides
+    # of _engine_log_problem's containment test sit in the same tree, so like is still
+    # compared with like, and write_bundle below still receives the declared string, never
+    # engine_logs: a reproduction table naming an absolute path from the machine that
+    # produced the run cannot be checked by anyone else.
     engine_logs = Path(output["engine_logs_path"])
     if not engine_logs.is_absolute():
         engine_logs = bundle_dir.parent / engine_logs
-    log_problem = _engine_log_problem(engine_logs, bundle_dir.parent)
+    log_problem = _engine_log_problem(engine_logs, bundle_dir.parent, output["engine_logs_path"])
     if log_problem:
         print(f"ascep bench: {log_problem} (C8)", file=err)
         return 2
@@ -951,7 +976,10 @@ def _bench(config_path, *, dry_run, adapter_factory, out, err):
         c8,
         state["censor"],
     )
-    report_path = Path(output["report_path"])
+    # Same anchor as bundle_dir above: the draft lands beside the bundle and the config, not
+    # beside wherever the command happened to be launched, or a run's evidence splits across
+    # two trees that can only name each other through cwd-relative paths.
+    report_path = Path(config_dir) / output["report_path"]
     try:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
