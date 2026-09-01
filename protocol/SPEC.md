@@ -61,6 +61,18 @@ label does not raise the grade — a single point still caps the report at `part
 records that the limit was known, so the figures are not read as a curve and projected to a
 shape they were never measured at.
 
+Context is more than a token count once the request carries media or the model thinks, so a
+throughput figure MUST additionally be reported with: the media shape it was measured at —
+`images_per_request`, `videos_per_request` and `video_seconds_per_request` — whenever any of
+them is non-zero; the `reasoning_mode` the run was driven in; and, for a `thinking` or `mixed`
+workload, both `max_output_tokens` and the measured `truncation_rate`. Zero and `null` are
+different claims here: `0` means measured and genuinely absent, `null` means not reported, and
+conflating them turns an unmeasured multimodal workload into a text-only one. The output cap is
+not a harness detail under thinking — reasoning traces expand to fill whatever budget they are
+given, so an output length quoted without its cap describes the harness as much as the model,
+and a throughput figure quoted without its truncation rate counts tokens that were generated
+but never delivered. See §9.
+
 **C5 — Binding constraint.** Every capacity figure MUST name which floor binds it —
 `weights`, `kv`, `throughput` or `slo`. A capacity number without its constraint does not
 say what to buy and is not actionable.
@@ -159,6 +171,7 @@ the two before projecting to other context lengths.
 | 6 | [Application sizing](06-application-sizing.md) | users → tokens → GPUs |
 | 7 | [Benchmark procedure](07-benchmark-procedure.md) | warm-up, duration, repeats, outliers, failures |
 | 8 | [Reporting](08-reporting.md) | the standard report, conformance checking |
+| 9 | [Multimodal and reasoning](09-multimodal-and-reasoning.md) | image and video token cost, thinking mode, calibration |
 
 ## Versioning
 

@@ -116,6 +116,15 @@
       "default": false,
       "description": "true if fixed-token ignore_eos generation was used. Such runs are engine-ceiling measurements and MUST NOT be reported as user capacity."
     },
+    "truncation_rate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of requests in the sustained window that stopped by hitting workload.max_output_tokens rather than emitting a stop token. REQUIRED by C4 alongside any throughput figure from a thinking or mixed workload. Measured at 0.464 on one thinking run: nearly half the generated tokens were real GPU work that delivered no answer, and a throughput figure that averages truncated and completed requests together overstates deliverable capacity by roughly that share."
+    },
     "slo_gates": {
       "type": "object",
       "additionalProperties": false,
@@ -608,6 +617,10 @@
     "ignore_eos_u_reason": {
       "type": "string",
       "description": "(U) justification required when ignore_eos is null (C1)."
+    },
+    "truncation_rate_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when truncation_rate is null (C1)."
     },
     "environment_capture_path_u_reason": {
       "type": "string",

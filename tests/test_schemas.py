@@ -251,6 +251,34 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
         # hardware spec-sheet names
         "flops_per_s_dense",
         "ram_bytes",
+        # Vision-preprocessor keys from the checkpoint's own config, quoted because chapter 9
+        # tells a reader to go and read them. `longest_edge` in particular is the one that
+        # caps a clip silently, and naming it is the whole point of the paragraph it appears
+        # in -- a chapter that could not quote it would have to describe it, and a reader
+        # cannot grep for a description.
+        "longest_edge",
+        "shortest_edge",
+        "max_pixels",
+        "min_pixels",
+        "patch_size",
+        "merge_size",
+        "spatial_merge_size",
+        "temporal_patch_size",
+        # Engine flags and request fields for multimodal and reasoning traffic
+        "limit_mm_per_prompt",
+        "mm_processor_kwargs",
+        "disable_mm_preprocessor_cache",
+        "enable_thinking",
+        "chat_template_kwargs",
+        "reasoning_effort",
+        "reasoning_content",
+        "image_url",
+        "max_tokens",
+        "max_completion_tokens",
+        # OpenAI usage-block fields; the server's own token counts, which section 9.4 makes
+        # the arbiter over any predicted figure
+        "prompt_tokens",
+        "completion_tokens",
     }
     allowed = ours | foreign
 

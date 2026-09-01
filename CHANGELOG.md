@@ -15,6 +15,53 @@ cross-version comparisons valid.
 
 ### Added
 
+- **Multimodal and reasoning-mode capacity**, as [chapter 9](protocol/09-multimodal-and-reasoning.md)
+  plus the declarations and formulas it governs. `input_modalities` and
+  `reasoning_modes` are now required and non-nullable in the model layer, because a
+  report that cannot say whether it is a VLM, or which of a model's two capacity
+  profiles it measured, cannot be interpreted at all. The image and video geometry
+  (`image_token_policy` and its per-policy fields, `video_frame_policy`,
+  `vision_encoder_params`, `vision_encoder_replicated_per_rank`) is schema-gated on the
+  declared modality, so a multimodal declaration cannot be a skeleton. Media
+  preprocessing is a **serving-layer** object, `media_preprocessing`, not a per-request
+  one: on the engine measured here per-request `mm_processor_kwargs` returns HTTP 400 and
+  the sampling rate is fixed at server start, so two clients on one endpoint cannot choose
+  differently.
+- `ascep.capacity` gains `image_tokens`, `video_frames`, `video_tokens`,
+  `media_tokens_per_request` and `vision_encoder_bytes`, validated against six independent
+  server measurements (uncapped errors -0.7%, -1.0%, -2.8%; capped +1.6%, -0.5%, -0.4%).
+  `Workload` gains `media_tokens_per_request` and `reasoning_tokens_per_request`; media
+  tokens are resident for the whole request and are **not** halved in
+  `avg_context_tokens`, while reasoning tokens accumulate like output and are. Existing
+  workloads are unaffected: both fields default to zero and the published example's
+  figures are unchanged.
+- Two mandatory run-validity checks, both derived from real failures.
+  `media_token_cap_check` catches a preprocessor cap: three clips of 94.8 s, 47.4 s and
+  39.1 s all produced ~12.3k tokens under a default pixel budget, so a 2.4x span in input
+  moved the measurement by 2%. When measured prompt tokens stop responding to input size,
+  the number being measured is the preprocessor's cap, not the workload. The check refuses
+  to answer on samples spanning less than 2x, because "we looked and found no cap" and "we
+  could not look" size a cluster differently. `media_arrival_check` catches media that
+  never arrived: an AV1 corpus that the container's decoder turned into zero frames, with
+  every request succeeding as text and no error raised.
+- `run.truncation_rate`, the field C4 now requires and no schema provided. Reasoning
+  traces expand to fill whatever output budget they are given -- measured at 120
+  completion tokens per request with thinking off, and 10,577 / 19,896 / 33,829 at caps of
+  8,192 / 24,576 / 57,344, truncating 74.6% / 59.1% / 46.4% of requests at prompts
+  averaging only ~2,530 tokens. A throughput figure that averages truncated and completed
+  requests together counts tokens no user received.
+
+### Changed
+
+- **C4 (context binding) now covers media and reasoning.** A throughput figure MUST
+  additionally carry the media shape it was measured at, the `reasoning_mode` the run was
+  driven in, and -- for a thinking or mixed workload -- both `max_output_tokens` and the
+  measured `truncation_rate`. `0` and `null` are different claims throughout: `0` means
+  measured and genuinely absent, `null` means not reported, and conflating them turns an
+  unmeasured multimodal workload into a text-only one.
+- `tools/migrate_v02_multimodal.py` backfills existing v0.1 documents to the new required
+  fields. It is idempotent and has a `--check` mode; it handled all 13 documents in the
+  repository without altering any published number.
 - `ascep init` writes a fillable report skeleton derived from the schemas, for any
   single layer or the whole `capacity-report`. It refuses to overwrite an existing
   file without `--force`, writes the document to stdout so it can be piped, and
