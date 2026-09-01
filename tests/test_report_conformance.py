@@ -17,6 +17,7 @@ import pathlib
 
 import pytest
 
+from ascep.bench.persist import verify_bundle
 from ascep.validation import validate
 
 ROOT = pathlib.Path(__file__).parent.parent
@@ -38,6 +39,20 @@ def _build(example_dir: pathlib.Path) -> dict:
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.build()
+
+
+def _resolve_inside(example_dir: pathlib.Path, rel: str) -> pathlib.Path | None:
+    """Resolve a reproduction path against the example, or None if it escapes it.
+
+    A bundle reached through ``../../scratch`` is a bundle nobody who downloads the example
+    can check, and the report would still look provenanced.
+    """
+    target = (example_dir / rel).resolve()
+    try:
+        target.relative_to(example_dir.resolve())
+    except ValueError:
+        return None
+    return target
 
 
 def _nulls(node, path="") -> list[tuple[str, dict]]:
@@ -69,14 +84,47 @@ def test_report_validates(report_path):
 
 
 def test_report_is_regenerable(report_path):
-    """The committed file must equal what its builder emits.
+    """The committed file must equal what its builder emits -- or trace to a verified bundle.
 
     Without this, a report can be hand-edited into agreeing with a conclusion it no longer
-    supports — the single easiest way to launder a number through this protocol.
+    supports -- the single easiest way to launder a number through this protocol.
+
+    An example with no ``build_report.py`` proves provenance a stronger way: its reproduction
+    block names a bundle of raw records, and that bundle's own manifest must verify against
+    the bytes on disk. The two branches must not collapse into one, because deleting the
+    builder is never a way out of this test -- the escape requires a manifest-pinned bundle
+    that exists and that ``verify_bundle`` accepts. A builderless example with neither is
+    not skipped; it fails, naming the hole.
     """
-    assert _load(report_path) == _build(report_path.parent), (
-        f"{report_path.parent.name}/report.json is stale or hand-edited. "
-        f"Run: python examples/{report_path.parent.name}/build_report.py"
+    example_dir = report_path.parent
+    if (example_dir / "build_report.py").is_file():
+        assert _load(report_path) == _build(example_dir), (
+            f"{example_dir.name}/report.json is stale or hand-edited. "
+            f"Run: python examples/{example_dir.name}/build_report.py"
+        )
+        return
+    reproduction = _load(report_path).get("reproduction") or {}
+    raw_records_rel = reproduction.get("raw_records_path")
+    assert raw_records_rel, (
+        f"{example_dir.name}/report.json has no build_report.py and names no "
+        "reproduction.raw_records_path. A builderless example proves its numbers through "
+        "its reproduction bundle; with no records path there is nothing to verify, and this "
+        "test must not be dodged by deleting the builder."
+    )
+    records_path = _resolve_inside(example_dir, raw_records_rel)
+    assert records_path is not None, (
+        f"reproduction.raw_records_path ({raw_records_rel}) resolves outside "
+        f"{example_dir.name}/; the bundle must live inside the example it proves."
+    )
+    bundle_dir = records_path.parent
+    assert bundle_dir.is_dir(), (
+        f"reproduction.raw_records_path ({raw_records_rel}) names a records file in a "
+        "directory that does not exist; the bundle this report cites is missing."
+    )
+    problems = verify_bundle(bundle_dir)
+    assert not problems, (
+        f"{example_dir.name} has no build_report.py, so its bundle is the whole proof of "
+        "provenance -- and it does not verify:\n" + "\n".join(problems)
     )
 
 
