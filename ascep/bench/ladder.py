@@ -152,10 +152,20 @@ def _repetition_failure(rep: RepetitionResult) -> tuple[str | None, bool]:
     """
     summary = rep.summary
     if summary.n_issued > 0 and summary.n_completed == 0:
+        # Zero completions *inside the declared window* -- which is the throughput
+        # statement, and is still true of a server so slow that every request landed after
+        # close. Those late finishers give the window latency samples, so the reason must
+        # not claim latency was unmeasurable; what it may claim is that the window
+        # delivered nothing, and a rung delivering nothing is a boundary, not a slow point.
+        straddled = (
+            f"; {summary.n_latency_samples} request(s) completed only after window close"
+            if summary.n_latency_samples
+            else "; latency statistics are (U)"
+        )
         return (
-            f"repetition {rep.repetition}: zero completions under offered load; latency "
-            "statistics are (U), so the rung cannot be reported as a slow-but-valid point "
-            "-- it is a boundary where service fell over (section 7)",
+            f"repetition {rep.repetition}: zero completions inside the declared window "
+            f"under offered load{straddled}, so the rung cannot be reported as a "
+            "slow-but-valid point -- it is a boundary where service fell over (section 7)",
             True,
         )
     if rep.outcome in (RungOutcome.FAILED, RungOutcome.ABORTED):

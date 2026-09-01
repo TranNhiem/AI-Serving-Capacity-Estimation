@@ -154,10 +154,17 @@ class WindowSummary:
     ``None`` always means unmeasured, with the reason in :attr:`reasons`; figures in
     :attr:`low_confidence` sit between the absolute and advisory floors and must carry
     an interval when they decide a tier boundary.
+
+    ``n_issued``, ``n_completed`` and ``n_latency_samples`` count three different cohorts
+    that section 7.6 deliberately keeps apart -- offered demand, completions attributed to
+    this window, and valid latency observations. They are equal below saturation and
+    differ under overload, so a reader comparing them is reading the boundary effect, not
+    an inconsistency.
     """
 
     n_issued: int
     n_completed: int
+    n_latency_samples: int
     excluded_error_count: int
     excluded_invalid_count: int
     excluded_warmup_count: int
@@ -186,7 +193,11 @@ class SliceRow:
 
     The table exists to expose a bad interval, so accepted and completed are counted on
     different timestamps and concurrency is time-weighted: a burst the server absorbs
-    and pays for later must be visible as a shape, not averaged flat.
+    and pays for later must be visible as a shape, not averaged flat. They are also
+    counted over different cohorts -- ``accepted`` and ``errors`` over arrivals the window
+    offered, ``completed`` and ``achieved_concurrency`` over every request in flight,
+    warm-up included -- so the first row of a healthy run may complete more than it
+    accepted. That is the boundary being reported, not a miscount.
     """
 
     index: int
@@ -267,39 +278,68 @@ def reduce_window(
     records: Sequence[RequestRecord],
     *,
     window_s: float,
+    t0: float,
     gates: SloGates | None = None,
     seed: int = 0,
 ) -> WindowSummary:
     """Reduce the records of one declared measurement window to its published figures.
 
-    The denominator of every rate is ``window_s``, the declared post-warmup window --
-    never the first-arrival-to-last-completion span implied by the records, which
-    stretches with stragglers exactly when the system is slowest. ``seed`` is accepted
-    so callers pass one deterministic value through the whole reduction; intervals
-    computed from these records must reuse it rather than draw their own.
+    The window is ``[t0, t0 + window_s]``. The denominator of every rate is ``window_s``,
+    the declared post-warmup duration -- never the first-arrival-to-last-completion span
+    implied by the records, which stretches with stragglers exactly when the system is
+    slowest. ``t0`` is required rather than defaulted because section 7.6 splits requests
+    by where they sit relative to the window edges, and a reduction that does not know
+    where the window opened cannot apply that split; it can only pick one cohort and hope,
+    which is the resolution the drain deadline exists to take away from the harness.
+    ``seed`` is accepted so callers pass one deterministic value through the whole
+    reduction; intervals computed from these records must reuse it rather than draw
+    their own.
     """
     del seed  # reserved for interval computation; a default drawn from the clock is barred
+    t1 = t0 + window_s
     # Warm-up is marked rather than deleted so the bundle keeps it, which means the
     # reduction is the thing that has to drop it. Handed a whole bundle, a reduction that
     # trusted its caller would fold cold-cache and cold-scheduler requests into the tail
     # and call the result steady state -- the exact figure section 7.3 discards them for.
     excluded_warmup_count = sum(1 for record in records if not record.in_window)
-    records = [record for record in records if record.in_window]
-    n_issued = len(records)
+    offered = [record for record in records if record.in_window]
+    n_issued = len(offered)
     excluded_error_count = 0
     excluded_invalid_count = 0
     usable: list[RequestRecord] = []
-    for record in records:
+    for record in offered:
         if record.outcome is not Outcome.OK:
             excluded_error_count += 1
         elif not _is_monotonic(record):
             excluded_invalid_count += 1
         else:
             usable.append(record)
-    n_completed = len(usable)
+    # Latency counts a request that arrived inside the window and completed validly, even
+    # if it completed after close: the driver has already turned anything still outstanding
+    # at the drain deadline into a failure, so a late finisher reaching here is a real tail
+    # sample and dropping it would lower the tail by deleting the slowest requests.
+    n_latency_samples = len(usable)
     # Issued is the normative denominator: a record exists from the moment the driver
     # decided to send, so refusals and cancellations are failures, not absences.
     error_rate_pct = 100.0 * excluded_error_count / n_issued if n_issued else None
+
+    # Rates attribute a completion to the window it finished in, not the one it was
+    # offered in. Both halves of that rule matter and they cancel at the edges: a request
+    # issued inside the window and finishing after close is a latency sample but not a
+    # completion of this window, and a warm-up request finishing inside it is a completion
+    # of this window but neither demand nor a latency sample. Applying only the half that
+    # excludes traffic biases steady-state throughput low at the opening edge and the half
+    # that includes it biases high at the closing edge; counting by completion instant
+    # measures across the boundary instead of being moved by it.
+    finished_here = [
+        record
+        for record in records
+        if record.outcome is Outcome.OK
+        and record.end_ts is not None
+        and t0 <= record.end_ts <= t1
+        and _is_monotonic(record)
+    ]
+    n_completed = len(finished_here)
 
     ttft: list[float] = []
     gaps: list[float] = []
@@ -348,7 +388,7 @@ def reduce_window(
         output_tok_s = None
     else:
         requests_per_s = n_completed / window_s
-        counted = [r.output_tokens for r in usable if r.output_tokens is not None]
+        counted = [r.output_tokens for r in finished_here if r.output_tokens is not None]
         output_tok_s = sum(counted) / window_s if counted else None
         if not counted:
             reasons["output_tok_s"] = "(U) no completed record reported output_tokens"
@@ -375,6 +415,7 @@ def reduce_window(
     return WindowSummary(
         n_issued=n_issued,
         n_completed=n_completed,
+        n_latency_samples=n_latency_samples,
         excluded_error_count=excluded_error_count,
         excluded_invalid_count=excluded_invalid_count,
         excluded_warmup_count=excluded_warmup_count,
@@ -437,10 +478,6 @@ def slice_window(
             f"trim_slices={trim_slices} would leave no rows of {n_slices}; "
             "the slice table is the steady-state evidence and cannot be trimmed to nothing"
         )
-    # Same reason as in reduce_window: a warm-up request that happens to overlap the first
-    # slice would show up as steady-state occupancy in the table meant to prove the state
-    # was steady.
-    records = [record for record in records if record.in_window]
     edges = [t0 + i * window_s / n_slices for i in range(n_slices + 1)]
     accepted = [0] * n_slices
     completed = [0] * n_slices
@@ -449,11 +486,18 @@ def slice_window(
     tokens_seen = [False] * n_slices
     busy = [0.0] * n_slices
     for record in records:
-        ia = _slice_index(edges, record.issued_ts)
-        if ia is not None:
-            accepted[ia] += 1
-            if record.outcome is not Outcome.OK:
-                errors[ia] += 1
+        # Only an arrival the window itself offered is demand on this table. A warm-up
+        # request is not accepted here and its failure is not this window's error, but it
+        # is still occupying the server -- so it is filtered out of the arrival columns
+        # rather than out of the table, and the occupancy and completion columns below see
+        # every record. Dropping it wholesale would report a first slice that looks calmer
+        # than the machine was, in the table whose only job is to show whether it was.
+        if record.in_window:
+            ia = _slice_index(edges, record.issued_ts)
+            if ia is not None:
+                accepted[ia] += 1
+                if record.outcome is not Outcome.OK:
+                    errors[ia] += 1
         if record.end_ts is not None:
             ic = _slice_index(edges, record.end_ts)
             if ic is not None:

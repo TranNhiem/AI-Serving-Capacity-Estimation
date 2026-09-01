@@ -68,19 +68,19 @@ def test_p95_below_twenty_samples_is_unmeasured_not_the_maximum():
     several times the true tail on an unlucky window, flatteringly low on a lucky one.
     """
     recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01]) for i in range(19)]
-    s = reduce_window(recs, window_s=19.0)
+    s = reduce_window(recs, window_s=19.0, t0=0.0)
     assert s.ttft_p95_s is None
     assert "ttft_p95_s" in s.reasons and "20" in s.reasons["ttft_p95_s"]
 
 
 def test_p95_at_exactly_twenty_samples_is_reported():
     recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01]) for i in range(20)]
-    assert reduce_window(recs, window_s=20.0).ttft_p95_s is not None
+    assert reduce_window(recs, window_s=20.0, t0=0.0).ttft_p95_s is not None
 
 
 def test_p99_below_one_hundred_samples_is_unmeasured():
     recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01]) for i in range(99)]
-    s = reduce_window(recs, window_s=99.0)
+    s = reduce_window(recs, window_s=99.0, t0=0.0)
     assert s.ttft_p99_s is None
     assert s.ttft_p95_s is not None, "p95 has its own, lower floor and should still report"
 
@@ -91,14 +91,14 @@ def test_a_percentile_between_the_two_floors_is_reported_but_flagged():
     single straggler moves the figure -- publishable, but not as a bare point estimate.
     """
     recs = [_ok(f"r{i}", i * 0.1, 0.1 + i * 0.001, [0.01]) for i in range(100)]
-    s = reduce_window(recs, window_s=10.0)
+    s = reduce_window(recs, window_s=10.0, t0=0.0)
     assert s.ttft_p95_s is not None
     assert "ttft_p95_s" in s.low_confidence
 
 
 def test_a_percentile_above_the_advisory_floor_is_not_flagged():
     recs = [_ok(f"r{i}", i * 0.01, 0.1 + i * 0.001, [0.01]) for i in range(200)]
-    s = reduce_window(recs, window_s=2.0)
+    s = reduce_window(recs, window_s=2.0, t0=0.0)
     assert "ttft_p95_s" not in s.low_confidence
 
 
@@ -127,7 +127,7 @@ def test_without_per_token_stamps_itl_is_the_decode_span_not_the_e2e_span():
     under the same label as the pooled population, so the summary names which one it is.
     """
     recs = [_no_stamps(f"r{i}", float(i), 3.0, 9.9, 100) for i in range(50)]
-    s = reduce_window(recs, window_s=50.0)
+    s = reduce_window(recs, window_s=50.0, t0=0.0)
     assert s.itl_population == "per-request-mean"
     assert s.itl_p50_s == pytest.approx(0.1)
     naive = (3.0 + 9.9) / 100
@@ -141,7 +141,7 @@ def test_a_single_token_reply_contributes_no_itl_sample():
     measurement in the ITL distribution, which is the same conflation §4.1 forbids.
     """
     recs = [_no_stamps(f"r{i}", float(i), 0.4, 0.0, 1) for i in range(50)]
-    s = reduce_window(recs, window_s=50.0)
+    s = reduce_window(recs, window_s=50.0, t0=0.0)
     assert s.itl_population is None
     assert s.itl_p50_s is None
     assert s.e2e_p95_s is not None, "e2e is still measurable from the stamps that do exist"
@@ -149,7 +149,7 @@ def test_a_single_token_reply_contributes_no_itl_sample():
 
 def test_pooled_gaps_are_preferred_wherever_the_stamps_exist():
     recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01] * 3) for i in range(20)]
-    assert reduce_window(recs, window_s=20.0).itl_population == "pooled-gaps"
+    assert reduce_window(recs, window_s=20.0, t0=0.0).itl_population == "pooled-gaps"
 
 
 def test_a_stall_inside_a_request_reaches_the_itl_tail_while_the_median_stays_clean():
@@ -161,7 +161,7 @@ def test_a_stall_inside_a_request_reaches_the_itl_tail_while_the_median_stays_cl
     the stall vanishes, and only 20 samples remain, which is below the p99 floor anyway.
     """
     recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01] * 25 + [0.9] + [0.01] * 24) for i in range(20)]
-    s = reduce_window(recs, window_s=20.0)
+    s = reduce_window(recs, window_s=20.0, t0=0.0)
     assert s.itl_p50_s == pytest.approx(0.01)
     assert s.itl_p99_s == pytest.approx(0.9)
     per_request_mean = (0.01 * 49 + 0.9) / 50
@@ -182,7 +182,7 @@ def test_a_record_with_a_negative_span_is_excluded_and_counted_not_clamped():
         token_ts=[],
         end_ts=100.2,  # ends before its own first token
     )
-    s = reduce_window(good + [bad], window_s=21.0)
+    s = reduce_window(good + [bad], window_s=21.0, t0=0.0)
     assert s.excluded_invalid_count == 1
     assert s.n_issued == 21, "an invalid record is still an issued request"
 
@@ -197,7 +197,7 @@ def test_sub_millisecond_skew_is_tolerated_rather_than_rejected():
         token_ts=[],
         end_ts=100.5,
     )
-    assert reduce_window([r], window_s=1.0).excluded_invalid_count == 0
+    assert reduce_window([r], window_s=1.0, t0=0.0).excluded_invalid_count == 0
 
 
 # --- ch7 §3 warm-up is marked, so the reduction is what has to drop it ----------------
@@ -215,20 +215,89 @@ def test_warm_up_records_are_excluded_from_the_window_and_from_its_denominator()
         record.in_window = False
     steady = [_ok(f"r{i}", 10.0 + i * 0.1, 0.1, [0.01]) for i in range(20)]
 
-    s = reduce_window(warm + steady, window_s=2.0)
+    s = reduce_window(warm + steady, window_s=3.0, t0=10.0)
     assert s.excluded_warmup_count == 10
     assert s.n_issued == 20, "warm-up is not an issued request of this window"
     assert s.n_completed == 20
+    assert s.n_latency_samples == 20
     assert s.ttft_p95_s == pytest.approx(0.1), "a 5 s cold TTFT must not reach the tail"
 
 
-def test_a_warm_up_request_does_not_occupy_a_steady_state_slice():
+def test_a_warm_up_request_still_in_flight_occupies_the_first_slice():
+    """Section 7.6: start-outside/finish-inside is a completion here but not demand here.
+
+    The slice table's job is to show whether the state was steady, and a warm-up request
+    the server is still decoding is occupying a slot whatever the driver calls it. Filtering
+    it out of every column would report a calmer opening slice than the machine had, which
+    is the one thing this table must not be able to do.
+    """
     warm = _ok("w0", 0.0, 0.1, [0.9])
     warm.in_window = False
     steady = [_ok(f"r{i}", 0.0, 0.1, [0.1]) for i in range(4)]
     rows = slice_window([warm, *steady], window_s=1.0, n_slices=1, t0=0.0)
-    assert rows[0].accepted == 4
-    assert rows[0].achieved_concurrency == pytest.approx(4 * 0.2)
+    assert rows[0].accepted == 4, "warm-up is not offered demand of this window"
+    assert rows[0].completed == 5, "but it did finish here, so it completed here"
+    assert rows[0].achieved_concurrency == pytest.approx(4 * 0.2 + 1.0)
+
+
+# --- §7.6 straddlers: three cohorts, three timestamps ---------------------------------
+
+
+def test_a_request_finishing_after_close_is_a_latency_sample_but_not_a_completion():
+    """Section 7.6: latency keeps the slow finisher, the rate keeps the declared span.
+
+    Deleting a request that ran past the window lowers the tail by deleting exactly the
+    slowest requests, which is why latency keeps it. Crediting its completion to a window
+    it did not finish in raises throughput by borrowing work from the next one, which is
+    why the rate does not. Getting only one of those right is how a saturated server
+    reports both a clean tail and a high rate.
+    """
+    inside = [_ok(f"r{i}", i * 0.1, 0.1, [0.01] * 9) for i in range(20)]
+    # Issued inside, finishing at 6.5 -- five of them, so the p95 they belong in has
+    # enough samples to be reportable at all under the section 4.3 floor.
+    late = [_ok(f"late{i}", 1.9 + i * 0.1, 0.1, [0.5] * 9) for i in range(5)]
+
+    s = reduce_window([*inside, *late], window_s=5.0, t0=0.0)
+    assert s.n_issued == 25, "they were offered inside the window"
+    assert s.n_latency_samples == 25, "and completed validly, so their tails count"
+    assert s.n_completed == 20, "but they did not complete inside the window"
+    assert s.requests_per_s == pytest.approx(20 / 5.0)
+    assert s.e2e_p95_s > 4.0, "the slow finishers must still be visible in the tail"
+
+
+def test_a_warm_up_request_finishing_inside_the_window_counts_toward_the_rate_only():
+    """Section 7.6's other half, and the reason the two halves cancel at the edges.
+
+    Excluding the finisher at the opening edge while also excluding the straddler at the
+    closing edge would charge the window a full span for less than a full span of work,
+    biasing steady-state throughput low. Counting by completion instant measures across
+    the boundary rather than being moved by it.
+    """
+    warm = _ok("w0", 9.0, 0.1, [0.1] * 9)  # issued before the window, finishes at 10.0
+    warm.in_window = False
+    steady = [_ok(f"r{i}", 10.0 + i * 0.1, 0.1, [0.01] * 9) for i in range(20)]
+
+    s = reduce_window([warm, *steady], window_s=3.0, t0=9.95)
+    assert s.n_issued == 20, "a warm-up arrival is not demand this window offered"
+    assert s.n_latency_samples == 20, "nor is it a latency sample of this window"
+    assert s.n_completed == 21, "but it did complete inside this window"
+    assert s.requests_per_s == pytest.approx(21 / 3.0)
+    assert s.ttft_p95_s == pytest.approx(0.1)
+
+
+def test_the_throughput_numerator_follows_the_same_completion_rule_as_the_rate():
+    """A token attributed to a window its request did not finish in is borrowed work.
+
+    Rate and tok/s reading from different cohorts is the subtle version of the same bug:
+    the report then carries a req/s and a tok/s that no consistent set of requests
+    produces, and the implied tokens-per-request matches neither the workload nor the log.
+    """
+    inside = [_ok(f"r{i}", i * 0.1, 0.1, [0.01] * 9, out_tokens=100) for i in range(20)]
+    straddler = _ok("late", 1.9, 0.1, [0.5] * 9, out_tokens=100)
+
+    s = reduce_window([*inside, straddler], window_s=5.0, t0=0.0)
+    assert s.output_tok_s == pytest.approx(20 * 100 / 5.0)
+    assert s.output_tok_s / s.requests_per_s == pytest.approx(100.0)
 
 
 # --- §4.7 error handling and the issued denominator -----------------------------------
@@ -240,7 +309,7 @@ def test_error_records_are_excluded_from_latency_but_counted_in_the_denominator(
         RequestRecord(request_id="e1", issued_ts=50.0, outcome=Outcome.ERROR),
         RequestRecord(request_id="e2", issued_ts=51.0, outcome=Outcome.TIMEOUT),
     ]
-    s = reduce_window(ok + failed, window_s=52.0)
+    s = reduce_window(ok + failed, window_s=52.0, t0=0.0)
     assert s.excluded_error_count == 2
     assert s.n_issued == 22
     assert s.n_completed == 20
@@ -254,7 +323,7 @@ def test_a_refusal_at_admission_counts_against_the_error_rate():
         RequestRecord(request_id=f"x{i}", issued_ts=20.0 + i, outcome=Outcome.REFUSED)
         for i in range(10)
     ]
-    s = reduce_window(ok + refused, window_s=30.0)
+    s = reduce_window(ok + refused, window_s=30.0, t0=0.0)
     assert s.error_rate_pct == pytest.approx(50.0)
 
 
@@ -267,7 +336,7 @@ def test_goodput_is_undefined_for_a_window_where_a_gate_failed():
     gates = SloGates(
         ttft_p95_max_s=2.0, itl_p95_max_s=None, e2e_p95_max_s=None, error_rate_max_pct=1.0
     )
-    s = reduce_window(recs, window_s=1.0, gates=gates)
+    s = reduce_window(recs, window_s=1.0, gates=gates, t0=5.0)
     assert s.slo_pass is False
     assert s.goodput_tok_s is None
     assert s.output_tok_s is not None, "raw throughput is still measured-tier reportable"
@@ -278,7 +347,7 @@ def test_goodput_equals_throughput_when_every_gate_held():
     gates = SloGates(
         ttft_p95_max_s=2.0, itl_p95_max_s=1.0, e2e_p95_max_s=10.0, error_rate_max_pct=1.0
     )
-    s = reduce_window(recs, window_s=1.0, gates=gates)
+    s = reduce_window(recs, window_s=1.0, gates=gates, t0=0.0)
     assert s.slo_pass is True
     assert s.goodput_tok_s == pytest.approx(s.output_tok_s)
 
@@ -293,7 +362,7 @@ def test_a_gate_whose_statistic_is_unmeasurable_counts_as_failed():
     gates = SloGates(
         ttft_p95_max_s=2.0, itl_p95_max_s=None, e2e_p95_max_s=None, error_rate_max_pct=1.0
     )
-    s = reduce_window(recs, window_s=1.0, gates=gates)
+    s = reduce_window(recs, window_s=1.0, gates=gates, t0=0.0)
     assert s.ttft_p95_s is None
     assert s.slo_pass is False
     assert s.goodput_tok_s is None
@@ -305,8 +374,8 @@ def test_a_gate_whose_statistic_is_unmeasurable_counts_as_failed():
 def test_the_same_records_reduce_to_identical_numbers_every_time():
     """C8 requires bit-identical re-analysis, which rules out unseeded resampling."""
     recs = [_ok(f"r{i}", i * 0.05, 0.1 + i * 0.001, [0.01, 0.02]) for i in range(200)]
-    a = reduce_window(recs, window_s=10.0)
-    b = reduce_window(recs, window_s=10.0)
+    a = reduce_window(recs, window_s=10.0, t0=0.0)
+    b = reduce_window(recs, window_s=10.0, t0=0.0)
     assert a == b
 
 
@@ -339,7 +408,7 @@ def test_a_sample_below_the_percentile_floor_has_no_interval_either():
 
 def test_an_empty_window_reports_nothing_measured_rather_than_zero():
     """Zero throughput and zero error rate are both claims; neither was observed."""
-    s = reduce_window([], window_s=10.0)
+    s = reduce_window([], window_s=10.0, t0=0.0)
     assert s.n_issued == 0
     assert s.ttft_p50_s is None
     assert s.error_rate_pct is None
