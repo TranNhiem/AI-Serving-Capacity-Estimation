@@ -327,22 +327,40 @@ class Workload:
         if not isinstance(self.output_plan, (FixedOutput, ModelDecidedOutput)):
             raise ValueError(f"unrecognised output plan {self.output_plan!r}")
 
-    def _seed_material(self, repetition: int, index: int) -> int:
-        # Index-addressed determinism: the draw depends only on these three values, so a
-        # fresh process regenerates any request without replaying the ones before it.
-        key = f"{self.seed}:{repetition}:{index}".encode()
+    def _window_tag(self, repetition: int, concurrency: int | None) -> str:
+        # A ladder window is identified by its rung as well as its repetition, but a
+        # single-window run has no rung. Omitting the rung entirely in that case keeps the
+        # draws a standalone caller already has, rather than silently reseeding them.
+        return f"r{repetition}" if concurrency is None else f"c{concurrency}-r{repetition}"
+
+    def _seed_material(self, repetition: int, index: int, concurrency: int | None = None) -> int:
+        # Index-addressed determinism: the draw depends only on these values, so a fresh
+        # process regenerates any request without replaying the ones before it.
+        key = f"{self.seed}:{self._window_tag(repetition, concurrency)}:{index}".encode()
         return int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), "big")
 
-    def for_repetition(self, repetition: int) -> Callable[[int], RequestSpec]:
+    def for_repetition(
+        self, repetition: int, *, concurrency: int | None = None
+    ) -> Callable[[int], RequestSpec]:
+        """Bind the generator to one window; pass ``concurrency`` when it is a ladder rung.
+
+        A ladder puts every window of every rung in one bundle, so the rung has to enter both
+        the request id and the seed material. Without it, rung 8 replays rung 1's prompts:
+        the ids collide, and worse, the server answers the higher rung out of a prefix cache
+        the lower rung filled, which reads as a throughput ceiling that is further away than
+        it is. Rungs run in ascending order, so the error always flatters the result.
+        """
+        tag = self._window_tag(repetition, concurrency)
+
         def next_spec(index: int) -> RequestSpec:
-            material = self._seed_material(repetition, index)
+            material = self._seed_material(repetition, index, concurrency)
             prefix = None
             if self.cache_policy == "unique-prefix":
-                # Distinct per (seed, repetition, index): a repeated prompt hands the server
+                # Distinct per (seed, window, index): a repeated prompt hands the server
                 # cache hits production never has, and an independent repetition inheriting
                 # repetition 0's prompts measures cache state, not variance.
                 token = random.Random(material).getrandbits(48)
-                prefix = f"upx-{self.seed}-{repetition}-{index}-{token:012x}"
+                prefix = f"upx-{self.seed}-{tag}-{index}-{token:012x}"
             text = self.source.render(seed_material=material, prefix=prefix)
             if isinstance(self.output_plan, FixedOutput):
                 max_tokens: int | None = self.output_plan.output_tokens
@@ -353,10 +371,9 @@ class Workload:
                 max_tokens = None
                 extra = {}
             return RequestSpec(
-                # Encodes run, repetition and index because records from several
-                # repetitions share one bundle; a collision would let dedupe drop a real
-                # request.
-                request_id=f"{self.run_label}-r{repetition}-i{index}",
+                # Encodes run, window and index because records from every window of every
+                # rung share one bundle; a collision would let dedupe drop a real request.
+                request_id=f"{self.run_label}-{tag}-i{index}",
                 messages=[{"role": "user", "content": text}],
                 max_tokens=max_tokens,
                 temperature=self.temperature,

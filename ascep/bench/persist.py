@@ -20,6 +20,7 @@ import os
 import platform as _platform
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -158,6 +159,7 @@ def write_bundle(
     engine_logs_path,
     container_digest: str | None,
     environment: dict | None = None,
+    extra_files: Mapping[str, bytes] | None = None,
     overwrite: bool = False,
 ) -> dict:
     """Write the reproduction bundle for ``runs`` and return its C8 reproduction block.
@@ -170,6 +172,13 @@ def write_bundle(
     from inside the harness, and a default would put a confident value in the one field
     whose whole job is to be checkable. A null digest is allowed -- not every run happens
     in a container -- and is left for the checker to downgrade.
+
+    ``extra_files`` maps a bundle-relative name to the exact bytes to drop in beside the
+    four this function writes itself -- the caller's own config file, typically, whose bytes
+    must survive the round trip through whatever parsed it. They go through here rather than
+    being written afterwards because the manifest is written once, and an artifact a caller
+    added later is an artifact nobody hashed: it can be edited after publication without
+    ``verify_bundle`` saying a word, which is the one thing a bundle exists to prevent.
 
     An existing bundle is refused unless ``overwrite`` is set. The GPU hours are already
     spent; a second run that lands in the same directory destroys the first run's only
@@ -255,6 +264,15 @@ def write_bundle(
         _ENVIRONMENT_NAME: _sha256(env_file),
         _manifest_key(engine_logs_path, bundle_dir): _sha256(engine_logs_path),
     }
+    for name, payload in (extra_files or {}).items():
+        if name in files or name == _MANIFEST_NAME:
+            # Silently overwriting records.jsonl with a caller's bytes would leave a bundle
+            # whose manifest agrees with itself and describes a run that never happened.
+            raise ValueError(f"extra file {name!r} would replace an artifact the bundle owns")
+        extra_file = bundle_dir / name
+        extra_file.parent.mkdir(parents=True, exist_ok=True)
+        extra_file.write_bytes(payload)
+        files[name] = _sha256(extra_file)
     (bundle_dir / _MANIFEST_NAME).write_text(json.dumps({"sha256": files}, indent=2) + "\n")
 
     return {

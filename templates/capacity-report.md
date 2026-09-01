@@ -151,9 +151,17 @@ would use against it.
 
 ## 8. Reproduction
 
-C8 asks for a bundle a stranger can re-run, not a description of one. ASCEP v0.1 ships no
-benchmark driver — chapter 7 specifies the procedure and you run it with your own harness — so
-name that harness and its invocation here, exactly as it was run:
+C8 asks for a bundle a stranger can re-run, not a description of one. Name the harness and its
+invocation here, exactly as it was run:
+
+```
+ascep bench bench.json
+```
+
+`ascep bench` writes the bundle itself, config included and hashed, so the command above plus
+the published bundle is the whole answer. If you ran your own harness instead — chapter 7
+specifies the procedure, not the tool — name it and give the command that produced these
+numbers:
 
 ```
 git clone <your harness repo> && cd <repo>

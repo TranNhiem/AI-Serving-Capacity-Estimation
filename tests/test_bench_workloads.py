@@ -258,6 +258,31 @@ def test_request_ids_are_unique_across_repetitions():
     assert len(ids) == 60
 
 
+def test_request_ids_are_unique_across_ladder_rungs_as_well():
+    """A ladder writes one bundle for every window of every rung, so the rung is part of a
+    request's identity too. Repetition alone collides on the second rung, and persist refuses
+    the whole bundle at the end of the run -- after the GPU hours are spent."""
+    w = _workload()
+    ids = {
+        w.for_repetition(r, concurrency=c)(i).request_id
+        for c in (1, 2, 4)
+        for r in range(3)
+        for i in range(20)
+    }
+    assert len(ids) == 180
+
+
+def test_unique_prefix_varies_across_rungs_so_a_high_rung_cannot_inherit_a_warm_cache(tmp_path):
+    """Rungs run in ascending order, so a rung that replays a lower rung's prompts is served
+    partly out of a prefix cache the lower rung filled. The bias only ever inflates the high
+    rungs, which is exactly where the sustainable concurrency is decided."""
+    path = _corpus_file(tmp_path, ["same prompt"] * 4)
+    w = _workload(source=JsonlCorpus(path=path, field="question"), cache_policy="unique-prefix")
+    low = {w.for_repetition(0, concurrency=1)(i).messages[0]["content"] for i in range(4)}
+    high = {w.for_repetition(0, concurrency=64)(i).messages[0]["content"] for i in range(4)}
+    assert not (low & high)
+
+
 def test_the_manifest_carries_everything_needed_to_regenerate_the_prompts(tmp_path):
     """Section 7.2: seed, sampler, distribution parameters and the sampled sequences MUST be
     part of the reproduction bundle. An index-addressed sampler satisfies the last of those

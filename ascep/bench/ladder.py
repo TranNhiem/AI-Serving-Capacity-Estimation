@@ -77,6 +77,16 @@ class LadderPolicy:
                 "throughput_collapse_ratio must not be below 0.5 (section 7), got "
                 f"{self.throughput_collapse_ratio}"
             )
+        if self.throughput_collapse_ratio >= 1.0:
+            # The other end is a refusal too, and it fails in the flattering direction:
+            # at 1.0 any rung that merely matches the best lower COMPLETE rung is graded
+            # a collapse, so the ladder terminates at the plateau every saturating system
+            # produces and reports the last rung before the plateau as the boundary.
+            raise ValueError(
+                "throughput_collapse_ratio must be below 1.0 (section 7), got "
+                f"{self.throughput_collapse_ratio}: at one or more, the flat top of a "
+                "healthy throughput curve is graded as a queueing collapse"
+            )
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,1386 @@
+"""``ascep bench``: run a declared concurrency ladder and emit a draft capacity report.
+
+Every other command in this toolkit grades evidence someone else produced; this one produces
+the evidence. Its contract is therefore inverted relative to the rest of the CLI: refuse to
+run rather than run under-specified, never invent a value the operator did not declare, and
+never grade its own output. A wrong number emitted here is not caught downstream -- it *is*
+the downstream.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import copy
+import json
+import shutil
+import signal
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from ascep import init, validation
+from ascep.bench import driver, ladder, metrics, persist, workloads
+
+__all__ = ["ConfigError", "load_config", "load_declarations", "plan_lines", "bench"]
+
+
+class ConfigError(Exception):
+    """The bench config is missing, malformed, or under-specified; the run must not start."""
+
+
+class _Terminated(KeyboardInterrupt):
+    """A SIGTERM, raised as an interrupt so it takes the path Ctrl-C already takes."""
+
+
+def _sigterm_raises_interrupt(_signum, _frame):
+    raise _Terminated()
+
+
+@contextlib.contextmanager
+def _sigterm_as_interrupt():
+    """Make SIGTERM behave like Ctrl-C for the duration of a run.
+
+    These runs are submitted as batch jobs, and the two ways they end early -- ``scancel``
+    and the job's wall clock -- both arrive as SIGTERM, whose default action ends the process
+    where it stands. Every completed window is in RAM at that moment and the bundle is
+    written only at the end, so the default action turns hours of real measurement into
+    nothing at all. The interrupt path already bundles what completed and marks the ladder
+    censored, so the whole fix is to arrive on it. The SIGKILL that follows a grace period
+    cannot be caught by anything; the answer to that one is a shorter ladder.
+    """
+    try:
+        previous = signal.signal(signal.SIGTERM, _sigterm_raises_interrupt)
+    except (AttributeError, OSError, ValueError):
+        # No SIGTERM on this platform, or not the main thread: an embedded caller gets the
+        # run, not an exception about signal handling.
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _cause_of(exc):
+    """Name an interrupt in the words the operator will recognise from their scheduler."""
+    if isinstance(exc, _Terminated):
+        return "SIGTERM -- a scheduler kill: scancel, or the job's wall clock"
+    return type(exc).__name__
+
+
+#: Every permitted section and key, with the citation a refusal must carry when the key is
+#: absent. Unknown keys and sections are refusals too: a typo such as ``drain_deadline_sec``
+#: is otherwise indistinguishable from omitting the real key, and the run would proceed on a
+#: default the operator believes they overrode.
+_KEY_CITATIONS = {
+    "endpoint": {
+        "base_url": "section 7",
+        "model": "section 7",
+        "timeout_s": "section 7",
+    },
+    "declarations": {
+        "hardware": "C3",
+        "model": "C3",
+        "serving": "C3",
+        "workload": "C3",
+    },
+    "workload": {
+        "corpus": "section 7",
+        "input_tokens": "section 7",
+        "output_tokens": "section 7",
+        "ignore_eos": "section 7",
+        "cache_policy": "section 7",
+        "seed": "section 7",
+        "think_time_s": "section 7",
+        "run_label": "section 7",
+    },
+    "window": {
+        "window_s": "section 7",
+        "drain_deadline_s": "section 7.6",
+        "warmup_requests": "section 7.3",
+    },
+    "ladder": {
+        "concurrency": "section 7",
+        "repetitions": "section 7",
+        "throughput_collapse_ratio": "section 7",
+    },
+    "slo_gates": {
+        "ttft_p95_max_s": "section 7",
+        "itl_p95_max_s": "section 7",
+        "e2e_p95_max_s": "section 7",
+        "error_rate_max_pct": "section 7",
+        "declared_before_run": "C7",
+    },
+    "output": {
+        "bundle_dir": "section 7",
+        "report_path": "section 7",
+        "engine_logs_path": "section 7",
+        "container_digest": "section 7",
+    },
+}
+
+#: Expected JSON types per key. bool is rejected anywhere a number is wanted, because
+#: ``True`` silently satisfying ``input_tokens: int`` is exactly the kind of lie about what
+#: was declared that this command exists to refuse.
+_TYPES = {
+    ("endpoint", "base_url"): (str,),
+    ("endpoint", "model"): (str,),
+    ("endpoint", "timeout_s"): (int, float),
+    ("declarations", "hardware"): (str,),
+    ("declarations", "model"): (str,),
+    ("declarations", "serving"): (str,),
+    ("declarations", "workload"): (str,),
+    ("workload", "corpus"): (str,),
+    ("workload", "input_tokens"): (int,),
+    ("workload", "output_tokens"): (int,),
+    ("workload", "ignore_eos"): (bool,),
+    ("workload", "cache_policy"): (str,),
+    ("workload", "seed"): (int,),
+    ("workload", "think_time_s"): (int, float),
+    ("workload", "run_label"): (str,),
+    ("window", "window_s"): (int, float),
+    ("window", "drain_deadline_s"): (int, float),
+    ("window", "warmup_requests"): (int,),
+    ("ladder", "concurrency"): (list,),
+    ("ladder", "repetitions"): (int,),
+    ("ladder", "throughput_collapse_ratio"): (int, float),
+    ("slo_gates", "ttft_p95_max_s"): (int, float, type(None)),
+    ("slo_gates", "itl_p95_max_s"): (int, float, type(None)),
+    ("slo_gates", "e2e_p95_max_s"): (int, float, type(None)),
+    ("slo_gates", "error_rate_max_pct"): (int, float, type(None)),
+    ("output", "bundle_dir"): (str,),
+    ("output", "report_path"): (str,),
+    ("output", "engine_logs_path"): (str, type(None)),
+    ("output", "container_digest"): (str, type(None)),
+}
+
+
+def load_config(path):
+    """Read and fully validate the bench config, returning ``(config, raw_bytes)``.
+
+    The raw bytes come back alongside the parsed document because the bundle must carry the
+    operator's file verbatim: a re-serialisation records what this process understood, and
+    the one failure worth catching is the harness understanding something other than what the
+    operator wrote. Raises ConfigError for anything unreadable, malformed, unknown, or
+    under-specified -- chapter 7's declarations have no honest defaults.
+    """
+    try:
+        raw = Path(path).read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"cannot read the bench config '{path}': {exc}") from exc
+    try:
+        config = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ConfigError(f"the bench config '{path}' is not valid JSON: {exc}") from exc
+    if not isinstance(config, dict):
+        raise ConfigError(f"the bench config '{path}' must be a JSON object at the top level")
+    _check_shape(config)
+    _check_values(config)
+    return config, raw
+
+
+def _check_shape(config):
+    """Reject unknown sections and keys, and any missing key, naming what requires it."""
+    for section in config:
+        if section not in _KEY_CITATIONS:
+            raise ConfigError(
+                f"unknown section '{section}' in the bench config; permitted sections "
+                f"are: {', '.join(sorted(_KEY_CITATIONS))}"
+            )
+    for section, keys in _KEY_CITATIONS.items():
+        body = config.get(section)
+        expected = ", ".join(keys)
+        cite = keys[next(iter(keys))]
+        if body is None:
+            raise ConfigError(
+                f"missing section '{section}' in the bench config; it must declare the "
+                f"keys: {expected} ({cite})"
+            )
+        if not isinstance(body, dict):
+            raise ConfigError(
+                f"section '{section}' of the bench config must be a JSON object with the "
+                f"keys: {expected} ({cite})"
+            )
+        for key in body:
+            if key not in keys:
+                raise ConfigError(
+                    f"unknown key '{key}' in section '{section}' of the bench config; "
+                    f"expected keys: {expected} (section 7)"
+                )
+        for key, key_cite in keys.items():
+            if key not in body:
+                raise ConfigError(
+                    f"bench config is missing '{key}' (section '{section}'): {key_cite} "
+                    "requires it to be fixed before the first request is sent, and running "
+                    "on a default would measure a run the operator never declared"
+                )
+
+
+def _check_values(config):
+    """Reject values that parse but would silently change what is measured."""
+    for (section, key), types in _TYPES.items():
+        value = config[section][key]
+        allows_bool = any(t is bool for t in types)
+        if not isinstance(value, types) or (isinstance(value, bool) and not allows_bool):
+            names = [t.__name__ for t in types if t is not type(None)]
+            label = "/".join(names) + (" or null" if type(None) in types else "")
+            cite = _KEY_CITATIONS[section][key]
+            raise ConfigError(
+                f"config key '{key}' (section '{section}') must be {label}; got {value!r} ({cite})"
+            )
+    gates = config["slo_gates"]
+    if gates["declared_before_run"] is not True:
+        raise ConfigError(
+            "'declared_before_run' must be literally true: C7 fixes the SLO gates before "
+            "the first request is sent, and gates chosen after the numbers are in produce "
+            "a sustainable tier that cannot be published"
+        )
+    base_url = config["endpoint"]["base_url"].rstrip("/")
+    if base_url.endswith("/v1"):
+        # The adapter appends the OpenAI route itself, so a base_url carrying one requests
+        # /v1/v1/chat/completions. Every request 404s, which is scored as an error rather
+        # than as a broken config, and the ladder climbs to the top measuring nothing but
+        # the typo before publishing a 100% error rate as a property of the server.
+        raise ConfigError(
+            f"'base_url' must be the server root, not the API route; got {base_url!r}. "
+            "The adapter appends /v1/chat/completions, so this one would request "
+            "/v1/v1/chat/completions and score every 404 as a server error (section 7)"
+        )
+    cache_policy = config["workload"]["cache_policy"]
+    if cache_policy not in workloads.CACHE_POLICIES:
+        allowed = ", ".join(sorted(workloads.CACHE_POLICIES))
+        raise ConfigError(
+            f"'cache_policy' must be one of {allowed}; got {cache_policy!r} (section 7)"
+        )
+    rungs = config["ladder"]["concurrency"]
+    bad_rung = any(not isinstance(c, int) or isinstance(c, bool) or c < 1 for c in rungs)
+    if not rungs or bad_rung:
+        raise ConfigError(
+            "'concurrency' must be a non-empty list of positive integers: the rungs are "
+            "the measurement itself, and section 7 requires them declared in advance"
+        )
+    if any(later <= earlier for earlier, later in zip(rungs, rungs[1:])):
+        # Grading keys a rung by its concurrency, so [4, 4] is not two searches of one
+        # rung each -- it is six repetitions pooled into one, published as a single row
+        # while the report's ladder declaration still lists two. Out of order is worse:
+        # the collapse test holds each rung against the best *lower* COMPLETE rung, and a
+        # descending ladder has none, so collapse silently stops being tested at all.
+        raise ConfigError(
+            "'concurrency' must be strictly increasing: section 7 climbs the ladder, and "
+            f"got {rungs}. A repeated rung pools independent repetitions into one "
+            "operating point; a descending one disables the collapse test"
+        )
+    numeric_floors = [
+        ("ladder", "repetitions", 1, "section 7"),
+        ("window", "window_s", 0, "section 7"),
+        ("window", "drain_deadline_s", 0, "section 7.6"),
+        ("window", "warmup_requests", -1, "section 7.3"),
+        ("workload", "input_tokens", 1, "section 7"),
+        ("workload", "output_tokens", 1, "section 7"),
+        # A non-positive timeout aborts every request before the first token and reports
+        # a 100% error rate as a property of the server.
+        ("endpoint", "timeout_s", 0, "section 7"),
+    ]
+    for section, key, minimum, cite in numeric_floors:
+        if config[section][key] <= minimum:
+            raise ConfigError(f"config key '{key}' must be greater than {minimum} ({cite})")
+    if config["workload"]["think_time_s"] < 0:
+        # A negative think time asks a closed loop to arrive faster than its completions
+        # allow; a quiet clamp to zero would turn the loop into an unthrottled one and
+        # change the workload being measured.
+        raise ConfigError("'think_time_s' must not be negative (section 7)")
+    if config["output"]["engine_logs_path"] is None:
+        # The bundle hashes the engine's own log so a reader can check the server's account
+        # of the run against the client's. A null here is indistinguishable from a harness
+        # that never asked for one, and it is the only C8 artifact bench cannot produce
+        # itself.
+        raise ConfigError(
+            "'engine_logs_path' must name a readable file (C8): the reproduction bundle "
+            "hashes the engine's own log, which is the only record of the run written by "
+            "the server rather than by the load generator. If the engine wrote none, say "
+            "so in a file and point at that"
+        )
+    _check_gates(config["slo_gates"])
+    try:
+        _ladder_policy(config)
+    except ValueError as exc:
+        # LadderPolicy owns these rules, and it is constructed after the ladder has run.
+        # Constructing a throwaway here moves the same refusal to before the first request:
+        # a repetitions count of two is a defect in the declaration, and discovering it
+        # when the grading call raises has already spent the GPU hours.
+        raise ConfigError(f"the declared ladder cannot be graded as specified: {exc}") from exc
+
+
+def _check_gates(gates):
+    """Refuse an SLO declaration that satisfies C7 in shape while binding nothing."""
+    named = ("ttft_p95_max_s", "itl_p95_max_s", "e2e_p95_max_s", "error_rate_max_pct")
+    if all(gates[key] is None for key in named):
+        # Four nulls and ``declared_before_run: true`` is the most dangerous config this
+        # command accepts: every window passes, every rung grades COMPLETE, and the
+        # sustainable tier it publishes is the measured tier under another name.
+        raise ConfigError(
+            "at least one SLO gate must be declared (C7): with all four null every window "
+            "passes by definition, and the sustainable tier becomes the measured tier "
+            "wearing an SLO label"
+        )
+    for key in ("ttft_p95_max_s", "itl_p95_max_s", "e2e_p95_max_s"):
+        if gates[key] is not None and gates[key] <= 0:
+            raise ConfigError(
+                f"SLO gate '{key}' must be positive; got {gates[key]!r}. A latency bound "
+                "at or below zero cannot be met by any response, so the run measures the "
+                "gate rather than the server (section 7)"
+            )
+    error_rate = gates["error_rate_max_pct"]
+    if error_rate is not None and not 0 <= error_rate <= 100:
+        raise ConfigError(
+            f"SLO gate 'error_rate_max_pct' must be a percentage between 0 and 100; got "
+            f"{error_rate!r} (section 7)"
+        )
+
+
+def _ladder_policy(config):
+    """Build the grading policy from the config, so config validation refuses what it will."""
+    gate_cfg = config["slo_gates"]
+    gates = metrics.SloGates(
+        ttft_p95_max_s=gate_cfg["ttft_p95_max_s"],
+        itl_p95_max_s=gate_cfg["itl_p95_max_s"],
+        e2e_p95_max_s=gate_cfg["e2e_p95_max_s"],
+        error_rate_max_pct=gate_cfg["error_rate_max_pct"],
+    )
+    return gates, ladder.LadderPolicy(
+        gates,
+        repetitions=config["ladder"]["repetitions"],
+        throughput_collapse_ratio=config["ladder"]["throughput_collapse_ratio"],
+        cache_policy=config["workload"]["cache_policy"],
+    )
+
+
+def load_declarations(config, config_dir):
+    """Read and schema-validate the four declared layer documents the run is bound to.
+
+    Paths resolve relative to the directory holding the config file, so a bundle moved
+    between machines still finds its declarations next to the config that named them. This
+    check runs during ``--dry-run`` too: discovering four hours into a Slurm allocation that
+    ``serving.json`` was malformed is discovering it too late, and C3 has no way to bind a
+    measurement to a topology nobody wrote down.
+    """
+    documents = {}
+    for layer in ("hardware", "model", "serving", "workload"):
+        written = config["declarations"][layer]
+        try:
+            doc = json.loads((Path(config_dir) / written).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ConfigError(
+                f"cannot read the {layer} declaration '{written}' (C3): {exc}. The "
+                "measurement cannot be bound to a declaration that does not parse"
+            ) from exc
+        problems = validation.validate(layer, doc)
+        if problems:
+            raise ConfigError(
+                f"the {layer} declaration '{written}' failed schema validation (C3): "
+                + "; ".join(problems)
+            )
+        documents[layer] = doc
+    return documents
+
+
+def _declaration_bytes(config, config_dir):
+    """The four declaration files as bytes, to be hashed into the bundle beside the config.
+
+    The report carries parsed copies of these documents, and a parsed copy is not evidence:
+    a reader holding the report alone cannot tell whether the hardware block it claims to
+    have been measured on is the one that was declared before the run. Their bytes go into
+    the bundle so the manifest covers them, which is the only place C3's binding becomes
+    checkable after publication.
+    """
+    files = {}
+    for layer in ("hardware", "model", "serving", "workload"):
+        written = config["declarations"][layer]
+        try:
+            files[f"declarations/{layer}.json"] = (Path(config_dir) / written).read_bytes()
+        except OSError as exc:
+            raise ConfigError(
+                f"cannot read the {layer} declaration '{written}' for the bundle (C3): {exc}"
+            ) from exc
+    return files
+
+
+def _engine_log_problem(path, report_dir):
+    """Say why the declared engine log cannot go into the bundle, or return None.
+
+    Checked before the first request, because ``write_bundle`` hashes this file after the
+    last one: a typo in the path, or a log outside the report directory, would otherwise
+    surface at the one moment when the records exist nowhere but in RAM.
+    """
+    if not path.is_file():
+        return f"the declared engine log {path} is not a file"
+    try:
+        with path.open("rb"):
+            pass
+    except OSError as exc:
+        return f"the declared engine log {path} cannot be read: {exc}"
+    try:
+        path.resolve().relative_to(report_dir.resolve())
+    except ValueError:
+        return (
+            f"the declared engine log {path} is outside the report directory {report_dir}, "
+            "so the reproduction table would have to name it with a path that resolves "
+            "only on this machine; copy it under the report directory before the run"
+        )
+    return None
+
+
+def plan_lines(config):
+    """Render the dry-run plan: what will be measured and the minimum wall clock it costs.
+
+    The wall-clock figure is a floor, not an estimate of the mean: warm-up, request bodies,
+    and the final drain all add to it, and the run that gets killed at a Slurm wall clock is
+    the one that had the highest concurrency rung still in it.
+    """
+    endpoint = config["endpoint"]
+    window = config["window"]
+    lad = config["ladder"]
+    rungs = lad["concurrency"]
+    repetitions = lad["repetitions"]
+    graded = len(rungs) * repetitions
+    # Plus the section 5 confirmation repetition, which is run at the boundary rung once the
+    # search is over. It is conditional -- a ladder where no rung passes its gates has no
+    # boundary to confirm -- so the count is a range and the wall clock takes the high end.
+    windows = graded + 1
+    wall_s = windows * (window["window_s"] + window["drain_deadline_s"])
+    return [
+        f"endpoint: {endpoint['base_url']} (model: {endpoint['model']})",
+        f"concurrency rungs: {', '.join(str(r) for r in rungs)}",
+        f"repetitions per rung: {repetitions}",
+        f"windows: {graded} to {windows} ({len(rungs)} rungs * {repetitions} repetitions "
+        "each, plus one section 5 confirmation repetition at the boundary rung if the "
+        "ladder finds one)",
+        f"warm-up requests per window: {window['warmup_requests']}",
+        f"minimum wall-clock estimate: {wall_s:.0f} s "
+        f"({windows} windows * (window_s {window['window_s']} s + drain_deadline_s "
+        f"{window['drain_deadline_s']} s))",
+        "the measured request count is not knowable in advance: this is a closed loop, "
+        "so arrivals depend on completions rather than on a declared rate",
+    ]
+
+
+def _build_workload(config, config_dir):
+    """Construct the Workload the ladder will replay, from the declared config only."""
+    wl = config["workload"]
+    corpus = wl["corpus"]
+    if corpus == "synthetic":
+        # Whitespace, not characters-per-token. SyntheticCorpus pads one filler word at a
+        # time and refuses to publish a prompt that misses the target exactly, so an oracle
+        # that moves in jumps of two or three -- which every characters-per-token estimate
+        # does -- makes the corpus unbuildable rather than approximate. One word per token
+        # lands on the target by construction; what it costs is that the declared
+        # input_tokens is a word count, which is why run.tokenizer stays null with a reason
+        # and the results table publishes the server's own count instead.
+        source = workloads.SyntheticCorpus(
+            input_tokens=int(wl["input_tokens"]), tokenizer=lambda text: len(text.split())
+        )
+    else:
+        corpus_path = Path(corpus)
+        if not corpus_path.is_absolute():
+            corpus_path = Path(config_dir) / corpus_path
+        if not corpus_path.is_file():
+            raise ConfigError(
+                f"workload corpus file not found: '{corpus}' (section 7). Refusing to "
+                "spend GPU hours against a corpus that cannot be replayed"
+            )
+        source = workloads.JsonlCorpus(corpus_path, field="messages")
+    if wl["ignore_eos"]:
+        output_plan = workloads.FixedOutput(int(wl["output_tokens"]), True)
+    else:
+        output_plan = workloads.ModelDecidedOutput()
+    return workloads.Workload(
+        source=source,
+        output_plan=output_plan,
+        cache_policy=wl["cache_policy"],
+        seed=int(wl["seed"]),
+        think_time_s=float(wl["think_time_s"]),
+        run_label=wl["run_label"],
+    )
+
+
+async def _one_window(adapter, workload_obj, config, gates, *, concurrency, repetition):
+    """Run and reduce a single window at one operating point, returning ``(run, summary)``."""
+    window = config["window"]
+    policy = driver.WindowPolicy(
+        concurrency=concurrency,
+        window_s=float(window["window_s"]),
+        drain_deadline_s=float(window["drain_deadline_s"]),
+        think_time_s=float(workload_obj.think_time_s),
+        warmup_requests=int(window["warmup_requests"]),
+        # The bundle labels every window from its policy, so a repetition left at the
+        # default publishes nine windows all claiming to be repetition 0 -- and the
+        # dispersion across repetitions is the whole point of section 7.5.
+        repetition=repetition,
+    )
+    run = await driver.run_window(
+        adapter,
+        workload_obj.for_repetition(repetition, concurrency=concurrency),
+        policy=policy,
+        reset=driver.no_reset,
+    )
+    summary = metrics.reduce_window(
+        run.records,
+        window_s=run.window_s,
+        t0=run.t0,
+        gates=gates,
+        seed=workload_obj.seed,
+    )
+    return run, summary
+
+
+def _keep(state, run, summary, concurrency, repetition, *, post_search=False):
+    """File one finished window in ``state`` under the rung it was measured at."""
+    state["runs"].append(run)
+    state["repetitions"].setdefault(concurrency, []).append(
+        ladder.RepetitionResult(
+            concurrency=concurrency,
+            repetition=repetition,
+            summary=summary,
+            post_search=post_search,
+        )
+    )
+
+
+async def _confirm_boundary(adapter, workload_obj, config, gates, policy, state, err):
+    """Re-run the boundary rung once more, after the search that selected it has finished.
+
+    Section 5 will not publish a Sustainable figure on the strength of the search that found
+    it. The boundary is the rung the stopping rule stopped at *because* it passed, so the
+    three windows behind it are the very evidence that selection conditioned on. One further
+    repetition, taken when no decision depends on its outcome, is what separates "the rung
+    the search landed on" from "a rung this system sustains".
+
+    Skipping it is not a smaller claim, it is no claim: ``sustainable_publishable`` stays
+    false and the draft publishes no sustainable tier at all. That makes this window part of
+    the procedure rather than an optional extra, which is why bench runs it itself instead of
+    leaving it to an operator who would have to know section 5 to know it was missing.
+    """
+    provisional = ladder.grade_ladder(state["repetitions"], policy)
+    concurrency = provisional.max_sustainable_concurrency
+    if concurrency is None:
+        print(
+            "ascep bench: no rung passed its declared gates, so there is no boundary to "
+            "confirm and no sustainable tier to publish",
+            file=err,
+        )
+        return
+    # One past the counted repetitions: grading partitions on post_search rather than on the
+    # index, but the index is what labels the window in the bundle and what salts its request
+    # ids, and a fourth window numbered 0 would collide with the first.
+    repetition = int(policy.repetitions)
+    try:
+        run, summary = await _one_window(
+            adapter,
+            workload_obj,
+            config,
+            gates,
+            concurrency=concurrency,
+            repetition=repetition,
+        )
+    except (KeyboardInterrupt, asyncio.CancelledError) as exc:
+        state["censor"] = (
+            f"stopped during the section 5 confirmation repetition at "
+            f"concurrency={concurrency} ({_cause_of(exc)})"
+        )
+        return
+    _keep(state, run, summary, concurrency, repetition, post_search=True)
+    print(
+        f"ascep bench: confirmation at concurrency={concurrency}: "
+        f"{summary.n_completed} completed, slo_pass={summary.slo_pass!r}",
+        file=err,
+    )
+
+
+async def _run_ladder(adapter, workload_obj, config, gates, policy, state, err):
+    """Drive every (rung, repetition) window in this one coroutine, closing the adapter last.
+
+    Results accumulate in ``state`` rather than in locals: when a real Ctrl-C lands, the
+    asyncio runner cancels this coroutine and re-raises KeyboardInterrupt out of
+    ``asyncio.run`` even if the cancellation was handled here, so the caller can only rely
+    on mutated state, never on a return value.
+    """
+    lad = config["ladder"]
+    try:
+        for concurrency in lad["concurrency"]:
+            for repetition in range(lad["repetitions"]):
+                try:
+                    run, summary = await _one_window(
+                        adapter,
+                        workload_obj,
+                        config,
+                        gates,
+                        concurrency=int(concurrency),
+                        repetition=repetition,
+                    )
+                except (KeyboardInterrupt, asyncio.CancelledError) as exc:
+                    # An interrupted ladder has real measurements for its lower rungs, and
+                    # those are the rungs most likely to be sustainable anyway. A run that
+                    # succeeded and left nothing behind is worse than a run that failed.
+                    state["censor"] = (
+                        f"stopped during concurrency={concurrency} "
+                        f"repetition={repetition} ({_cause_of(exc)})"
+                    )
+                    return
+                _keep(state, run, summary, int(concurrency), repetition)
+                print(
+                    f"ascep bench: concurrency={concurrency} repetition={repetition}: "
+                    f"{summary.n_completed} completed, "
+                    f"output_tok_s={summary.output_tok_s!r}",
+                    file=err,
+                )
+        await _confirm_boundary(adapter, workload_obj, config, gates, policy, state, err)
+    finally:
+        # The adapter's HTTP client belongs to this loop; closing it anywhere else risks a
+        # cross-loop failure that only surfaces against a real server.
+        await adapter.aclose()
+
+
+def bench(config_path, *, dry_run=False, adapter_factory, out=None, err=None):
+    """Run the concurrency ladder described by ``config_path`` and return the exit code.
+
+    Every validation refusal returns 2 with a diagnostic on ``err``; ``--dry-run`` prints
+    the plan to ``out``, writes nothing, and returns 0. A ladder that produced no completed
+    window returns 1, because there is no evidence to bundle. Operator errors never
+    propagate as exceptions: the whole point of this command is to refuse rather than to
+    run under-specified.
+
+    A run that wrote a bundle but did not complete as declared -- censored by an interrupt or
+    an abort, or emitting a draft that fails its own schema -- returns 3. It is deliberately
+    not 0: these runs are submitted as batch jobs, and the question a wrapper script asks
+    afterwards is ``$?``. A truncated ladder that exits 0 gets swept into the results
+    directory beside the complete ones, and the caveat that its concurrency figures are a
+    lower bound survives only in a report nobody re-reads.
+    """
+    with _sigterm_as_interrupt():
+        return _bench(
+            config_path, dry_run=dry_run, adapter_factory=adapter_factory, out=out, err=err
+        )
+
+
+def _bench(config_path, *, dry_run, adapter_factory, out, err):
+    """The body of :func:`bench`, minus the signal handling that has to wrap all of it."""
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
+    config_dir = Path(config_path).resolve().parent
+    try:
+        config, raw_config = load_config(config_path)
+        declarations = load_declarations(config, config_dir)
+        declared_bytes = _declaration_bytes(config, config_dir)
+        workload_obj = _build_workload(config, config_dir)
+    except ConfigError as exc:
+        print(f"ascep bench: {exc}", file=err)
+        return 2
+
+    if dry_run:
+        for line in plan_lines(config):
+            print(line, file=out)
+        return 0
+
+    output = config["output"]
+    bundle_dir = Path(output["bundle_dir"])
+    if bundle_dir.exists():
+        # The GPU hours behind an existing bundle are already spent and the records cannot
+        # be regenerated, so overwrite is a refusal rather than an option.
+        print(
+            f"ascep bench: refusing to overwrite the existing bundle at {bundle_dir}; "
+            "choose a new output.bundle_dir",
+            file=err,
+        )
+        return 2
+
+    engine_logs = Path(output["engine_logs_path"])
+    if not engine_logs.is_absolute():
+        engine_logs = bundle_dir.parent / engine_logs
+    log_problem = _engine_log_problem(engine_logs, bundle_dir.parent)
+    if log_problem:
+        print(f"ascep bench: {log_problem} (C8)", file=err)
+        return 2
+
+    gates, policy = _ladder_policy(config)
+    try:
+        adapter = adapter_factory(config["endpoint"])
+    except Exception as exc:
+        print(f"ascep bench: could not build the endpoint adapter: {exc!r}", file=err)
+        return 2
+
+    state = {"runs": [], "repetitions": {}, "censor": None}
+    try:
+        # One event loop for the whole ladder: an httpx client built in one loop and awaited
+        # from another raises only at runtime, against a real server, after the allocation
+        # is spent.
+        asyncio.run(_run_ladder(adapter, workload_obj, config, gates, policy, state, err))
+    except KeyboardInterrupt:
+        state["censor"] = state["censor"] or "interrupted (KeyboardInterrupt)"
+    except asyncio.CancelledError:
+        state["censor"] = state["censor"] or "cancelled before the ladder completed"
+    except Exception as exc:
+        # Unexpected failures get the same survivability rule as interrupts: bundle what
+        # completed, and let the censoring cause carry why the ladder is truncated.
+        state["censor"] = state["censor"] or f"aborted by {type(exc).__name__}: {exc}"
+        print(
+            f"ascep bench: the ladder aborted early ({exc!r}); bundling completed windows",
+            file=err,
+        )
+
+    if not state["runs"]:
+        print(
+            "ascep bench: no window completed, so there is no evidence to bundle; "
+            "nothing was written",
+            file=err,
+        )
+        return 1
+
+    result = ladder.grade_ladder(state["repetitions"], policy, censoring_cause=state["censor"])
+
+    bundle_dir.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        c8 = persist.write_bundle(
+            bundle_dir,
+            relative_to=bundle_dir.parent,
+            runs=state["runs"],
+            workload=workload_obj,
+            engine_logs_path=output["engine_logs_path"],
+            container_digest=output["container_digest"],
+            environment=persist.capture_environment(),
+            extra_files={"bench-config.json": raw_config, **declared_bytes},
+            overwrite=False,
+        )
+    except FileExistsError:
+        print(
+            f"ascep bench: refusing to overwrite the existing bundle at {bundle_dir}",
+            file=err,
+        )
+        return 2
+    except (OSError, KeyboardInterrupt) as exc:
+        # A half-written bundle is worse than none: the records exist only in RAM, and the
+        # directory left behind is exactly what the next attempt refuses to overwrite, so
+        # the failure would also block the retry that might still have saved them.
+        shutil.rmtree(bundle_dir, ignore_errors=True)
+        print(
+            f"ascep bench: writing the bundle failed ({exc!r}). The partial bundle at "
+            f"{bundle_dir} was removed so a retry is not blocked; the measurements this "
+            "run made are lost",
+            file=err,
+        )
+        return 1
+
+    report = _build_report(
+        config,
+        declarations,
+        state["runs"],
+        state["repetitions"],
+        result,
+        c8,
+        state["censor"],
+    )
+    report_path = Path(output["report_path"])
+    try:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        # Unlike the bundle, this one is recoverable: the records and the config are on
+        # disk and the draft is derived from them, so say where they are rather than
+        # deleting anything.
+        print(
+            f"ascep bench: the draft report could not be written to {report_path} ({exc}), "
+            f"but the measurements survive in the bundle at {bundle_dir}",
+            file=err,
+        )
+        return 3
+
+    # Schema validation here checks bench's own assembly, never its results: a draft that
+    # fails the schema is a defect in this file, and the operator deserves to be told the
+    # report they hold is not yet load-bearing rather than discovering it downstream.
+    problems = validation.validate("capacity-report", report)
+    if problems:
+        print(
+            "ascep bench: the emitted draft does not validate; this is a defect in bench:",
+            file=err,
+        )
+        for problem in problems:
+            print(f"  - {problem}", file=err)
+    print(f"ascep bench: bundle at {bundle_dir}; draft report at {report_path}", file=err)
+    if state["censor"]:
+        print(
+            f"ascep bench: the ladder did not complete as declared ({state['censor']}); "
+            "every concurrency figure in this draft is a lower bound",
+            file=err,
+        )
+    return 3 if (problems or state["censor"]) else 0
+
+
+def _known(node, key, value):
+    """Set ``node[key]`` and drop the ``_u_reason`` companion that the value makes false."""
+    node[key] = value
+    node.pop(f"{key}_u_reason", None)
+
+
+def _unknown(node, key, reason):
+    """Mark ``node[key]`` unknown, only where the skeleton already emitted a companion.
+
+    The report schemas set ``additionalProperties: false`` on most objects, so inventing a
+    ``_u_reason`` the skeleton did not emit fails validation for a cause the operator did
+    not create -- exactly the laundering C2 exists to stop.
+    """
+    companion = f"{key}_u_reason"
+    if companion in node:
+        node[key] = None
+        node[companion] = f"(U) {reason}"
+
+
+def _measured(node, key, value, reason):
+    """Set a measured value, or record why the measurement produced nothing."""
+    if value is None:
+        _unknown(node, key, reason)
+    else:
+        _known(node, key, value)
+
+
+def _median_repetition(repetitions):
+    """Pick the median repetition of a rung by output_tok_s (lower median on a tie).
+
+    Averaging percentiles across windows would publish a row no window ever exhibited; the
+    figures in one row have to be mutually consistent, so a single real repetition stands
+    in for the rung.
+
+    A repetition whose reduction produced no throughput figure at all is ranked with the
+    others only if every repetition is in that state. ``None`` there means no completed
+    record reported its output tokens, which is neither a fast window nor a zero one, and
+    sorting it either way is a claim: at the top it becomes the median of a half-collapsed
+    rung and publishes the best window as typical.
+    """
+    ranked = [rep for rep in repetitions if rep.summary.output_tok_s is not None] or list(
+        repetitions
+    )
+    ordered = sorted(ranked, key=lambda rep: rep.summary.output_tok_s or 0.0)
+    return ordered[(len(ordered) - 1) // 2]
+
+
+def _counted(reps):
+    """The repetitions a rung is graded on: the declared three, not the confirmation.
+
+    The section 5 confirmation window is additional evidence about a boundary, never one of
+    the repetitions the rung is scored from -- ``grade_rung`` partitions it out, and a row
+    whose median came from a window the rung's own throughput median excluded would be a
+    row no reader could reconcile with the grade beside it.
+    """
+    return [rep for rep in reps if not rep.post_search]
+
+
+def _reason_for(summary, field, fallback):
+    """Prefer the reducer's own account of a missing figure over a generic one.
+
+    The reducer knows what a generic caller cannot: how many samples survived and which
+    section sets the floor they missed. Its reasons already carry the ``(U)`` tag, which
+    :func:`_unknown` adds, so it comes off here rather than being published twice.
+    """
+    stated = summary.reasons.get(field)
+    if not stated:
+        return fallback
+    return stated[len("(U)") :].strip() if stated.startswith("(U)") else stated
+
+
+def _window_of(runs, concurrency, repetition):
+    """Find the WindowRun a graded repetition came from, or None if it is not in the bundle."""
+    for run in runs:
+        if run.policy.concurrency == concurrency and run.policy.repetition == repetition:
+            return run
+    return None
+
+
+def _mean_reported(records, field):
+    """Mean of the server's own token count over the records that carry one, else None.
+
+    The adapter asks for ``include_usage`` and writes these straight from the response, so
+    they are the only token counts in the run that were counted rather than declared. What
+    the operator configured is a request, not a measurement: the synthetic corpus counts
+    whitespace, so a declared 512 is 512 words and perhaps 650 tokens, and publishing it in
+    a row tagged (M) understates the context every throughput figure in that row was
+    produced at.
+    """
+    values = [
+        getattr(record, field)
+        for record in records
+        if getattr(record, field, None) is not None and record.in_window
+    ]
+    return sum(values) / len(values) if values else None
+
+
+def _conformance_note(censor, result):
+    """Write the note that stops ``non-conforming`` reading as a verdict on the hardware."""
+    note = (
+        "This report is an ungraded draft emitted by `ascep bench`. A load generator "
+        "observes latency and throughput over HTTP and nothing else, so the four report "
+        "sections it cannot observe -- the roofline comparison, the sizing result, the "
+        "scaling table, and the theoretical and recommended capacity tiers -- are left "
+        "unknown rather than estimated. `non-conforming` means this draft has not been "
+        "graded, not that the hardware failed; `ascep conformance` is the command that "
+        "may raise the claim."
+    )
+    if censor:
+        note += (
+            f" The ladder was censored ({censor}), so every concurrency figure in this "
+            "report is a lower bound on the hardware, not a finding."
+        )
+    if result.is_lower_bound:
+        # A ladder that ran out of declared rungs before anything failed found the highest
+        # concurrency it was *asked* about. Reported without this sentence it understates
+        # the hardware, and the next person orders GPUs against it.
+        note += (
+            " The ladder was exhausted without a failing rung"
+            + (f" ({result.censoring_cause})" if result.censoring_cause else "")
+            + ", so the concurrency figures are a lower bound -- at least this much, not "
+            "this much at most. Extend the declared rungs to find the boundary."
+        )
+    if result.cache_caveat:
+        note += f" {result.cache_caveat}"
+    return note
+
+
+_TIER_FIELDS = (
+    "max_concurrent_users",
+    "max_tokens_per_s",
+    "max_requests_per_s",
+    "daily_requests",
+)
+
+
+def _fill_tier(tier, concurrency, rung, median):
+    """Fill one capacity tier from a graded rung and its median repetition."""
+    _known(tier, "max_concurrent_users", concurrency)
+    _measured(
+        tier,
+        "max_tokens_per_s",
+        rung.throughput_tok_s,
+        "the graded rung carried no sustainable throughput figure",
+    )
+    _measured(
+        tier,
+        "max_requests_per_s",
+        median.summary.requests_per_s,
+        "the median repetition for this rung produced no request rate",
+    )
+    rps = median.summary.requests_per_s
+    _measured(
+        tier,
+        "daily_requests",
+        None if rps is None else rps * 86400.0,
+        "the median repetition for this rung produced no request rate to extrapolate",
+    )
+    tier["provenance"] = "M"
+
+
+def _build_report(config, declarations, runs, repetitions, result, c8, censor):
+    """Assemble the draft capacity report from measured rungs and declared documents.
+
+    Bench fills only what it measured or was told; everything else stays null with a reason.
+    Emitting keys absent would hand the operator a file that fails validation for causes
+    they did not create, and filling them with estimates would launder guesses into
+    measurements.
+    """
+    report = init.skeleton("capacity-report")
+    # Bench measures; it does not normalise the operator's declarations on the way past.
+    for layer in ("hardware", "model", "serving", "workload"):
+        report[layer] = copy.deepcopy(declarations[layer])
+
+    report["report_generated_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # The schema requires a claim, so bench makes the weakest one the enum offers; a
+    # harness that grades its own results is the failure the negative corpus demonstrates.
+    report["conformance"] = "non-conforming"
+    report["conformance_note"] = _conformance_note(censor, result)
+
+    window = config["window"]
+    lad = config["ladder"]
+    run_block = report["run"]
+    _unknown(
+        run_block,
+        "engine_version",
+        "bench observes an HTTP endpoint, not a build; the engine version was never "
+        "visible to the load generator",
+    )
+    _measured(
+        run_block,
+        "container_digest",
+        config["output"]["container_digest"],
+        "the operator did not declare a container digest; bench pulls HTTP responses, "
+        "not image registries",
+    )
+    warmups = [run.warmup_s_actual for run in runs]
+    _measured(
+        run_block,
+        "warmup_seconds",
+        sum(warmups) / len(warmups) if warmups else None,
+        "no window ran, so there is no warm-up duration to average",
+    )
+    _known(run_block, "repeats", lad["repetitions"])
+    _known(run_block, "sustained_window_seconds", window["window_s"])
+    rung_list = [int(c) for c in lad["concurrency"]]
+    _known(run_block, "concurrency_ladder", rung_list)
+    _known(run_block, "drain_deadline_seconds", window["drain_deadline_s"])
+    _known(run_block, "throughput_collapse_ratio", lad["throughput_collapse_ratio"])
+    _known(run_block, "monotonic_across_ladder", result.monotone)
+    # metrics.percentile implements the Hyndman-Fan type-7 estimator; naming any other
+    # method here would make every percentile in this file unreproducible, so this string
+    # is a statement about the code, not a guess.
+    _known(run_block, "percentile_method", "hyndman-fan-type-7")
+    _unknown(
+        run_block,
+        "tokenizer",
+        "bench ships no tokenizer: the local token count required by chapter 4.7.1 was "
+        "not taken, so the server's usage numbers are unchecked",
+    )
+    _known(run_block, "outlier_method", "none")
+    _known(run_block, "open_loop", False)
+    gates_node = run_block["slo_gates"]
+    for gate_key in ("ttft_p95_max_s", "itl_p95_max_s", "e2e_p95_max_s", "error_rate_max_pct"):
+        _measured(
+            gates_node,
+            gate_key,
+            config["slo_gates"][gate_key],
+            "no gate for this metric was declared in the bench config",
+        )
+    gates_node["declared_before_run"] = True
+    for path_key in ("environment_capture_path", "raw_records_path", "engine_logs_path"):
+        _measured(
+            run_block,
+            path_key,
+            c8.get(path_key),
+            "the reproduction bundle did not record this path",
+        )
+
+    # One row per rung, in ladder order: publishing only the winning rung would throw away
+    # the shape of the curve, which is the part that says whether the tier is a plateau or
+    # a cliff edge one request wide. A rung with no completed window has no evidence row
+    # to publish, and the ladder's censoring cause explains its absence.
+    row_template = copy.deepcopy(run_block["results"][0])
+    rows = []
+    summary_fields = (
+        "ttft_p50_s",
+        "ttft_p95_s",
+        "ttft_p99_s",
+        "itl_p50_s",
+        "itl_p95_s",
+        "itl_population",
+        "e2e_p95_s",
+        "e2e_p99_s",
+        "output_tok_s",
+        "requests_per_s",
+        "error_rate_pct",
+    )
+    thin = []
+    for concurrency in rung_list:
+        rung = result.rungs.get(concurrency)
+        reps = _counted(repetitions.get(concurrency, []))
+        if rung is None or not reps:
+            continue
+        median = _median_repetition(reps)
+        summary = median.summary
+        row = copy.deepcopy(row_template)
+        # The row is tagged (M), so its token counts have to be the server's, not the
+        # config's. The declared figures are what was asked for; ignore_eos makes the output
+        # side agree, but nothing makes the input side agree, and C4 binds every throughput
+        # figure in this row to the context length beside it.
+        window_run = _window_of(runs, concurrency, median.repetition)
+        records = window_run.records if window_run is not None else []
+        no_usage = (
+            "the server returned no usage accounting for this rung, so the tokens these "
+            "prompts actually cost were never counted; the configured value is a request, "
+            "not a measurement, and publishing it in a row tagged (M) would launder it"
+        )
+        _measured(row, "input_tokens", _mean_reported(records, "input_tokens"), no_usage)
+        _measured(row, "output_tokens", _mean_reported(records, "output_tokens"), no_usage)
+        _known(row, "concurrency", concurrency)
+        for field in summary_fields:
+            _measured(
+                row,
+                field,
+                getattr(summary, field),
+                _reason_for(
+                    summary,
+                    field,
+                    f"the window reduction produced no {field} for this rung; too few "
+                    "completed samples survived exclusion",
+                ),
+            )
+        # A published figure between the two section 4.3 floors is real but one straggler
+        # wide. It cannot be flagged in the row -- the schema has no field for it -- so it
+        # goes in the assumptions table, which is where a reviewer looks for what the
+        # numbers cannot settle.
+        thin.extend(
+            f"{field} at concurrency {concurrency}"
+            for field in sorted(summary.low_confidence & set(summary_fields))
+        )
+        _measured(
+            row,
+            "slo_pass",
+            summary.slo_pass,
+            "the reducer could not grade this rung against the declared gates",
+        )
+        _known(row, "outcome", rung.outcome.value.lower())
+        _unknown(
+            row,
+            "gpu_util_pct",
+            "a load generator cannot see the GPU; this must come from the serving host",
+        )
+        _unknown(
+            row,
+            "gpu_mem_util_pct",
+            "a load generator cannot see the GPU; this must come from the serving host",
+        )
+        row["provenance"] = "M"
+        rows.append(row)
+    run_block["results"] = rows
+
+    # Belt and braces for skeleton drift: any surviving TODO companion in the block bench
+    # owns is an unknown with an honest (if generic) reason, never a fabricated value.
+    for key in list(run_block):
+        companion = f"{key}_u_reason"
+        if companion in run_block and "TODO" in str(run_block[companion]):
+            _unknown(
+                run_block,
+                key,
+                "bench did not measure this; it is not observable by a load generator over HTTP",
+            )
+
+    tiers = report["capacity_tiers"]
+    # n_gpus is the topology the run was bound to in all four tiers, not a per-tier finding.
+    n_gpus = declarations["serving"]["gpu_count"]
+    for tier in tiers.values():
+        _known(tier, "n_gpus", n_gpus)
+        _unknown(
+            tier,
+            "binding_constraint",
+            "bench exercises the throughput floor only; which of the three floors -- "
+            "weights, KV, or throughput -- actually binds is not decidable from latency, "
+            "and naming throughput because that is what was measured is how a KV-bound "
+            "deployment gets sized against a throughput number",
+        )
+
+    roofline_reason = (
+        "the roofline needs the hardware's bandwidth and FLOPs and is computed by "
+        "`ascep size`; bench measures latency, it does not model it"
+    )
+    for field in _TIER_FIELDS:
+        _unknown(tiers["theoretical"], field, roofline_reason)
+    policy_reason = (
+        "a recommended tier derates a measurement by a headroom factor, and that factor "
+        "is a policy choice, not a measurement; bench does not invent policy"
+    )
+    for field in _TIER_FIELDS:
+        _unknown(tiers["recommended"], field, policy_reason)
+    # Theorem/recommended provenance stays exactly as the skeleton left it: that field has
+    # no _u_reason companion, and inventing one is the laundering C2 stops.
+
+    complete_rungs = [
+        c
+        for c in rung_list
+        if result.rungs.get(c) is not None
+        and result.rungs[c].outcome is ladder.RungOutcome.COMPLETE
+    ]
+    if complete_rungs:
+        top = max(complete_rungs)
+        _fill_tier(
+            tiers["measured"],
+            top,
+            result.rungs[top],
+            _median_repetition(_counted(repetitions[top])),
+        )
+    else:
+        why = "no rung completed its declared repetitions"
+        if censor:
+            why += f"; the ladder was censored ({censor})"
+        for field in _TIER_FIELDS:
+            _unknown(tiers["measured"], field, why)
+
+    top_sustainable = result.max_sustainable_concurrency
+    sustainable_rung = result.rungs.get(top_sustainable) if top_sustainable is not None else None
+    # sustainable_publishable is the ladder's own gate on this figure -- confirmed by a
+    # post-search repetition, monotone, and not harness-limited. Publishing the boundary
+    # without it turns "the highest rung we happened to try" into "the highest rung that
+    # works", which is the most flattering single sentence a capacity report can contain.
+    if not result.sustainable_publishable:
+        sustainable_rung = None
+    if sustainable_rung is not None and _counted(repetitions.get(top_sustainable, [])):
+        _fill_tier(
+            tiers["sustainable"],
+            top_sustainable,
+            sustainable_rung,
+            _median_repetition(_counted(repetitions[top_sustainable])),
+        )
+    else:
+        if censor is not None:
+            why = f"the ladder was censored before a sustainable tier emerged ({censor})"
+        elif top_sustainable is not None and not result.sustainable_publishable:
+            why = (
+                f"concurrency {top_sustainable} passed its gates but the ladder does not "
+                "permit publishing it as a boundary"
+                + ("" if result.confirmed else "; no post-search repetition confirmed it")
+                + ("" if result.monotone else "; the ladder was not monotone")
+                + (f"; {result.cache_caveat}" if result.cache_caveat else "")
+            )
+        elif result.terminated_at is not None:
+            why = f"the ladder terminated at concurrency {result.terminated_at}"
+        else:
+            why = "no rung passed its declared SLO gates"
+        for field in _TIER_FIELDS:
+            _unknown(
+                tiers["sustainable"],
+                field,
+                f"the ladder produced no sustainable tier: {why}",
+            )
+
+    roofline = report["roofline_comparison"]
+    _unknown(roofline, "decode_tok_s_theoretical", roofline_reason)
+    _unknown(
+        roofline,
+        "decode_tok_s_measured",
+        "bench measures workload throughput, not an isolated decode rate at the "
+        "roofline's operating point; the two are not interchangeable",
+    )
+    _unknown(
+        roofline,
+        "roofline_efficiency",
+        "the ratio of two figures this run does not have: no theoretical roofline and no "
+        "isolated decode measurement",
+    )
+    _unknown(roofline, "prefill_ttft_s_theoretical", roofline_reason)
+    _unknown(
+        roofline,
+        "prefill_ttft_s_measured",
+        "the TTFT bench measured mixes queueing with prefill; the roofline needs an "
+        "isolated prefill measurement this run did not make",
+    )
+
+    sizing = report["sizing_result"]
+    _unknown(
+        sizing,
+        "gpus_required",
+        "sizing needs the declared demand targets and a headroom policy; `ascep size` "
+        "computes it from those, not from this ladder",
+    )
+    _unknown(
+        sizing,
+        "replica_topology",
+        "a replica topology is an output of sizing, not of measurement",
+    )
+    _unknown(
+        sizing,
+        "binding_constraint",
+        "sizing binds only once demand and the roofline are known; this run has neither",
+    )
+    _unknown(
+        sizing,
+        "utilization_at_target_pct",
+        "a bench run has no declared demand target to compute utilization against",
+    )
+
+    # One topology is not a scaling curve, and the row shape requires a numeric
+    # scaling_efficiency, so a single row could only be published as a fabricated 1.0.
+    report["scaling"] = []
+
+    assumption_template = copy.deepcopy(report["unmeasured_assumptions"][0])
+
+    def _assumption(field, impact, cost):
+        entry = copy.deepcopy(assumption_template)
+        entry["field"] = field
+        entry["impact_if_wrong"] = impact
+        entry["cost_to_measure"] = cost
+        return entry
+
+    report["unmeasured_assumptions"] = [
+        _assumption(
+            "roofline_comparison",
+            "Without a roofline, a measured throughput far from the hardware's ceiling "
+            "is indistinguishable from a healthy one, and the real bottleneck goes "
+            "uninvestigated.",
+            "Run `ascep size` against the declared hardware block; it needs bandwidth "
+            "and FLOPs from the declaration, not another bench run.",
+        ),
+        _assumption(
+            "sizing_result (gpus_required and the headroom policy)",
+            "A capacity decision made against the measured tier with no headroom leaves "
+            "nothing for demand peaks; one made against an assumed headroom is policy "
+            "dressed up as data.",
+            "Declare the demand targets and run `ascep size`; the policy input is a "
+            "capacity-planning decision, not a measurement.",
+        ),
+        _assumption(
+            "scaling table (one topology only)",
+            "A single topology says nothing about scaling efficiency, and extrapolating "
+            "it to a node count this run never measured can halve or double a GPU order.",
+            "Repeat the ladder at each tensor-parallel and pipeline-parallel degree of "
+            "interest and fill one row per topology.",
+        ),
+        _assumption(
+            "run.tokenizer (local token count not taken)",
+            "Server-reported usage goes unchecked, so an engine that miscounts tokens "
+            "inflates every tokens-per-second figure in this report.",
+            "Count prompts and outputs locally with the served model's own tokenizer, "
+            "as chapter 4.7.1 requires; bench ships no tokenizer to do it.",
+        ),
+        _assumption(
+            "capacity_tiers.*.binding_constraint (unbound)",
+            "Sizing a KV-bound deployment against a throughput number provisions the "
+            "wrong resource, and the shortfall appears only in production.",
+            "Inspect engine-reported KV cache occupancy and memory headroom on the "
+            "serving host during the run; latency alone cannot decide it.",
+        ),
+        _assumption(
+            "run.results[].gpu_util_pct and gpu_mem_util_pct (not observed)",
+            "Without utilization, a rung that failed its gates because the GPU was "
+            "saturated is indistinguishable from one that failed because the client, the "
+            "network or another tenant was, and the ladder's boundary gets attributed to "
+            "the wrong component.",
+            "Sample the serving host during each window -- nvidia-smi, DCGM, or the "
+            "engine's own metrics endpoint -- and align the series to the window "
+            "timestamps in the bundle; a load generator cannot see it over HTTP.",
+        ),
+        _assumption(
+            "run.engine_version (not observed)",
+            "Throughput moves by tens of percent between engine releases, so a report "
+            "without the version cannot be compared with another run of the same model on "
+            "the same hardware -- which is most of what these reports get used for.",
+            "Read it from the serving host or the container image and record it; "
+            "`/v1/models` does not carry it, so bench cannot ask.",
+        ),
+    ]
+    if thin:
+        report["unmeasured_assumptions"].append(
+            _assumption(
+                "figures published below the section 4.3 advisory sample floor: " + ", ".join(thin),
+                "These percentiles are computed from enough samples to report but not "
+                "enough to be stable: a single straggler moves them, so a tier boundary "
+                "that turns on one of them can flip between two runs of the same config.",
+                "Lengthen the window or raise the repetition count until the tail "
+                "percentile clears its advisory floor; the sample count, not the "
+                "estimator, is the limit.",
+            )
+        )
+
+    reproduction = report["reproduction"]
+    for key in (
+        "run_configs_path",
+        "raw_records_path",
+        "engine_logs_path",
+        "environment_capture_path",
+        "container_digest",
+    ):
+        _measured(
+            reproduction,
+            key,
+            c8.get(key),
+            "the reproduction bundle did not record this",
+        )
+    _unknown(
+        reproduction,
+        "analysis_script_path",
+        "bench writes records and a manifest but no analysis script; every figure in "
+        "this report is produced by `ascep bench` itself from the bundled records",
+    )
+    return report

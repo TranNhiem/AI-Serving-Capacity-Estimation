@@ -25,7 +25,7 @@ jobs:
       - name: Unit tests
         run: pytest -q
       - name: the auditable modules must import with no third-party deps
-        # Eight promises, one mechanism. `capacity` is the formula set: if it grows a
+        # Nine promises, one mechanism. `capacity` is the formula set: if it grows a
         # dependency, anyone wanting to check the maths has to adopt our stack first.
         # `bench.records` is the published record format, `bench.metrics` is the reduction
         # applied to it and `bench.ladder` the grading applied to that, so re-deriving
@@ -49,6 +49,11 @@ jobs:
         # also pins the package initialiser, since one eager re-export of the concrete
         # adapter would pull httpx in behind it and break the promise from a file that never
         # mentions it.
+        # `bench.run` assembles the report from the summaries, so it is where a reader goes
+        # to answer "which repetition is this row, and where did its token counts come from".
+        # It takes its adapter as an argument precisely so that reading it needs nothing
+        # installed; the check is what stops a later top-level `import httpx` from quietly
+        # putting `ascep bench --dry-run` behind the transport extra.
         # Third-party means "came out of site-packages", not "absent from
         # sys.stdlib_module_names": that attribute is 3.10+ and this job runs on the
         # 3.9 leg of the matrix too, where it raised AttributeError and failed the
@@ -81,6 +86,7 @@ jobs:
               "ascep.bench.workloads",
               "ascep.bench.persist",
               "ascep.bench.adapters.base",
+              "ascep.bench.run",
           )
           for target in targets:
               rc = subprocess.run([sys.executable, "-c", code, target]).returncode

@@ -200,6 +200,41 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bench_adapter(endpoint: dict):
+    """Build the live adapter. Module-level so tests can replace it without a live server."""
+    # httpx backs the OpenAI-compatible adapter and is an optional extra: ascep bench is the
+    # only command that talks to a network, so the import failure has to read as an install
+    # hint rather than a traceback. The import stays lazy so the rest of the CLI works
+    # without the extra installed.
+    import os
+
+    try:
+        from ascep.bench.adapters.base import AdapterConfig
+        from ascep.bench.adapters.openai_compat import OpenAICompatAdapter
+    except ImportError as exc:
+        raise SystemExit(
+            f"ascep bench needs the HTTP transport extra ({exc}); install it with: "
+            "pip install ascep[run]"
+        ) from exc
+    return OpenAICompatAdapter(
+        AdapterConfig(
+            base_url=endpoint["base_url"],
+            model=endpoint["model"],
+            api_key=os.environ.get("ASCEP_API_KEY") or None,
+            timeout_s=endpoint["timeout_s"],
+        )
+    )
+
+
+def _cmd_bench(args: argparse.Namespace) -> int:
+    from ascep.bench import run as bench_run
+
+    # _bench_adapter is named through the module global on purpose: the acceptance tests
+    # replace ascep.cli._bench_adapter with a fake, and resolving it at call time (rather
+    # than closing over a local import) is what makes that substitution work.
+    return bench_run.bench(args.config, dry_run=args.dry_run, adapter_factory=_bench_adapter)
+
+
 def _cmd_version(_args: argparse.Namespace) -> int:
     """Print the package and protocol version."""
     print(f"ascep {__version__} (protocol {ASCEP_VERSION})")
@@ -287,6 +322,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="factor dividing usable capacity for the recommended tier (default: 1.15)",
     )
     p_size.set_defaults(handler=_cmd_size)
+
+    p_bench = sub.add_parser("bench", help="run a concurrency ladder and write a draft report")
+    p_bench.add_argument("config", help="path to the bench config JSON")
+    p_bench.add_argument("--dry-run", action="store_true", help="print the plan and exit")
+    p_bench.set_defaults(handler=_cmd_bench)
 
     p_version = sub.add_parser("version", help="print the protocol and package version")
     p_version.set_defaults(handler=_cmd_version)

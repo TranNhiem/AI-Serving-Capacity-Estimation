@@ -294,3 +294,29 @@ def test_a_file_removed_from_the_bundle_fails_verification(tmp_path):
     reproduction = _write(tmp_path)
     (tmp_path / reproduction["run_configs_path"]).unlink()
     assert verify_bundle(tmp_path / "bundle")
+
+
+def test_an_extra_file_arrives_byte_for_byte(tmp_path):
+    """The caller's config goes in as bytes, not as something re-serialised on the way past.
+    A config round-tripped through a parser records what the harness understood, and the one
+    difference worth catching is the harness understanding something else."""
+    payload = b'{"window_s": 20.0,\n  "note": "trailing whitespace and all"   }\n'
+    _write(tmp_path, extra_files={"bench-config.json": payload})
+    assert (tmp_path / "bundle" / "bench-config.json").read_bytes() == payload
+
+
+def test_an_edited_extra_file_fails_verification(tmp_path):
+    """An artifact the manifest does not hash is one anyone can edit after publication
+    without verify_bundle saying a word, and the config is the artifact where a single
+    changed number rewrites what the run claims to have been."""
+    _write(tmp_path, extra_files={"bench-config.json": b"{}\n"})
+    (tmp_path / "bundle" / "bench-config.json").write_bytes(b'{"tampered": true}\n')
+    assert "bench-config.json" in " ".join(verify_bundle(tmp_path / "bundle"))
+
+
+def test_an_extra_file_may_not_take_the_name_of_an_artifact_the_bundle_owns(tmp_path):
+    """Overwriting records.jsonl with the caller's bytes leaves a bundle whose manifest
+    agrees with itself and describes a run that never happened -- the one failure a digest
+    manifest cannot report, because it would be hashing the substitute."""
+    with pytest.raises(ValueError):
+        _write(tmp_path, extra_files={"records.jsonl": b"not the records\n"})
