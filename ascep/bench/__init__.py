@@ -7,8 +7,11 @@ air-gapped login node, whereas a load generator that is not allowed an async HTT
 becomes the bottleneck it is supposed to be measuring. The client lives behind the ``run``
 extra (``pip install ascep[run]``) and nothing in the analytic half imports this package.
 
-:mod:`ascep.bench.records` is itself stdlib-only and stays that way: reading someone else's
-published records to re-derive their percentiles must not require our HTTP client.
+The whole analytic path through this package -- :mod:`ascep.bench.records`,
+:mod:`ascep.bench.metrics`, :mod:`ascep.bench.ladder` -- is itself stdlib-only and stays that
+way: reading someone else's published records to re-derive their percentiles and re-grade
+their rungs must not require our HTTP client. Only the adapters need it, which is why this
+initialiser deliberately re-exports nothing from them.
 """
 
 from ascep.bench.records import Outcome, RequestRecord, read_records, write_records
