@@ -200,6 +200,37 @@ def test_sub_millisecond_skew_is_tolerated_rather_than_rejected():
     assert reduce_window([r], window_s=1.0).excluded_invalid_count == 0
 
 
+# --- ch7 §3 warm-up is marked, so the reduction is what has to drop it ----------------
+
+
+def test_warm_up_records_are_excluded_from_the_window_and_from_its_denominator():
+    """Section 7.3 discards warm-up samples; the bundle still has to contain them.
+
+    Marking rather than deleting is what makes the run re-analyzable, and it is also what
+    makes it possible to reduce the whole bundle by accident. A cold-scheduler request
+    folded into the steady-state tail is the figure warm-up exists to keep out.
+    """
+    warm = [_ok(f"w{i}", i * 0.1, 5.0, [0.5]) for i in range(10)]  # slow, cold, and out of window
+    for record in warm:
+        record.in_window = False
+    steady = [_ok(f"r{i}", 10.0 + i * 0.1, 0.1, [0.01]) for i in range(20)]
+
+    s = reduce_window(warm + steady, window_s=2.0)
+    assert s.excluded_warmup_count == 10
+    assert s.n_issued == 20, "warm-up is not an issued request of this window"
+    assert s.n_completed == 20
+    assert s.ttft_p95_s == pytest.approx(0.1), "a 5 s cold TTFT must not reach the tail"
+
+
+def test_a_warm_up_request_does_not_occupy_a_steady_state_slice():
+    warm = _ok("w0", 0.0, 0.1, [0.9])
+    warm.in_window = False
+    steady = [_ok(f"r{i}", 0.0, 0.1, [0.1]) for i in range(4)]
+    rows = slice_window([warm, *steady], window_s=1.0, n_slices=1, t0=0.0)
+    assert rows[0].accepted == 4
+    assert rows[0].achieved_concurrency == pytest.approx(4 * 0.2)
+
+
 # --- §4.7 error handling and the issued denominator -----------------------------------
 
 

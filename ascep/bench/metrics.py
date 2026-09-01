@@ -160,6 +160,7 @@ class WindowSummary:
     n_completed: int
     excluded_error_count: int
     excluded_invalid_count: int
+    excluded_warmup_count: int
     error_rate_pct: float | None
     ttft_p50_s: float | None
     ttft_p95_s: float | None
@@ -278,6 +279,12 @@ def reduce_window(
     computed from these records must reuse it rather than draw their own.
     """
     del seed  # reserved for interval computation; a default drawn from the clock is barred
+    # Warm-up is marked rather than deleted so the bundle keeps it, which means the
+    # reduction is the thing that has to drop it. Handed a whole bundle, a reduction that
+    # trusted its caller would fold cold-cache and cold-scheduler requests into the tail
+    # and call the result steady state -- the exact figure section 7.3 discards them for.
+    excluded_warmup_count = sum(1 for record in records if not record.in_window)
+    records = [record for record in records if record.in_window]
     n_issued = len(records)
     excluded_error_count = 0
     excluded_invalid_count = 0
@@ -370,6 +377,7 @@ def reduce_window(
         n_completed=n_completed,
         excluded_error_count=excluded_error_count,
         excluded_invalid_count=excluded_invalid_count,
+        excluded_warmup_count=excluded_warmup_count,
         error_rate_pct=error_rate_pct,
         ttft_p50_s=ttft_p50_s,
         ttft_p95_s=ttft_p95_s,
@@ -429,6 +437,10 @@ def slice_window(
             f"trim_slices={trim_slices} would leave no rows of {n_slices}; "
             "the slice table is the steady-state evidence and cannot be trimmed to nothing"
         )
+    # Same reason as in reduce_window: a warm-up request that happens to overlap the first
+    # slice would show up as steady-state occupancy in the table meant to prove the state
+    # was steady.
+    records = [record for record in records if record.in_window]
     edges = [t0 + i * window_s / n_slices for i in range(n_slices + 1)]
     accepted = [0] * n_slices
     completed = [0] * n_slices
