@@ -253,12 +253,19 @@ def test_init_needs_no_optional_dependency():
 
     Asserted by import rather than by CI alone: this catches a lazy import inside `validation`
     being hoisted to module scope, which the bare-install job would only catch after a push.
+
+    Third-party is decided by install location rather than by `sys.stdlib_module_names`, which
+    does not exist before 3.10 while `requires-python` is `>=3.9`. The same reasoning as the
+    twin check in `test_cli.py`, and the two must stay in agreement.
     """
     code = (
-        "import sys; before=set(sys.modules); import ascep.init; "
-        "new={m.split('.')[0] for m in set(sys.modules)-before}; "
-        "extra=sorted(m for m in new if m not in sys.stdlib_module_names "
-        "and not m.startswith(('ascep','_'))); "
+        "import os, sys, sysconfig; before=set(sys.modules); import ascep.init; "
+        "p=sysconfig.get_paths(); "
+        "d=tuple(os.path.realpath(x)+os.sep for x in {p.get('purelib'), p.get('platlib')} if x); "
+        "f=lambda m: (getattr(sys.modules.get(m),'__file__',None) or '') and "
+        "os.path.realpath(sys.modules[m].__file__).startswith(d); "
+        "extra=sorted({m.split('.')[0] for m in set(sys.modules)-before "
+        "if f(m) and not m.startswith(('ascep','_'))}); "
         "assert not extra, extra; print('ok')"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=ROOT)

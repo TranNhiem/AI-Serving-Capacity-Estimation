@@ -343,19 +343,30 @@ def test_version_and_size_import_nothing_outside_the_standard_library():
     silently — the command keeps working on a developer laptop, which is the one machine where
     the extras are always installed. Hence the subprocess: the already-warm imports of this test
     session would otherwise mask the regression.
+
+    Detection is by install location, not by `sys.stdlib_module_names`. That attribute arrived in
+    3.10 and `requires-python` is `>=3.9`, so the obvious spelling fails on the oldest interpreter
+    we claim to support — and skipping it there would drop the guarantee on exactly the machine
+    most likely to have a strange environment. Asking "did this module come out of site-packages"
+    also states the promise more directly: the thing being forbidden is reaching a *pip-installed*
+    dependency, which is the ticket the cluster user cannot file.
     """
     done = _child(
         """
-        import sys
+        import os, sys, sysconfig
         from ascep.cli import main
         assert main(["version"]) == 0
         assert main(["size", "--workload", sys.argv[1],
                      "--kv-tokens", "574798", "--throughput-tok-s", "1459",
                      "--gpus-per-replica", "2"]) == 0
-        stdlib = set(sys.stdlib_module_names)
-        extra = sorted({m.split(".")[0] for m in sys.modules
-                        if m.split(".")[0] not in stdlib
-                        and not m.startswith(("ascep", "_"))})
+        paths = sysconfig.get_paths()
+        sitedirs = tuple(os.path.realpath(p) + os.sep
+                         for p in {paths.get("purelib"), paths.get("platlib")} if p)
+        def installed(name):
+            f = getattr(sys.modules.get(name), "__file__", None)
+            return bool(f) and os.path.realpath(f).startswith(sitedirs)
+        extra = sorted({m.split(".")[0] for m in list(sys.modules)
+                        if installed(m) and not m.startswith(("ascep", "_"))})
         assert not extra, extra
         """,
         str(WORKLOAD),

@@ -74,6 +74,13 @@ cross-version comparisons valid.
 - `ascep.init`'s docstring claimed `if`/`then` requirements surface through
   `decisions()`; only `anyOf`/`oneOf` ever did. The docstring now says what
   actually happens and why it is the right behaviour.
+- The two tests that guard the stdlib-only promise used `sys.stdlib_module_names`,
+  which arrived in Python 3.10 while `requires-python` is `>=3.9` — so the
+  `py3.9` CI job failed with `AttributeError` and the guarantee went unchecked on
+  the oldest supported interpreter. They now detect a third-party import by
+  install location (`sysconfig` `purelib`/`platlib`), which works on every
+  supported version and states the promise more directly: what is forbidden is
+  reaching a *pip-installed* dependency.
 - **Goodput was defined as uncomputable.** Chapter 4 §4.2 defined it as counting
   "only requests that met every SLO gate", but every gate in `slo_gates` is a
   window-level p95 or a window-level rate — no individual request meets or fails
