@@ -166,7 +166,17 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
     (`gpu_memory_utilization` is vLLM's, `num_key_value_heads` is Hugging Face's), so only
     tokens that look like OUR declarations are checked.
     """
+    import ascep.bench.driver as driver
+    import ascep.bench.ladder as ladder
+    import ascep.bench.metrics as metrics
+    import ascep.bench.records as records
     import ascep.capacity as capacity
+
+    # Every stdlib-only module a reader is expected to run. Their public names are our
+    # vocabulary too: prose that says `apply_boundary_rules` is naming a function a reader
+    # can call, not inventing a declaration field, and a check that could not tell the
+    # difference would push writers to stop backticking real API names.
+    modules = (capacity, records, metrics, ladder, driver)
 
     declared = set()
     for path in sorted((ROOT / "schemas").glob("*.schema.json")):
@@ -182,16 +192,18 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
 
     # Names the chapters may legitimately use that are not schema fields: our own function and
     # keyword-argument names, and third-party vocabulary the chapters quote on purpose.
-    ours = declared | {n for n in dir(capacity) if not n.startswith("_")}
+    ours = set(declared)
     # Read the keyword names out of the signatures rather than listing them. A hand-kept list
     # fails in the direction that costs the most: adding an argument makes accurate prose about
     # it fail this test, so the pressure is on the writer to delete a true sentence.
-    for obj in list(vars(capacity).values()):
-        if inspect.isclass(obj):
-            ours |= {n for n in vars(obj) if not n.startswith("_")}
-        for member in [obj, *(vars(obj).values() if inspect.isclass(obj) else [])]:
-            if inspect.isfunction(member):
-                ours |= set(inspect.signature(member).parameters)
+    for module in modules:
+        ours |= {n for n in dir(module) if not n.startswith("_")}
+        for obj in list(vars(module).values()):
+            if inspect.isclass(obj):
+                ours |= {n for n in vars(obj) if not n.startswith("_")}
+            for member in [obj, *(vars(obj).values() if inspect.isclass(obj) else [])]:
+                if inspect.isfunction(member):
+                    ours |= set(inspect.signature(member).parameters)
     ours |= {
         # Intermediate names the chapters use when walking through a derivation by hand; they
         # are prose variables, so no signature will ever contain them.

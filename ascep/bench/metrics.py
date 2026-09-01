@@ -294,6 +294,12 @@ def reduce_window(
     ``seed`` is accepted so callers pass one deterministic value through the whole
     reduction; intervals computed from these records must reuse it rather than draw
     their own.
+
+    The drain deadline is applied upstream, by ``ascep.bench.driver.apply_boundary_rules``,
+    which marks a request outstanding at the deadline as cancelled before the records are
+    written. This function therefore reads the ruling rather than re-deriving it, and
+    records that never passed through it are an ungraded bundle: a request that finished
+    forty seconds after close would arrive here as a valid completion and enter the tail.
     """
     del seed  # reserved for interval computation; a default drawn from the clock is barred
     t1 = t0 + window_s

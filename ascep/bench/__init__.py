@@ -8,10 +8,11 @@ becomes the bottleneck it is supposed to be measuring. The client lives behind t
 extra (``pip install ascep[run]``) and nothing in the analytic half imports this package.
 
 The whole analytic path through this package -- :mod:`ascep.bench.records`,
-:mod:`ascep.bench.metrics`, :mod:`ascep.bench.ladder` -- is itself stdlib-only and stays that
-way: reading someone else's published records to re-derive their percentiles and re-grade
-their rungs must not require our HTTP client. Only the adapters need it, which is why this
-initialiser deliberately re-exports nothing from them.
+:mod:`ascep.bench.metrics`, :mod:`ascep.bench.ladder`, :mod:`ascep.bench.driver` -- is itself
+stdlib-only and stays that way: reading someone else's published records to re-derive their
+percentiles, re-grade their rungs and re-rule their window boundaries must not require our
+HTTP client. Only the adapters need it, which is why this initialiser deliberately re-exports
+nothing from them.
 """
 
 from ascep.bench.records import Outcome, RequestRecord, read_records, write_records
