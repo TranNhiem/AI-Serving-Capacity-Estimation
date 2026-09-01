@@ -17,6 +17,12 @@ Ambiguous timestamps are the cheapest way to inflate a report. The following def
 
 **Failure prevented:** a "20 ms token latency" claim that actually averages TTFT in, masking a 2 s prefill backlog at load.
 
+**An ITL percentile MUST name its population.** The formula above defines ITL *per request*, so a set of requests yields two different distributions that are routinely both called "the ITL distribution": the **pooled-gaps** population, one sample per decode step across every request in the window, and the **per-request-mean** population, one sample per request. They do not have the same tail and they do not have the same sample count. A report **MUST** declare which population every ITL percentile and every ITL gate was computed over, in an `itl_population` field taking exactly `pooled-gaps` or `per-request-mean`, and **MUST NOT** mix the two in one figure.
+
+Where per-token timestamps exist the pooled-gaps population **SHOULD** be used, because it is the one an ITL gate is for: a stall inside a single request survives pooling and vanishes under a per-request mean. Where they do not exist, the per-request-mean population is the only one available and is conforming, provided it is labelled — it is computed from the decode span and is therefore not the barred `e2e ÷ output_tokens` substitution of §4.7. A request with fewer than two output tokens has no decode phase and contributes no ITL sample to either population.
+
+**Failure prevented:** a 50-step stream that stalls for 0.9 s once per request, with every other gap at 0.01 s. Pooled, the p99 ITL is 0.9 s and a 0.1 s gate fails, correctly. Averaged per request first, every sample becomes 0.028 s, the gate passes, and the 1000-sample population has collapsed to 20 — below the p99 floor of §4.3, so the figure was never admissible in the first place. Both numbers were published as "p99 ITL".
+
 ## 4.2 Throughput definitions
 
 | metric | definition |

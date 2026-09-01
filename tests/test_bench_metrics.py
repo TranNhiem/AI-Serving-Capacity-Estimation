@@ -102,36 +102,58 @@ def test_a_percentile_above_the_advisory_floor_is_not_flagged():
     assert "ttft_p95_s" not in s.low_confidence
 
 
-# --- §4.7.1 ITL is never a span average -----------------------------------------------
+# --- §4.1 which ITL population, and §4.7 never the e2e span ---------------------------
 
 
-def test_itl_comes_only_from_token_timestamps_never_from_e2e_over_tokens():
-    """A span average presented as an ITL sample is barred by §4.3.
+def _no_stamps(rid, issued, ttft, span, out_tokens):
+    """A completed request with token counts and end time but no per-token timestamps."""
+    return RequestRecord(
+        request_id=rid,
+        issued_ts=issued,
+        outcome=Outcome.OK,
+        first_token_ts=issued + ttft,
+        token_ts=[],
+        end_ts=issued + ttft + span,
+        output_tokens=out_tokens,
+    )
 
-    These records claim 100 output tokens over a long e2e but carry no per-token stamps, so
-    there is no ITL distribution to report -- and inventing one would make an unmeasured
-    figure look measured.
+
+def test_without_per_token_stamps_itl_is_the_decode_span_not_the_e2e_span():
+    """§4.1 defines per-request ITL as (t_last - t_first) / (output_tokens - 1).
+
+    The barred statistic is e2e / output_tokens, which folds prefill and queueing into a
+    per-token figure. The decode span excludes both, so it is measurable here and reporting
+    it (U) would hide a number the protocol requires. What must not happen is reporting it
+    under the same label as the pooled population, so the summary names which one it is.
     """
-    recs = [
-        RequestRecord(
-            request_id=f"r{i}",
-            issued_ts=float(i),
-            outcome=Outcome.OK,
-            first_token_ts=i + 0.1,
-            token_ts=[],
-            end_ts=i + 10.0,
-            output_tokens=100,
-        )
-        for i in range(50)
-    ]
+    recs = [_no_stamps(f"r{i}", float(i), 3.0, 9.9, 100) for i in range(50)]
     s = reduce_window(recs, window_s=50.0)
+    assert s.itl_population == "per-request-mean"
+    assert s.itl_p50_s == pytest.approx(0.1)
+    naive = (3.0 + 9.9) / 100
+    assert s.itl_p50_s != pytest.approx(naive), "e2e / output_tokens is a different statistic"
+
+
+def test_a_single_token_reply_contributes_no_itl_sample():
+    """There is no decode phase behind one token, only prefill.
+
+    Dividing its span by zero steps raises; dividing by one quietly files a TTFT-shaped
+    measurement in the ITL distribution, which is the same conflation §4.1 forbids.
+    """
+    recs = [_no_stamps(f"r{i}", float(i), 0.4, 0.0, 1) for i in range(50)]
+    s = reduce_window(recs, window_s=50.0)
+    assert s.itl_population is None
     assert s.itl_p50_s is None
-    assert s.itl_p95_s is None
     assert s.e2e_p95_s is not None, "e2e is still measurable from the stamps that do exist"
 
 
+def test_pooled_gaps_are_preferred_wherever_the_stamps_exist():
+    recs = [_ok(f"r{i}", i * 1.0, 0.1, [0.01] * 3) for i in range(20)]
+    assert reduce_window(recs, window_s=20.0).itl_population == "pooled-gaps"
+
+
 def test_a_stall_inside_a_request_reaches_the_itl_tail_while_the_median_stays_clean():
-    """The whole reason per-token stamps are retained, in one construction.
+    """Why the pooled population is preferred, in one construction.
 
     Twenty requests, fifty gaps each: 1000 ITL samples of which 20 are 0.9 s stalls. Pooled
     at the gap level the p99 is the stall and the p50 is unaffected, which is exactly the
@@ -142,6 +164,8 @@ def test_a_stall_inside_a_request_reaches_the_itl_tail_while_the_median_stays_cl
     s = reduce_window(recs, window_s=20.0)
     assert s.itl_p50_s == pytest.approx(0.01)
     assert s.itl_p99_s == pytest.approx(0.9)
+    per_request_mean = (0.01 * 49 + 0.9) / 50
+    assert s.itl_p99_s != pytest.approx(per_request_mean), "the mean is what pooling avoids"
 
 
 # --- §4.7.2 monotonicity validation ---------------------------------------------------

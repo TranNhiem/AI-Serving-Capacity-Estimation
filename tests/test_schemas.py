@@ -275,3 +275,38 @@ def test_moe_must_declare_its_experts():
     }
     assert not _valid(doc)
     assert _valid({**doc, "moe_experts": 64, "moe_top_k": 8})
+
+
+def test_a_reported_itl_percentile_must_name_its_population():
+    """Section 4.1: an unlabelled ITL percentile cannot be recomputed from the records.
+
+    Pooled-gaps and per-request-mean are both routinely called "the ITL distribution" and
+    they do not share a tail, so a reader handed a bare `itl_p95_s` cannot tell whether a
+    stall inside one request was counted fifty times or averaged away once.
+    """
+    run_schema = json.loads((ROOT / "schemas" / "run.schema.json").read_text())
+    validator = Validator(run_schema)
+    run = json.loads((ROOT / "examples" / "moe-26b-h100-tp2" / "report.json").read_text())["run"]
+    assert not list(validator.iter_errors(run)), "the published example must still validate"
+
+    def with_first_result(**changes):
+        results = [dict(run["results"][0], **changes), *run["results"][1:]]
+        return {**run, "results": results}
+
+    unlabelled = with_first_result(itl_p95_s=0.031)
+    del unlabelled["results"][0]["itl_p95_s_u_reason"]
+    errors = list(validator.iter_errors(unlabelled))
+    assert any("itl_population" in str(e.absolute_path) for e in errors), errors
+
+    labelled = dict(unlabelled)
+    labelled["results"] = [
+        dict(
+            unlabelled["results"][0],
+            itl_population="pooled-gaps",
+        ),
+        *unlabelled["results"][1:],
+    ]
+    del labelled["results"][0]["itl_population_u_reason"]
+    assert not list(validator.iter_errors(labelled))
+
+    assert list(validator.iter_errors(with_first_result(itl_population="mean-of-medians")))

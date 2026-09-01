@@ -82,6 +82,9 @@ concurrency ladder `<c values>`, outliers handled by `<method>`.
 |---|---:|---|---|---|---:|---:|---:|---:|:--:|
 | | | | | | | | | | |
 
+**ITL population:** `pooled-gaps` | `per-request-mean` — per §4.1, one sample per decode step
+across the window, or one sample per request. State which; the two do not share a tail.
+
 **SLO gates applied:** TTFT p95 ≤ `<x>` s · ITL p95 ≤ `<y>` s · e2e p95 ≤ `<z>` s ·
 error rate ≤ `<e>` % · all must hold for the full window.
 

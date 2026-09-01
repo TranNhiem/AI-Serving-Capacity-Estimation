@@ -167,6 +167,7 @@ class WindowSummary:
     itl_p50_s: float | None
     itl_p95_s: float | None
     itl_p99_s: float | None
+    itl_population: str | None
     e2e_p50_s: float | None
     e2e_p95_s: float | None
     e2e_p99_s: float | None
@@ -221,6 +222,27 @@ def _is_monotonic(record: RequestRecord) -> bool:
     return all(b >= a - _SKEW_SLACK_S for a, b in zip(stamps, stamps[1:]))
 
 
+def _per_request_itl(record: RequestRecord) -> float | None:
+    """Section 4.1's per-request ITL: the decode span over the decode steps it covers.
+
+    The span runs from the first token, not from issue: folding TTFT in conflates prefill
+    with decode and yields a flat per-token figure while user-visible latency is not. With
+    no per-token stamps the last token's arrival is unknown and ``end_ts`` stands in for it,
+    which includes stream teardown and so overstates ITL slightly -- the honest direction,
+    and the reason the pooled population is preferred wherever the stamps exist.
+    """
+    if record.first_token_ts is None or record.output_tokens is None:
+        return None
+    if record.output_tokens < 2:
+        # One token is a TTFT observation with no decode phase behind it; dividing by zero
+        # steps, or by one, would put a prefill measurement into the ITL distribution.
+        return None
+    last = record.token_ts[-1] if record.token_ts else record.end_ts
+    if last is None:
+        return None
+    return (last - record.first_token_ts) / (record.output_tokens - 1)
+
+
 def _stat(
     samples: Sequence[float],
     p: float,
@@ -273,16 +295,31 @@ def reduce_window(
     error_rate_pct = 100.0 * excluded_error_count / n_issued if n_issued else None
 
     ttft: list[float] = []
-    itl: list[float] = []
+    gaps: list[float] = []
+    means: list[float] = []
     e2e: list[float] = []
     for record in usable:
         if record.ttft_s is not None:
             ttft.append(record.ttft_s)
-        # Pooled gaps, never e2e / output_tokens and never a per-request mean: both
-        # flatten a stall inside one request into invisibility.
-        itl.extend(record.itls_s)
+        gaps.extend(record.itls_s)
+        mean = _per_request_itl(record)
+        if mean is not None:
+            means.append(mean)
         if record.e2e_s is not None:
             e2e.append(record.e2e_s)
+
+    # Chapter 4 section 4.1 defines ITL per request as the mean over the decode phase; the
+    # gap population is finer and is what an ITL gate is actually for, since a stall inside
+    # one request survives pooling and disappears under a per-request mean. They are
+    # different distributions with the same name, so the summary says which one it used --
+    # two labs reducing the same records and quietly choosing differently is the
+    # reproducibility failure the percentile convention exists to prevent.
+    if gaps:
+        itl, itl_population = gaps, "pooled-gaps"
+    elif means:
+        itl, itl_population = means, "per-request-mean"
+    else:
+        itl, itl_population = [], None
 
     reasons: dict[str, str] = {}
     low: set[str] = set()
@@ -340,6 +377,7 @@ def reduce_window(
         itl_p50_s=itl_p50_s,
         itl_p95_s=itl_p95_s,
         itl_p99_s=itl_p99_s,
+        itl_population=itl_population,
         e2e_p50_s=e2e_p50_s,
         e2e_p95_s=e2e_p95_s,
         e2e_p99_s=e2e_p99_s,

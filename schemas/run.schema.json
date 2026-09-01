@@ -220,6 +220,7 @@
           "ttft_p99_s",
           "itl_p50_s",
           "itl_p95_s",
+          "itl_population",
           "e2e_p95_s",
           "e2e_p99_s",
           "output_tok_s",
@@ -230,6 +231,28 @@
           "slo_pass",
           "outcome",
           "provenance"
+        ],
+        "allOf": [
+          {
+            "$comment": "A reported ITL percentile whose population is null is exactly the unlabelled figure §4.1 forbids: pooled-gaps and per-request-mean have different tails, so the reader cannot recompute it.",
+            "if": {
+              "required": [
+                "itl_p95_s"
+              ],
+              "properties": {
+                "itl_p95_s": {
+                  "type": "number"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "itl_population": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         ],
         "properties": {
           "input_tokens": {
@@ -282,14 +305,26 @@
               "number",
               "null"
             ],
-            "description": "Inter-token latency p50, seconds (M)."
+            "description": "Inter-token latency p50, seconds (M). Population declared by itl_population."
           },
           "itl_p95_s": {
             "type": [
               "number",
               "null"
             ],
-            "description": "Inter-token latency p95, seconds (M)."
+            "description": "Inter-token latency p95, seconds (M). Population declared by itl_population."
+          },
+          "itl_population": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pooled-gaps",
+              "per-request-mean",
+              null
+            ],
+            "description": "Which ITL distribution the itl_p* figures were computed over (§4.1): one sample per decode step across the window, or one sample per request. The two have different tails and different sample counts, so an unlabelled percentile is not reproducible. Null only when every itl_p* is null."
           },
           "e2e_p95_s": {
             "type": [
@@ -408,6 +443,10 @@
           "itl_p95_s_u_reason": {
             "type": "string",
             "description": "(U) justification required when itl_p95_s is null (C1)."
+          },
+          "itl_population_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when itl_population is null (C1)."
           },
           "e2e_p95_s_u_reason": {
             "type": "string",

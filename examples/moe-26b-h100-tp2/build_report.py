@@ -155,6 +155,13 @@ def _results(m: dict, n_gpus: int) -> list[dict]:
                 "itl_p50_s_u_reason": "(U) inter-token latency was not recorded",
                 "itl_p95_s": None,
                 "itl_p95_s_u_reason": "(U) inter-token latency was not recorded",
+                # Null, and honestly so: with no ITL figure there is no population to name.
+                # A campaign that recorded ITL but not its population would have to pick one
+                # after the fact, which is the guess section 4.1 forbids.
+                "itl_population": None,
+                "itl_population_u_reason": (
+                    "(U) no ITL percentile was recorded, so there is no population to declare"
+                ),
                 "e2e_p95_s": None,
                 "e2e_p95_s_u_reason": "(U) end-to-end latency was not recorded",
                 "e2e_p99_s": None,
