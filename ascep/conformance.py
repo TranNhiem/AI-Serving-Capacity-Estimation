@@ -304,6 +304,17 @@ def _walk_placeholders(node: Any, path: str, findings: list[Finding]) -> None:
         )
 
 
+def _is_assumptions_entry(path: str) -> bool:
+    """Whether ``path`` addresses an entry of the top-level ``unmeasured_assumptions``.
+
+    Scoped to exactly ``unmeasured_assumptions.<index>`` so the C1 exemption below cannot
+    leak: a key named ``value_used`` inside a nested array, a copied structure at another
+    depth, or anywhere else in a report is graded like any other null.
+    """
+    head, _, index = path.partition(".")
+    return head == "unmeasured_assumptions" and index.isdigit()
+
+
 def _walk_nulls(node: Any, path: str, assumption_fields: set, findings: list[Finding]) -> None:
     if isinstance(node, list):
         for index, item in enumerate(node):
@@ -330,6 +341,17 @@ def _walk_nulls(node: Any, path: str, assumption_fields: set, findings: list[Fin
             # Justification strings are prose about a claim, not claims themselves.
             continue
         if value is None:
+            # A null value_used in a section-7 entry is the honest state, not a gap: it says
+            # no substitute was plugged in, and the entry around it already names the field,
+            # the blast radius and the closure cost -- more than a (U) sentence could. Both
+            # remedies C1 prescribes are worthless here. The sibling key is schema-illegal,
+            # and the section-7 remedy only works spelled as the bare leaf 'value_used',
+            # which makes the register declare itself an unmeasured assumption and clears
+            # its own null on the way past. Either way the block a reviewer reads first
+            # gains an entry recording nothing about the deployment -- and the third option,
+            # the one needing no ceremony at all, is to invent a value.
+            if key == "value_used" and _is_assumptions_entry(path):
+                continue
             if not _null_is_justified(node, key, child, assumption_fields):
                 findings.append(
                     Finding(

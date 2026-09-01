@@ -351,10 +351,6 @@
           ],
           "description": "Context length in tokens where the binding floor switches from throughput to KV. MUST be stated, or explicitly recorded null with the reason 'not determined' \u2014 the crossover changes with context length."
         },
-        "floor_crossover_u_reason": {
-          "type": "string",
-          "description": "(U) justification required when floor_crossover_context_tokens is null (C1)."
-        },
         "provenance": {
           "type": [
             "string",
@@ -410,7 +406,7 @@
             "description": "Dotted path of the (U) field it backs, e.g. 'workload.peak_to_mean'."
           },
           "value_used": {
-            "description": "The value assumed."
+            "description": "The substitute value plugged in for the unmeasured field. Null means no substitute was plugged in -- the field was simply left unmeasured -- and it is the one null in a report needing no (U) reason: the entry around it IS the justification, naming the field, the consequence if it is wrong, and the cost of closing it, which is more than a (U) sentence carries. C1's usual remedies are both worthless here. A sibling value_used_u_reason is rejected by additionalProperties: false, and the section-7 remedy only works spelled as the bare leaf 'value_used', which makes this register declare itself an unmeasured assumption and clears its own null on the way past."
           },
           "impact_if_wrong": {
             "type": "string",

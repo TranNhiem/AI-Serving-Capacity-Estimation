@@ -256,13 +256,21 @@
           "exclusiveMinimum": 0,
           "description": "Frames sampled per second of source video, fixed at server start. This is the delivered rate; the workload layer declares the requested rate, and a report where the two disagree without a note describes a workload the server did not run."
         },
+        "video_sampling_fps_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when video_sampling_fps is null (C1)."
+        },
         "video_max_frames": {
           "type": [
             "integer",
             "null"
           ],
           "minimum": 1,
-          "description": "Hard cap on sampled frames per request, fixed at server start. Null means unbounded, which means the context length is unbounded."
+          "description": "Hard cap on sampled frames per request, fixed at server start. Null means unbounded, which means the context length is unbounded -- a claim about the deployment, so it still takes a (U) reason saying the cap was checked and found absent rather than never looked for."
+        },
+        "video_max_frames_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when video_max_frames is null (C1)."
         },
         "image_pixel_budget_px": {
           "type": [
@@ -272,6 +280,10 @@
           "minimum": 1,
           "description": "Total pixel budget of the preprocessor per image or per sampled frame set, fixed at server start: a count of pixels (width times height per image, or the summed frame budget after sampling), never an edge length. A realistic value has the shape of 16777216 (4096 x 4096); a reader who mistakes the quantity for a longest-edge limit writes 4096, which as a pixel budget is a 64 x 64 image, roughly 4,096 times too small. This is the setting that binds silently: when measured prompt tokens stop responding to input size, the number being measured is this cap, not the workload, and a capacity model fed that column sizes the cluster for a workload nobody can run. Required whenever the served model accepts image or video; null only with a (U) reason."
         },
+        "image_pixel_budget_px_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when image_pixel_budget_px is null (C1)."
+        },
         "mm_processor_cache_gb": {
           "type": [
             "number",
@@ -279,6 +291,10 @@
           ],
           "minimum": 0,
           "description": "Size of the engine's cache of processed media tensors, in GiB. A benchmark replaying identical media hits this cache and reports a speedup the production workload will never see, and nothing in the response reveals it."
+        },
+        "mm_processor_cache_gb_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when mm_processor_cache_gb is null (C1)."
         },
         "per_request_override_supported": {
           "type": "boolean",

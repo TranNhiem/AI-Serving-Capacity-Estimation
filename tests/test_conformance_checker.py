@@ -595,3 +595,89 @@ def test_a_text_only_report_needs_no_cpu_cores_note(report):
     assert report["model"]["input_modalities"] == ["text"]
     errors = {f.path for f in check(report).errors if f.rule == "C1"}
     assert "hardware.cpu_cores" not in errors
+
+
+# --- C1: a null value_used in section 7 is the justification, not a gap -----------------
+
+
+def _assumption(**over) -> dict:
+    entry = {
+        "field": "workload.peak_to_mean",
+        "value_used": None,
+        "impact_if_wrong": "peak sizing moves in direct proportion to this figure",
+        "cost_to_measure": "two weeks of per-hour traffic logs",
+    }
+    entry.update(over)
+    return entry
+
+
+def test_a_complete_unmeasured_assumptions_entry_with_a_null_value_used_raises_no_c1(report):
+    """A null value_used means no substitute was plugged in -- the field was simply left
+    unmeasured. Before the exemption, clearing this finding took either a schema-illegal
+    sibling, a section-7 entry naming the register's own field, or an invented value; the
+    last needs no ceremony, so the rule pushed authors toward the fabrication the protocol
+    exists to prevent."""
+    index = len(report["unmeasured_assumptions"])
+    report["unmeasured_assumptions"].append(_assumption())
+    findings = [
+        f
+        for f in check(report).findings
+        if f.rule == "C1" and f.path.startswith(f"unmeasured_assumptions.{index}")
+    ]
+    assert not findings, [(f.path, f.message) for f in findings]
+
+
+def test_an_unmeasured_assumptions_entry_with_a_real_value_used_still_raises_no_c1(report):
+    """The exemption must change nothing for the entry that DID plug in a value: it was
+    clean before, and a fix that newly flagged it would punish the more informative of the
+    two honest shapes a section-7 entry can take."""
+    index = len(report["unmeasured_assumptions"])
+    report["unmeasured_assumptions"].append(_assumption(value_used=3.0))
+    findings = [
+        f
+        for f in check(report).findings
+        if f.rule == "C1" and f.path.startswith(f"unmeasured_assumptions.{index}")
+    ]
+    assert not findings, [(f.path, f.message) for f in findings]
+
+
+@pytest.mark.parametrize("name", ["field", "impact_if_wrong", "cost_to_measure"])
+def test_a_null_outside_value_used_in_an_unmeasured_assumptions_entry_is_still_reported(
+    report, name
+):
+    """The exemption is scoped to the one key whose null carries no information. The other
+    three ARE the justification; a null in any of them is an entry claiming to record an
+    omission while omitting the record."""
+    index = len(report["unmeasured_assumptions"])
+    report["unmeasured_assumptions"].append(_assumption(**{name: None}))
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert f"unmeasured_assumptions.{index}.{name}" in errors
+
+
+def test_a_value_used_outside_the_assumptions_register_is_graded_like_any_other_null(report):
+    """The exemption keys on the path, not the name -- otherwise every future block could
+    opt out of C1 by choosing a word. Elsewhere in a report the name buys nothing: the null
+    is still charged, and since no other object declares the key, the closed-object rule
+    charges it a second time as an undeclared field. Both findings are asserted, because
+    the exemption leaking would silence the first while leaving the second, and a test
+    watching only the total would still pass."""
+    report["run"]["value_used"] = None
+    errors = {f.path for f in check(report).errors if f.rule == "C1"}
+    assert "run.value_used" in errors
+    assert "$.run" in errors
+
+
+def test_a_block_of_eight_complete_entries_like_bench_emits_raises_no_c1_findings(report):
+    """`ascep bench` writes eight section-7 entries on every run, each with a null
+    value_used because nothing was plugged in. Before the exemption that made every
+    harness-produced report fail its own checker eight times, in the block a reviewer most
+    needs to read -- pinned here as a shape, without running a benchmark."""
+    report["unmeasured_assumptions"] = [
+        _assumption(field=f"workload.assumed_input_{i}") for i in range(8)
+    ]
+    findings = [
+        f
+        for f in check(report).findings
+        if f.rule == "C1" and f.path.startswith("unmeasured_assumptions")
+    ]
+    assert not findings, [(f.path, f.message) for f in findings]

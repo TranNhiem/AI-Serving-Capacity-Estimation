@@ -446,3 +446,142 @@ def test_an_empty_note_is_refused_because_it_says_nothing():
     validator = Validator(HARDWARE_SCHEMA)
     blank = {**EXAMPLE_REPORT["hardware"], "notes": {"cpu_cores": ""}}
     assert list(validator.iter_errors(blank))
+
+
+# --- a nullable property in a closed object needs somewhere to put its (U) reason ------
+
+
+def _permits_null(prop) -> bool:
+    """Whether a report may carry this property as JSON null.
+
+    C1 demands a justification for every null it walks, so a property that admits null
+    matters to the sweep below whatever else it declares. A $ref property is not nullable:
+    every sibling-layer schema it targets declares "type": "object".
+    """
+    if not isinstance(prop, dict) or "$ref" in prop:
+        return False
+    declared = prop.get("type")
+    if isinstance(declared, list):
+        return "null" in declared
+    if declared == "null":
+        return True
+    if declared is not None:
+        return False
+    if "enum" in prop:
+        return None in prop["enum"]
+    if "const" in prop:
+        return prop["const"] is None
+    return True
+
+
+#: Nullable properties inside an additionalProperties: false object that deliberately have
+#: no sibling <name>_u_reason, so the only channel left for justifying them is the global
+#: section-7 register. Each needs a reason why a local slot would be wrong, because the
+#: default answer is to add one -- image_pixel_budget_px promised a "(U) reason" in its own
+#: description while offering nowhere to write one, and only this sweep noticed.
+_JUSTIFIED_ONLY_IN_SECTION_7 = {
+    # The register's own field. A sibling is schema-illegal, and the section-7 remedy is
+    # self-parody -- an entry whose field is "value_used", clearing its own null on the way
+    # past. Exempted in _walk_nulls too: the entry around it is the justification.
+    "capacity-report.schema.json /properties/unmeasured_assumptions/items: value_used",
+    # "U" is already a tag in the provenance enum, so an author who does not know a row's
+    # provenance writes it in band. A local _u_reason would compete with that tag for the
+    # same job, and C2 -- not C1 -- owns the case that actually misleads a reader, a null
+    # tag beside real numbers.
+    "capacity-report.schema.json /$defs/capacityRow: provenance",
+    "capacity-report.schema.json /properties/scaling/items: provenance",
+    "capacity-report.schema.json /properties/sizing_result: provenance",
+    "run.schema.json /properties/results/items: provenance",
+}
+
+
+def _scan_for_locally_unjustifiable_nulls(owning, node, pointer, docs, seen, hits) -> None:
+    """Collect every nullable property of every closed object in the schema corpus.
+
+    Local "#/..." refs are not followed: their targets are literal subtrees of the same
+    document and the plain walk reaches them. Sibling-file refs ARE followed, by filename,
+    with `seen` as the recursion guard -- without it two schemas that ref each other would
+    loop forever and the trap this exists to catch would never be reported. Findings are
+    attributed to the file that owns the offending node, so a ref hop does not disguise
+    where the fix belongs.
+    """
+    if isinstance(node, list):
+        for index, item in enumerate(node):
+            _scan_for_locally_unjustifiable_nulls(
+                owning, item, f"{pointer}/{index}", docs, seen, hits
+            )
+        return
+    if not isinstance(node, dict):
+        return
+    identity = (owning, id(node))
+    if identity in seen:
+        return
+    seen.add(identity)
+    ref = node.get("$ref")
+    if isinstance(ref, str) and not ref.startswith("#") and ref in docs:
+        _scan_for_locally_unjustifiable_nulls(ref, docs[ref], "", docs, seen, hits)
+    properties = node.get("properties")
+    if node.get("additionalProperties") is False and isinstance(properties, dict):
+        for name, prop in properties.items():
+            if _permits_null(prop) and f"{name}_u_reason" not in properties:
+                hits.add(f"{owning} {pointer or '/'}: {name}")
+    for key, child in node.items():
+        _scan_for_locally_unjustifiable_nulls(owning, child, f"{pointer}/{key}", docs, seen, hits)
+
+
+def test_every_nullable_property_in_a_closed_object_can_be_justified_where_it_sits():
+    """The value_used defect is a shape, not an instance. A nullable property in a closed
+    object with no <name>_u_reason sibling can only be justified in section 7, one entry
+    for every instance of that field in the report -- and for a field whose own description
+    promises a "(U) reason", that is a promise the schema cannot keep. Sweep the corpus so
+    the next one is caught here rather than by a contributor whose honest report will not
+    pass the checker."""
+    docs = {
+        path.name: json.loads(path.read_text())
+        for path in sorted((ROOT / "schemas").glob("*.schema.json"))
+    }
+    hits: set[str] = set()
+    seen: set[tuple[str, int]] = set()
+    for name, doc in docs.items():
+        _scan_for_locally_unjustifiable_nulls(name, doc, "", docs, seen, hits)
+    offenders = hits - _JUSTIFIED_ONLY_IN_SECTION_7
+    assert not offenders, (
+        "these properties admit null with no sibling <name>_u_reason to justify it in "
+        "place, so C1 can only be satisfied from section 7. Add the sibling property, "
+        "make the field non-nullable, or list it in _JUSTIFIED_ONLY_IN_SECTION_7 with the "
+        "reason a local slot would be wrong:\n  " + "\n  ".join(sorted(offenders))
+    )
+    stale = _JUSTIFIED_ONLY_IN_SECTION_7 - hits
+    assert not stale, (
+        "exemptions matching no schema property; a dead exemption reads as standing "
+        "permission to skip the sibling rule, so delete or re-justify:\n  "
+        + "\n  ".join(sorted(stale))
+    )
+
+
+def test_no_u_reason_property_justifies_a_field_that_does_not_exist():
+    """A justification slot for an absent field is worse than no slot: an author fills it,
+    the null it was meant to cover still fails C1, and nothing says why. sizing_result
+    carried floor_crossover_u_reason beside floor_crossover_context_tokens_u_reason, and
+    only the second one was ever consulted."""
+    orphans = []
+    for path in sorted((ROOT / "schemas").glob("*.schema.json")):
+        doc = json.loads(path.read_text())
+
+        def walk(node, pointer, file=path.name):
+            if isinstance(node, list):
+                for index, item in enumerate(node):
+                    walk(item, f"{pointer}/{index}")
+                return
+            if not isinstance(node, dict):
+                return
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                for name in properties:
+                    if name.endswith("_u_reason") and name[: -len("_u_reason")] not in properties:
+                        orphans.append(f"{file} {pointer or '/'}: {name}")
+            for key, child in node.items():
+                walk(child, f"{pointer}/{key}")
+
+        walk(doc, "")
+    assert not orphans, "\n  ".join(["justifications for fields no schema declares:"] + orphans)

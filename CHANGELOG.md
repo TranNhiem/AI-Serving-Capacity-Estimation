@@ -185,6 +185,38 @@ cross-version comparisons valid.
 
 ### Fixed
 
+- **C1 charged every report the harness writes with eight errors, in the one
+  block a reviewer reads first.** A section-7 `unmeasured_assumptions` entry
+  whose `value_used` is null says no substitute was plugged in -- the field was
+  simply left unmeasured -- and the entry around it already names the field, the
+  consequence if it is wrong and the cost of closing it, which is more than a
+  `(U)` sentence carries. C1 saw only a null and demanded a justification, and
+  both remedies it prescribes are worthless here: the sibling key is rejected by
+  the entry's own `additionalProperties: false`, and the section-7 remedy only
+  works spelled as the bare leaf "value_used", which makes the register declare
+  itself an unmeasured assumption and clears its own null on the way past.
+  Either way the block gains an entry recording nothing about the deployment --
+  and the third option, needing no ceremony at all, is to invent a value, which
+  is the fabrication the register exists to prevent. A null `value_used` is now
+  exempt, scoped to `unmeasured_assumptions.<index>` so the name alone buys
+  nothing anywhere else in a report. Numbers are unchanged; a report that graded
+  non-conforming only on these findings now grades on its merits.
+- **Four media-preprocessing fields promised a `(U)` reason with nowhere to
+  write one.** `video_sampling_fps`, `video_max_frames`, `image_pixel_budget_px`
+  and `mm_processor_cache_gb` are nullable inside a closed object that declared
+  no justification siblings, so C1's demand was unsatisfiable and the author's
+  only exit was the whole-report register. The siblings now exist. A structural
+  test sweeps all six schemas for the shape rather than the instance -- a
+  nullable property in a closed object with no local way to justify the null --
+  and the five survivors are exempt for a stated reason: the section-7
+  `value_used` above, and four `provenance` fields where "U" is already a value
+  in the enum, so the tag is written in band.
+- **Removed an orphan justification slot, "floor_crossover_u_reason", that
+  justified a field no schema declares.** The property it appeared to serve is
+  `floor_crossover_context_tokens`, whose real sibling was already present, so
+  the orphan could only ever be written by an author who then believed a null
+  was justified when the checker had never looked. A second structural test now
+  fails on any justification property whose target does not exist.
 - **`ascep bench` measured the context length of every rung and never published
   it.** The identifier `context_tokens` did not appear anywhere in
   `ascep/bench/`, though the comment above the row's token counts already said
