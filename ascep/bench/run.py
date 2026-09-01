@@ -1599,14 +1599,26 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "raw_records_path",
         "engine_logs_path",
         "environment_capture_path",
-        "container_digest",
     ):
         _measured(
             reproduction,
             key,
             c8.get(key),
-            "the reproduction bundle did not record this",
+            "the reproduction bundle did not record this path",
         )
+    # Not the generic reason above. A missing path means the bundle failed to write an
+    # artifact; a missing digest usually means there was no container to take one of -- a
+    # bare-metal or conda run -- and bench cannot tell the two apart from a null in the
+    # config. So it asserts no cause and states the consequence instead, which is the part
+    # a reader needs: with no digest, nothing in the bundle pins the software except the
+    # environment capture beside it, and that capture describes the host the harness ran on.
+    _measured(
+        reproduction,
+        "container_digest",
+        c8.get("container_digest"),
+        "no container digest was declared for this run, so the software these figures were "
+        "produced by is pinned only by the environment capture in the same bundle",
+    )
     _unknown(
         reproduction,
         "analysis_script_path",

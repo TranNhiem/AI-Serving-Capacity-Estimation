@@ -22,6 +22,7 @@ import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import asdict
+from importlib import metadata as _metadata
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
@@ -34,6 +35,29 @@ _RECORDS_NAME = "records.jsonl"
 _CONFIGS_NAME = "run_configs.json"
 _ENVIRONMENT_NAME = "environment.json"
 _MANIFEST_NAME = "manifest.json"
+
+#: The serving stack: the distributions whose versions move the numbers, not an inventory.
+#: Both sides of the measurement are here -- the engine that generates the tokens and the
+#: client that times them, because httpx and its scheduler sit inside every TTFT and every
+#: inter-token gap this harness reports. A framework missing from this list is a gap to
+#: close by adding it, not a reason to capture everything: a full freeze is thousands of
+#: lines that bury the eight versions a reader came for.
+_SERVING_STACK_PACKAGES = (
+    "vllm",
+    "vllm-flash-attn",
+    "sglang",
+    "tensorrt-llm",
+    "torch",
+    "transformers",
+    "tokenizers",
+    "flash-attn",
+    "flashinfer-python",
+    "xformers",
+    "triton",
+    "numpy",
+    "httpx",
+    "anyio",
+)
 
 
 def _default_runner(argv: list[str]) -> str:
@@ -56,6 +80,13 @@ def capture_environment(*, runner: Callable[[list[str]], str] | None = None, **e
     cannot read becomes ``None`` plus a sibling ``<key>_u_reason`` string explaining why --
     an omitted key reads as "not applicable", a null-with-reason reads as "we looked and
     could not tell", and only the second is true when nvidia-smi is not on the path.
+
+    The ``packages`` mapping pins the serving stack, because the only other place a
+    framework version appears is a declaration somebody typed, and nothing else in the
+    bundle corroborates it. Its ``packages_source`` sibling records that the versions
+    describe the harness process: the benchmark client and the model server need not be one
+    environment, and a reader who assumes they are will read a pin for software that never
+    ran the model.
 
     Caller-supplied ``extra`` facts merge in and win: the caller knows things the process
     cannot see, such as the Slurm allocation, and silently dropping them would make the
@@ -105,6 +136,34 @@ def capture_environment(*, runner: Callable[[list[str]], str] | None = None, **e
         env["implementation"] = _platform.python_implementation()
     except Exception as exc:  # noqa: BLE001
         blame("python_version", exc)
+
+    try:
+        # Versions come from dist-info metadata, never by importing the package: importing
+        # torch costs seconds and gigabytes to read back a string, and on a client-only host
+        # the serving framework is not installed at all, so the import would fail on a
+        # machine where the metadata read succeeds.
+        packages = {}
+        for name in _SERVING_STACK_PACKAGES:
+            try:
+                packages[name] = _metadata.version(name)
+            except _metadata.PackageNotFoundError:
+                # Absent from the mapping IS the finding: this distribution cannot have
+                # served the run. A null would carry the (U) "we looked and could not
+                # tell", when the truth is simpler and stronger -- it is not installed.
+                continue
+        env["packages"] = packages
+        env["packages_source"] = (
+            "importlib.metadata in the process running ascep bench. The benchmark client "
+            "and the model server can be separate environments on separate hosts; when "
+            "they are, these versions describe the harness and say nothing about what "
+            "served the requests."
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Deliberately all-or-nothing. Anything reaching here is the metadata layer itself
+        # failing, not one package being absent, so a partial mapping would be a capture
+        # that looks complete and silently omits whatever the loop had not reached yet.
+        env["packages"] = {}
+        env["packages_u_reason"] = f"(U) could not be probed: {type(exc).__name__}: {exc}"
 
     # Extra facts merge in last: an operator's "slurm_job_id" must not be lost because a
     # probe happened to know a same-named fact, and a same-named extra is the caller

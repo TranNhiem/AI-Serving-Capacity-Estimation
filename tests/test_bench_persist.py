@@ -11,6 +11,7 @@ five files in it satisfies every path check in the protocol while containing a r
 from yesterday's run, and no reader can tell.
 """
 
+import importlib.metadata
 import json
 import pathlib
 
@@ -320,3 +321,83 @@ def test_an_extra_file_may_not_take_the_name_of_an_artifact_the_bundle_owns(tmp_
     manifest cannot report, because it would be hashing the substitute."""
     with pytest.raises(ValueError):
         _write(tmp_path, extra_files={"records.jsonl": b"not the records\n"})
+
+
+# --- the packages block pins the serving stack, not just the platform -------------------
+
+
+def _fake_version(name):
+    # A hermetic stand-in in which only torch exists. Probing the real environment would
+    # pass on a CI image that happens to have the packages and never exercise the absent
+    # branch, which is the one the null-versus-absent rule below turns on.
+    if name == "torch":
+        return "2.3.1+cu121"
+    raise importlib.metadata.PackageNotFoundError(name)
+
+
+def test_installed_distributions_appear_in_packages_with_their_versions(monkeypatch):
+    """What this replaces was 212 bytes naming no library version at all.
+
+    "CPython 3.10.13 on Linux" pins nothing. The framework version that did exist lived in
+    the serving declaration, typed by an operator, with nothing in the bundle corroborating
+    it -- so a reproduction bundle whose whole purpose is to pin the software pinned none.
+    """
+    monkeypatch.setattr(importlib.metadata, "version", _fake_version)
+    env = capture_environment(runner=lambda argv: "555.42.06\n")
+    assert env["packages"]["torch"] == "2.3.1+cu121"
+
+
+def test_a_distribution_that_is_not_installed_is_absent_not_null(monkeypatch):
+    """Absent means absent. Everywhere else in this module a null carries a (U) -- "we
+    looked and could not tell" -- and a package that is simply not installed must not
+    acquire one, because that reads as a gap in the capture rather than a fact about the
+    machine."""
+    monkeypatch.setattr(importlib.metadata, "version", _fake_version)
+    env = capture_environment(runner=lambda argv: "555.42.06\n")
+    assert "vllm" not in env["packages"]
+    assert env["packages"] == {"torch": "2.3.1+cu121"}
+
+
+def test_a_package_probe_that_raises_does_not_propagate_and_leaves_a_u_reason(monkeypatch):
+    """This runs after the measured window with the records still only in memory, so a
+    raising probe must downgrade the packages block to a (U) rather than lose the run to a
+    diagnostic nicety."""
+
+    def boom(name):
+        raise RuntimeError("metadata database corrupt")
+
+    monkeypatch.setattr(importlib.metadata, "version", boom)
+    env = capture_environment(runner=lambda argv: "555.42.06\n")
+    assert env["packages"] == {}
+    assert env["packages_u_reason"].startswith("(U) ")
+
+
+def test_the_client_side_of_the_measurement_is_pinned_too(monkeypatch):
+    """httpx and its scheduler sit inside every TTFT and every inter-token gap this harness
+    reports, so a capture that pins only the engine pins half the measurement."""
+    seen = []
+
+    def record(name):
+        seen.append(name)
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", record)
+    capture_environment(runner=lambda argv: "555.42.06\n")
+    assert {"httpx", "anyio"} <= set(seen)
+
+
+def test_packages_source_says_which_process_the_versions_describe():
+    """The client and the server need not be one environment. A capture that does not say
+    which side it saw will be trusted for both, and it only ever saw one."""
+    env = capture_environment(runner=lambda argv: "555.42.06\n")
+    assert "ascep bench" in env["packages_source"]
+
+
+def test_a_caller_supplied_packages_fact_still_wins_over_the_probe(monkeypatch):
+    """Extras merge last: an operator pinning versions the process cannot see -- the
+    server's, when it runs elsewhere -- is correcting the capture, not colliding with it."""
+    monkeypatch.setattr(importlib.metadata, "version", _fake_version)
+    env = capture_environment(
+        runner=lambda argv: "555.42.06\n", packages={"vllm": "0.11.0 (server host)"}
+    )
+    assert env["packages"] == {"vllm": "0.11.0 (server host)"}

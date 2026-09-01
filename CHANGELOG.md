@@ -13,6 +13,36 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The reproduction bundle's environment capture named no library
+  version.** On a real H100 run `environment.json` was 212 bytes -- driver,
+  GPU model, Python version, platform -- so a bundle whose entire purpose is
+  to pin the software answered "CPython 3.10.13 on Linux". The one framework
+  version anywhere in the report lived in the serving declaration, typed by
+  the operator, with nothing in the bundle corroborating it, and C8 calls the
+  artifact the *environment capture*, so a reader sees the file and assumes
+  the environment was captured. It now records a `packages` mapping read from
+  `importlib.metadata` -- never by importing, since importing torch costs
+  seconds and gigabytes to read back a string and fails outright on a
+  client-only host. Both sides of the measurement are pinned: the engine that
+  generates the tokens and the `httpx` stack that times them. A distribution
+  that is not installed is **absent** from the mapping rather than null,
+  because a null here would carry the `(U)` "we looked and could not tell"
+  when the truth is that it is not there. Its "packages_source" sibling -- a
+  bundle-artifact key, not a declarable field -- records that the
+  versions describe the harness process, since client and server need not be
+  the same environment and a capture that does not say which side it saw will
+  be trusted for both.
+- **`container_digest` was refused with a reason that asserted the wrong
+  cause.** A null read "(U) the reproduction bundle did not record this",
+  which describes a bundle that failed to write something. The usual cause is
+  that there was no container to take a digest of -- a bare-metal or conda
+  run -- and bench cannot tell the two apart from a null in its config, so it
+  now asserts no cause and states the consequence instead: with no digest,
+  nothing in the bundle pins the software except the environment capture
+  beside it.
+
 ## [0.2.0] — 2026-09-02
 
 Two conformance gates changed and one declared field was renamed, so under the
