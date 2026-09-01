@@ -588,6 +588,155 @@ def _check_c4(report: dict, findings: list[Finding]) -> None:
                     ),
                 )
             )
+    _check_c4_media_and_reasoning(report, findings)
+
+
+# ---------------------------------------------------------------- C4 media and reasoning
+
+
+def _check_c4_media_and_reasoning(report: dict, findings: list[Finding]) -> None:
+    """Grade the media-shape and reasoning-mode declarations section 9.8 adds to C4.
+
+    Each rule keys off a field the schema makes required and non-nullable, so no check
+    here can be skipped by declaring ignorance: a (U) reason satisfies C1 and changes
+    nothing below. The isinstance guards are for the malformed report only -- C4 must
+    not raise on input the schema check has already rejected, and a missing workload
+    or run object simply means there is nothing for these checks to bind to.
+    """
+    model = _get(report, "model")
+    serving = _get(report, "serving")
+    workload = _get(report, "workload")
+    run = _get(report, "run")
+    if not isinstance(workload, dict):
+        return
+    modalities = _get(model, "input_modalities")
+    if not isinstance(modalities, list):
+        modalities = []
+    reasoning_modes = _get(model, "reasoning_modes")
+    if not isinstance(reasoning_modes, list):
+        reasoning_modes = []
+    images = workload.get("images_per_request")
+    videos = workload.get("videos_per_request")
+
+    if "image" in modalities and images is None:
+        findings.append(
+            Finding(
+                rule="C4",
+                severity="error",
+                path="workload.images_per_request",
+                message=(
+                    "Record images_per_request: this model declares image input, and "
+                    "a vision model benchmarked without saying how much media each "
+                    "request carried has an unknown KV floor. 0 (measured, no media) "
+                    "and null (not reported) are different claims that size a "
+                    "cluster differently."
+                ),
+            )
+        )
+    if "video" in modalities:
+        if videos is None:
+            findings.append(
+                Finding(
+                    rule="C4",
+                    severity="error",
+                    path="workload.videos_per_request",
+                    message=(
+                        "Record videos_per_request: this model declares video input, "
+                        "and a vision model benchmarked without saying how much "
+                        "media each request carried has an unknown KV floor. 0 "
+                        "(measured, no media) and null (not reported) are different "
+                        "claims that size a cluster differently."
+                    ),
+                )
+            )
+        elif (
+            _is_number(videos) and videos > 0 and workload.get("video_seconds_per_request") is None
+        ):
+            findings.append(
+                Finding(
+                    rule="C4",
+                    severity="error",
+                    path="workload.video_seconds_per_request",
+                    message=(
+                        "Record video_seconds_per_request: a clip count without a "
+                        "duration does not say how much media each request carried, "
+                        "so the KV floor is unknown. 0 (measured, no media) and null "
+                        "(not reported) are different claims that size a cluster "
+                        "differently."
+                    ),
+                )
+            )
+    if "thinking" in reasoning_modes and workload.get("reasoning_mode") is None:
+        findings.append(
+            Finding(
+                rule="C4",
+                severity="error",
+                path="workload.reasoning_mode",
+                message=(
+                    "Record reasoning_mode: this model declares a thinking branch, "
+                    "which is two capacity profiles that differ by orders of "
+                    "magnitude in output length, and a report that does not name the "
+                    "one it measured cannot be read as either."
+                ),
+            )
+        )
+    reasoning_mode = workload.get("reasoning_mode")
+    if reasoning_mode in ("thinking", "mixed"):
+        if workload.get("max_output_tokens") is None:
+            findings.append(
+                Finding(
+                    rule="C4",
+                    severity="error",
+                    path="workload.max_output_tokens",
+                    message=(
+                        "Record max_output_tokens: reasoning traces expand to fill "
+                        "whatever budget they are given, so an output length without "
+                        "its cap describes the harness as much as the model and is "
+                        "not reproducible."
+                    ),
+                )
+            )
+        if isinstance(run, dict) and run.get("truncation_rate") is None:
+            findings.append(
+                Finding(
+                    rule="C4",
+                    severity="error",
+                    path="run.truncation_rate",
+                    message=(
+                        "Record truncation_rate: averaging truncated and completed "
+                        "requests into one throughput figure counts tokens no user "
+                        "received."
+                    ),
+                )
+            )
+        if reasoning_mode == "mixed" and workload.get("reasoning_share") is None:
+            findings.append(
+                Finding(
+                    rule="C4",
+                    severity="error",
+                    path="workload.reasoning_share",
+                    message=(
+                        "Record reasoning_share: a mixed workload reported as a "
+                        "single undifferentiated run hides the orders-of-magnitude "
+                        "spread between its two capacity profiles."
+                    ),
+                )
+            )
+    carries_media = (_is_number(images) and images > 0) or (_is_number(videos) and videos > 0)
+    if carries_media and not isinstance(_get(serving, "media_preprocessing"), dict):
+        findings.append(
+            Finding(
+                rule="C4",
+                severity="warning",
+                path="serving.media_preprocessing",
+                message=(
+                    "Publish media_preprocessing: the media token cost is decided by "
+                    "the server's sampling rate, frame cap and pixel budget, so a "
+                    "media throughput figure without them cannot be reproduced or "
+                    "compared against another deployment."
+                ),
+            )
+        )
 
 
 # ----------------------------------------------------------------------- C5 constraint

@@ -368,3 +368,134 @@ def test_a_stale_justification_is_reported_once_not_twice(report):
     ]
     assert len(at_path) == 1
     assert "stale" in at_path[0].message
+
+
+def test_a_null_image_count_is_not_the_same_claim_as_a_measured_zero(report):
+    """The 0-versus-null pair is the most important case in section 9.8. 0 means measured
+    and genuinely no media; null means not reported. A checker that accepts null lets an
+    unmeasured multimodal workload be published as though it were text-only, and the KV
+    floor it implies is wrong by the entire media contribution."""
+    report["model"]["input_modalities"] = ["text", "image"]
+    report["workload"]["images_per_request"] = None
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "error", "workload.images_per_request") in findings
+    assert ("C4", "warning", "serving.media_preprocessing") not in findings
+
+
+def test_a_measured_zero_image_count_is_a_declaration_not_an_omission(report):
+    """Zero is the honest answer for a text-only run on a vision-capable model, and
+    flagging it would punish the report that did the measurement. The rule must fire on
+    the missing declaration, never on the measured absence of media."""
+    report["model"]["input_modalities"] = ["text", "image"]
+    report["workload"]["images_per_request"] = 0
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "error", "workload.images_per_request") not in findings
+    assert ("C4", "warning", "serving.media_preprocessing") not in findings
+
+
+def test_a_video_count_without_a_duration_leaves_the_kv_floor_unknown(report):
+    """Two clips can be two seconds or two hours, so the clip count alone does not say how
+    much media each request carried. The missing duration is the error; the missing
+    preprocessing block is the warning that the media token cost cannot be reproduced."""
+    report["model"]["input_modalities"] = ["text", "video"]
+    report["workload"]["videos_per_request"] = 2
+    report["workload"]["video_seconds_per_request"] = None
+    report["serving"].pop("media_preprocessing", None)
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "error", "workload.video_seconds_per_request") in findings
+    assert ("C4", "warning", "serving.media_preprocessing") in findings
+    assert ("C4", "error", "workload.videos_per_request") not in findings
+    assert ("C4", "error", "workload.images_per_request") not in findings
+
+
+def test_a_thinking_branch_without_a_named_mode_cannot_be_read_as_either_profile(report):
+    """A model with a thinking branch is two capacity profiles that differ by orders of
+    magnitude in output length. A report that does not name the one it measured cannot be
+    read as either, so the unnamed mode is the error and nothing else fires."""
+    report["model"]["reasoning_modes"] = ["non-thinking", "thinking"]
+    report["workload"]["reasoning_mode"] = None
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "error", "workload.reasoning_mode") in findings
+    assert ("C4", "error", "workload.max_output_tokens") not in findings
+    assert ("C4", "error", "workload.reasoning_share") not in findings
+    assert ("C4", "error", "run.truncation_rate") not in findings
+
+
+def test_a_mixed_mode_without_its_share_cap_and_truncation_rate_averages_two_profiles(report):
+    """All three fire together because they are one omission, not three: a mixed workload
+    without its share, its cap and its truncation rate is a single number averaging two
+    capacity profiles that differ by orders of magnitude, and the average describes
+    neither."""
+    report["workload"]["reasoning_mode"] = "mixed"
+    report["workload"]["max_output_tokens"] = None
+    report["workload"]["reasoning_share"] = None
+    report["run"] = {}
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "error", "run.truncation_rate") in findings
+    assert ("C4", "error", "workload.max_output_tokens") in findings
+    assert ("C4", "error", "workload.reasoning_share") in findings
+    assert ("C4", "error", "workload.reasoning_mode") not in findings
+
+
+def test_media_without_its_preprocessing_is_a_warning_not_an_error(report):
+    """The media token cost is decided by the server's sampling rate, frame cap and pixel
+    budget, so a media throughput figure without them cannot be reproduced. That limits
+    comparability without invalidating the measurement, which is a warning's job."""
+    report["model"]["input_modalities"] = ["text"]
+    report["workload"]["images_per_request"] = 3
+    report["serving"].pop("media_preprocessing", None)
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    assert ("C4", "warning", "serving.media_preprocessing") in findings
+    assert ("C4", "error", "workload.images_per_request") not in findings
+    assert ("C4", "error", "workload.videos_per_request") not in findings
+    assert ("C4", "error", "workload.video_seconds_per_request") not in findings
+
+
+def test_a_text_only_non_thinking_report_raises_no_media_or_reasoning_findings(report):
+    """This is the regression that protects every published example. All ten shipped
+    reports are text-only; any of these rules firing spuriously would downgrade reports
+    that are already correct, and the failure would look like a protocol change rather
+    than a bug."""
+    report["model"]["input_modalities"] = ["text"]
+    report["model"]["reasoning_modes"] = ["non-thinking"]
+    report["workload"]["images_per_request"] = None
+    report["workload"]["videos_per_request"] = None
+    report["workload"]["video_seconds_per_request"] = None
+    report["workload"]["reasoning_mode"] = None
+    report["serving"].pop("media_preprocessing", None)
+    findings = {(f.rule, f.severity, f.path) for f in check(report).findings}
+    for path in (
+        "workload.images_per_request",
+        "workload.videos_per_request",
+        "workload.video_seconds_per_request",
+        "workload.reasoning_mode",
+        "workload.max_output_tokens",
+        "workload.reasoning_share",
+        "run.truncation_rate",
+        "serving.media_preprocessing",
+    ):
+        assert ("C4", "error", path) not in findings
+        assert ("C4", "warning", path) not in findings
+
+
+def test_a_malformed_modalities_value_and_a_missing_workload_do_not_crash_c4(report):
+    """C4 runs after the schema check but must not depend on it having passed. A grader
+    that raises on malformed input turns a bad report into a crash, and a crash tells the
+    author nothing about what to fix."""
+    report["model"]["input_modalities"] = "image"
+    report.pop("workload", None)
+    v = check(report)
+    assert isinstance(v, Verdict)
+    findings = {(f.rule, f.severity, f.path) for f in v.findings}
+    for path in (
+        "workload.images_per_request",
+        "workload.videos_per_request",
+        "workload.video_seconds_per_request",
+        "workload.reasoning_mode",
+        "workload.max_output_tokens",
+        "workload.reasoning_share",
+        "run.truncation_rate",
+        "serving.media_preprocessing",
+    ):
+        assert ("C4", "error", path) not in findings
+        assert ("C4", "warning", path) not in findings
