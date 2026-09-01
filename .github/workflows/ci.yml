@@ -24,9 +24,11 @@ jobs:
       - run: pip install -e ".[dev,run]"
       - name: Unit tests
         run: pytest -q
-      - name: capacity.py must import with no third-party deps
-        # The formula set is the auditable core of the protocol. If it ever grows a
+      - name: the auditable modules must import with no third-party deps
+        # Two promises, one mechanism. `capacity` is the formula set: if it grows a
         # dependency, anyone wanting to check the maths has to adopt our stack first.
+        # `bench.records` is the published record format: re-deriving someone else's
+        # percentiles from their records must not require our HTTP client either.
         # Third-party means "came out of site-packages", not "absent from
         # sys.stdlib_module_names": that attribute is 3.10+ and this job runs on the
         # 3.9 leg of the matrix too, where it raised AttributeError and failed the
@@ -36,8 +38,9 @@ jobs:
           import subprocess, sys, textwrap
           code = textwrap.dedent("""
               import os, sys, sysconfig
+              target = sys.argv[1]
               before = set(sys.modules)
-              import ascep.capacity  # noqa: F401
+              __import__(target)
               paths = sysconfig.get_paths()
               sitedirs = tuple(os.path.realpath(p) + os.sep
                                for p in {paths.get('purelib'), paths.get('platlib')} if p)
@@ -46,10 +49,13 @@ jobs:
                   return bool(f) and os.path.realpath(f).startswith(sitedirs)
               extra = {m.split('.')[0] for m in set(sys.modules) - before
                        if installed(m) and not m.startswith(('ascep', '_'))}
-              assert not extra, f"ascep.capacity pulled in non-stdlib modules: {sorted(extra)}"
-              print("ascep.capacity is stdlib-only")
+              assert not extra, f"{target} pulled in non-stdlib modules: {sorted(extra)}"
+              print(f"{target} is stdlib-only")
           """)
-          sys.exit(subprocess.run([sys.executable, "-c", code]).returncode)
+          for target in ("ascep.capacity", "ascep.bench.records"):
+              rc = subprocess.run([sys.executable, "-c", code, target]).returncode
+              if rc:
+                  sys.exit(rc)
           EOF
 
   bare-install:
