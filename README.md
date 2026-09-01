@@ -4,7 +4,7 @@
 serve this model, I want to build this application — how much capacity do I get, and how
 much infrastructure do I need?***
 
-[![Protocol](https://img.shields.io/badge/ASCEP-v0.1--draft-blue)](protocol/SPEC.md)
+[![Protocol](https://img.shields.io/badge/ASCEP-v0.2--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 ---
@@ -208,10 +208,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**v0.1, draft.** The spec and the formula set are stable enough to use and argue with. The
-harness is being generalized from a private benchmark campaign; expect churn in `ascep/`
-before v0.2. Breaking changes to anything that would alter a conforming report's numbers get
-a major version bump.
+**v0.2, draft.** The spec and the formula set are stable enough to use and argue with. The
+harness is generalized from a private benchmark campaign and now ships; expect churn in
+`ascep/` before v1.0. Breaking changes to anything that would alter a conforming report's
+numbers get a major version bump, and v0.2 was one: two conformance gates changed and a
+serving field was renamed, so a report produced under the previous release does not validate
+unchanged. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

@@ -13,6 +13,14 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-02
+
+Two conformance gates changed and one declared field was renamed, so under the
+versioning rule this is a breaking release. It is cut before the first
+multimodal worked example is measured, so that the example's declarations, the
+schemas they validate against and the version stamped into its hashed
+reproduction bundle all name the same protocol.
+
 ### Added
 
 - **Declared-value notes (`notes`).** Every declaration layer -- hardware,
@@ -211,6 +219,14 @@ cross-version comparisons valid.
   and the five survivors are exempt for a stated reason: the section-7
   `value_used` above, and four `provenance` fields where "U" is already a value
   in the enum, so the tag is written in band.
+- **`examples/chatbot-10k-dau/build_workload.py` pinned the protocol version
+  in its own source.** It now imports `ASCEP_VERSION`, so the declaration it
+  regenerates names the release it was actually produced under. A builder that
+  hardcodes the version keeps stamping the release it was written under, and
+  the version-consistency test does not look inside `examples/`, so the drift
+  would have been silent and the artifact would have claimed a protocol the
+  code no longer implements. The regenerated `workload.json` differs only in
+  that line; every forecast and derived figure is unchanged.
 - **Removed an orphan justification slot, "floor_crossover_u_reason", that
   justified a field no schema declares.** The property it appeared to serve is
   `floor_crossover_context_tokens`, whose real sibling was already present, so

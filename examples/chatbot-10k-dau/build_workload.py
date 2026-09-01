@@ -19,10 +19,13 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT))
 
+from ascep import ASCEP_VERSION  # noqa: E402
 from ascep.capacity import Workload  # noqa: E402
 from ascep.validation import validate  # noqa: E402
 
-ASCEP_VERSION = "0.1.0"
+# Imported rather than pinned here: a builder that hardcodes the version keeps stamping the
+# release it was written under, so the artifact it regenerates claims a protocol the code no
+# longer implements, and the version-consistency test does not look inside examples.
 
 #: Chapter 6, worked example (a). These are product forecasts, not measurements: a workload
 #: declaration is (U) by construction until product telemetry replaces it, which is exactly
