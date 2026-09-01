@@ -84,7 +84,8 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_conformance(args: argparse.Namespace) -> int:
-    """Check a report against rules C1-C8 and print findings grouped by rule."""
+    """Check a report against rules C1-C8, print findings by rule, and with --raise save
+    the computed level into the file so the artifact carries its own grade."""
     try:
         report = _load_json(args.path)
     except (OSError, ValueError) as exc:
@@ -112,6 +113,26 @@ def _cmd_conformance(args: argparse.Namespace) -> int:
             f"but the checks support only {verdict.level!r}"
         )
     print(f"verdict: {verdict.level} (claimed: {verdict.claimed})")
+    if args.raise_claim and not verdict.overstated:
+        # The overstated case is deliberately excluded: a claim the checks do not support is
+        # never lowered by a flag, quietly or otherwise. The OVERSTATED line above is the
+        # whole response, and the author edits the file themselves.
+        claimed = verdict.claimed
+        if conformance.raise_claim(report, verdict):
+            # Written exactly the way `ascep bench` writes a report, so a graded file diffs
+            # against a fresh draft rather than against a third writer's idea of layout.
+            pathlib.Path(args.path).write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8"
+            )
+            if claimed == verdict.level:
+                # Grading a report that already claimed the right level still replaces the
+                # draft paragraph, because "ungraded draft" is now false. Saying "raised"
+                # here would misreport what moved.
+                print(f"graded: {args.path} keeps {verdict.level!r}; draft note replaced")
+            else:
+                print(f"raised: {args.path} now claims {verdict.level!r} (was {claimed!r})")
+        else:
+            print(f"unchanged: {args.path} already claims {verdict.level!r}")
     if verdict.level == "non-conforming":
         return 1
     if args.strict and verdict.findings:
@@ -280,6 +301,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict",
         action="store_true",
         help="exit non-zero if there is any finding at all, even warnings",
+    )
+    p_conf.add_argument(
+        "--raise",
+        dest="raise_claim",
+        action="store_true",
+        help="write the computed level into the report when it is stronger than the claim",
     )
     p_conf.set_defaults(handler=_cmd_conformance)
 

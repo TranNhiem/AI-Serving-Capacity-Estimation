@@ -25,7 +25,7 @@ import subprocess
 import sys
 import textwrap
 
-from ascep import ASCEP_VERSION, __version__, capacity
+from ascep import ASCEP_VERSION, __version__, capacity, conformance
 from ascep.cli import _WORKLOAD_KEYS, main
 
 ROOT = pathlib.Path(__file__).parent.parent
@@ -189,6 +189,119 @@ def test_conformance_groups_findings_under_rule_headers(capsys):
             break  # reached the next group header or the verdict line
     assert members, "C8 group header printed with no findings beneath it"
     assert all(line.startswith("  [") for line in members)
+
+
+# --- conformance --raise --------------------------------------------------------------
+#
+# The published report grades `partial`, so claiming `non-conforming` on a copy of it is a
+# genuinely understated claim and these tests can run the real checker rather than a stub.
+
+
+def _understated(tmp_path: pathlib.Path, note: str | None = None) -> pathlib.Path:
+    """A copy of the published report claiming less than the checks support."""
+
+    def mutate(report):
+        report["conformance"] = "non-conforming"
+        if note is not None:
+            report["conformance_note"] = note
+
+    return _mutated_report(tmp_path, mutate)
+
+
+def test_conformance_without_raise_never_touches_the_file(capsys, tmp_path):
+    """A checker is run on other people's reports. One that rewrites a file it was asked
+    only to read cannot be run on a colleague's artifact, or in CI, or twice."""
+    path = _understated(tmp_path)
+    before = path.read_bytes()
+    assert main(["conformance", str(path)]) == 0
+    capsys.readouterr()
+    assert path.read_bytes() == before
+
+
+def test_conformance_raise_writes_the_computed_level_into_the_report(capsys, tmp_path):
+    """A grade that exists only in a terminal is not part of the artifact. Without this the
+    flagship report circulates forever claiming the floor its harness had to start from."""
+    path = _understated(tmp_path)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    out = capsys.readouterr().out
+    assert "verdict: partial (claimed: non-conforming)" in out
+    assert json.loads(path.read_text(encoding="utf-8"))["conformance"] == "partial"
+
+
+def test_conformance_raise_swaps_the_draft_paragraph_for_the_graded_one(capsys, tmp_path):
+    """The draft paragraph says the report is ungraded and that `ascep conformance` may
+    raise the claim. Left in place beside a raised claim it contradicts the field above it,
+    and a reader who catches one note lying stops believing the rest of them."""
+    path = _understated(tmp_path, note=conformance.DRAFT_NOTE)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    capsys.readouterr()
+    note = json.loads(path.read_text(encoding="utf-8"))["conformance_note"]
+    assert note.startswith(conformance.GRADED_NOTE)
+    assert "ungraded draft" not in note
+    # The sentence that explains why the report looks thin is true of a graded report too,
+    # and dropping it would leave the empty sections looking like an oversight.
+    assert "the four report sections it cannot observe" in note
+
+
+def test_conformance_raise_keeps_a_caveat_appended_after_the_draft_paragraph(tmp_path, capsys):
+    """The harness appends the censoring and lower-bound sentences after the draft
+    paragraph. A swap that ate them would turn a declared lower bound into a bare maximum
+    -- the exact overstatement the caveats exist to prevent."""
+    caveat = (
+        " The ladder was censored (wall clock), so every concurrency figure in this report "
+        "is a lower bound on the hardware, not a finding."
+    )
+    path = _understated(tmp_path, note=conformance.DRAFT_NOTE + caveat)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    capsys.readouterr()
+    note = json.loads(path.read_text(encoding="utf-8"))["conformance_note"]
+    assert note == conformance.GRADED_NOTE + caveat
+
+
+def test_conformance_raise_leaves_a_note_it_did_not_write_alone(capsys, tmp_path):
+    """Prefix match, never a pattern match. A hand-written note is the author's argument
+    about their own report, and half-eating it is worse than leaving it untouched."""
+    theirs = "We ran this on a shared node, so treat the tail latencies as soft."
+    path = _understated(tmp_path, note=theirs)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    capsys.readouterr()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["conformance_note"] == theirs
+    assert saved["conformance"] == "partial", "the claim is raised even when the note is not"
+
+
+def test_conformance_raise_on_an_overstated_claim_writes_nothing(capsys, tmp_path):
+    """--raise must never become the quiet way to lower a claim to whatever the checks
+    happen to support. Lowering is the author's to do, having read the OVERSTATED line."""
+    path = _mutated_report(tmp_path, lambda r: r.__setitem__("conformance", "conforming"))
+    before = path.read_bytes()
+    assert main(["conformance", str(path), "--raise"]) == 0
+    out = capsys.readouterr().out
+    assert "OVERSTATED" in out
+    assert path.read_bytes() == before
+    assert "raised:" not in out and "graded:" not in out
+
+
+def test_conformance_raise_is_idempotent(capsys, tmp_path):
+    """Running the checker twice must not produce a diff. A command that rewrites the file
+    on every run makes a raised report indistinguishable from an edited one in review."""
+    path = _understated(tmp_path, note=conformance.DRAFT_NOTE)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    capsys.readouterr()
+    once = path.read_bytes()
+    assert main(["conformance", str(path), "--raise"]) == 0
+    assert path.read_bytes() == once
+    assert "unchanged:" in capsys.readouterr().out
+
+
+def test_conformance_raise_writes_the_layout_bench_writes(capsys, tmp_path):
+    """A raised report and a fresh draft must diff on their content, not their whitespace,
+    or every re-run of the harness looks like a rewrite of the whole file."""
+    path = _understated(tmp_path)
+    assert main(["conformance", str(path), "--raise"]) == 0
+    capsys.readouterr()
+    text = path.read_text(encoding="utf-8")
+    assert text == json.dumps(json.loads(text), indent=2) + "\n"
 
 
 # --- render ---------------------------------------------------------------------------

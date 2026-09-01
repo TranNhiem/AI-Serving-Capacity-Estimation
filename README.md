@@ -121,6 +121,7 @@ Then grade and publish the result:
 ascep init -o report.json           # a fillable skeleton of every field the schemas require
 ascep validate report.json          # structure and vocabulary, against the schemas
 ascep conformance report.json       # C1–C8, and whether the report overstates itself
+ascep conformance report.json --raise   # ...and save that level into the file
 ascep render report.json -o report.md
 
 # Sizing straight from a workload declaration. Both measured figures are PER GPU and must
@@ -136,7 +137,10 @@ ascep size --workload examples/chatbot-10k-dau/workload.json \
 
 `ascep conformance` is the one to run before you show anyone a number. It reports the level it
 computes — conforming, partial or non-conforming — alongside the level the report *claims*, and
-says so loudly when those differ.
+says so loudly when those differ. It writes nothing unless you pass `--raise`, which saves a
+computed level *stronger* than the claim into the file so the artifact carries its own grade.
+It will not move a claim the other way: an overstated report is reported and left alone, since
+the fix there is the author's to make.
 
 `ascep init` deliberately produces a document that does **not** validate. Every value is `null`
 or `TODO`, so the validation errors are the fill-in list, and the two places where the schemas
@@ -164,7 +168,7 @@ discovering after four hours of Slurm time that `serving.json` was malformed is 
 too late. What it emits is a *draft*: a load generator sees latency over HTTP and nothing else,
 so the roofline, the sizing result, the scaling table and the theoretical and recommended tiers
 are left null with reasons, and the report claims `non-conforming` until `ascep conformance`
-says otherwise.
+says otherwise — `--raise` is what writes that verdict back into the file.
 
 [`examples/bench-config/`](examples/bench-config/) is a complete input set — a `bench.json`
 plus the four declarations it binds to — meant to be copied and edited; every key it can

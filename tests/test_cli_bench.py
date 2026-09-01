@@ -1366,3 +1366,30 @@ def test_a_decidable_boundary_reaches_both_filled_tiers(tmp_path, monkeypatch):
             f"{name} states a constraint and keeps the reason it was unknown; a stale (U) "
             "tells a reviewer to discount a figure the run actually pinned down"
         )
+
+
+def test_the_draft_note_bench_writes_is_the_one_the_checker_recognises(tmp_path, monkeypatch):
+    """`ascep conformance --raise` finds the paragraph it may replace by an exact prefix
+    match. If bench ever builds that paragraph inline again, the match silently stops firing
+    and every graded report keeps a note insisting it was never graded."""
+    note = _offline_report(tmp_path, monkeypatch)["conformance_note"]
+    assert note.startswith(conformance.DRAFT_NOTE)
+
+
+def test_a_bench_draft_can_be_graded_up_by_the_command_its_note_names(tmp_path, monkeypatch):
+    """The note tells the reader that `ascep conformance` is the command that may raise the
+    claim. Unfulfilled, that sentence sends every operator to a command that prints a grade
+    and throws it away, and the published file claims the harness floor forever.
+
+    The boundary is stubbed for the same reason as the wiring test above: the offline ladder
+    never fails a rung, so its C5 errors stand and it grades `non-conforming` honestly. A
+    real ladder that found its boundary is the case this promise is made to."""
+    monkeypatch.setattr(bench_run, "_boundary_constraint", lambda result, concurrency: "slo")
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline(monkeypatch)
+    assert main(["bench", path]) == 0
+    report_path = tmp_path / "report.json"
+    assert main(["conformance", str(report_path), "--raise"]) == 0
+    raised = json.loads(report_path.read_text(encoding="utf-8"))
+    assert raised["conformance"] == "partial"
+    assert raised["conformance_note"].startswith(conformance.GRADED_NOTE)

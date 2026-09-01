@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ascep import init, validation
+from ascep import conformance, init, validation
 from ascep.bench import driver, ladder, metrics, persist, workloads
 
 __all__ = ["ConfigError", "load_config", "load_declarations", "plan_lines", "bench"]
@@ -1137,15 +1137,11 @@ def _mean_context(records):
 
 def _conformance_note(censor, result):
     """Write the note that stops ``non-conforming`` reading as a verdict on the hardware."""
-    note = (
-        "This report is an ungraded draft emitted by `ascep bench`. A load generator "
-        "observes latency and throughput over HTTP and nothing else, so the four report "
-        "sections it cannot observe -- the roofline comparison, the sizing result, the "
-        "scaling table, and the theoretical and recommended capacity tiers -- are left "
-        "unknown rather than estimated. `non-conforming` means this draft has not been "
-        "graded, not that the hardware failed; `ascep conformance` is the command that "
-        "may raise the claim."
-    )
+    # The paragraph is conformance.DRAFT_NOTE rather than a second copy of the same prose:
+    # `ascep conformance --raise` finds the text it may replace by an exact prefix match on
+    # that constant, so a copy here would drift the first time either was edited, and the
+    # raise would then silently leave every published note claiming to be ungraded.
+    note = conformance.DRAFT_NOTE
     if censor:
         note += (
             f" The ladder was censored ({censor}), so every concurrency figure in this "

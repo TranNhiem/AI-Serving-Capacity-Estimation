@@ -13,6 +13,25 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+### Added
+
+- **`ascep conformance report.json --raise` writes the computed level into the
+  report.** Every draft the harness emits ends its note with "`ascep conformance`
+  is the command that may raise the claim", and chapter 7 §10 says the same in
+  normative voice, but nothing fulfilled the promise: the checker printed a grade
+  to the terminal and the file went on claiming `non-conforming` forever. A grade
+  that exists only in a terminal is not part of the artifact, and the artifact is
+  what circulates. With the flag, an understated claim is replaced by the computed
+  level and the draft paragraph in `conformance_note` gives way to one saying the
+  grade was computed rather than assumed; any caveat the harness appended after
+  that paragraph — the censoring sentence, the lower-bound caveat, the cache
+  caveat — is carried across untouched, since dropping one would turn a declared
+  lower bound into a bare maximum. Without the flag nothing is ever written, so
+  the checker stays safe to run on someone else's report. It never lowers a claim:
+  a report claiming more than the checks support keeps its OVERSTATED line and its
+  bytes, because a flag that quietly rewrote an overstatement into an accurate
+  claim would erase the evidence that anyone overstated.
+
 ### Fixed
 
 - **`ascep bench` could not emit a draft that `ascep conformance` would grade

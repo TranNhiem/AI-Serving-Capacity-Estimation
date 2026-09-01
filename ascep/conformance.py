@@ -55,6 +55,32 @@ _PLACEHOLDER = "TODO"
 # fabricated value the placeholder rule exists to make impossible.
 _EPOCH_PLACEHOLDER = "1970-01-01T00:00:00Z"
 
+# The paragraph `ascep bench` opens every conformance_note with, and the paragraph that
+# replaces it once the claim has been graded. They live here rather than in ascep.bench
+# because this module must stay importable without the [run] extra: the checker has to
+# recognise the draft prose on a machine that cannot run the harness. Two constants rather
+# than one edited in place, because "may raise the claim" becomes untrue the moment the
+# claim has been raised, and a published file that keeps saying it teaches readers to skip
+# the note.
+DRAFT_NOTE = (
+    "This report is an ungraded draft emitted by `ascep bench`. A load generator "
+    "observes latency and throughput over HTTP and nothing else, so the four report "
+    "sections it cannot observe -- the roofline comparison, the sizing result, the "
+    "scaling table, and the theoretical and recommended capacity tiers -- are left "
+    "unknown rather than estimated. `non-conforming` means this draft has not been "
+    "graded, not that the hardware failed; `ascep conformance` is the command that "
+    "may raise the claim."
+)
+GRADED_NOTE = (
+    "This report was emitted by `ascep bench` and graded afterwards. A load generator "
+    "observes latency and throughput over HTTP and nothing else, so the four report "
+    "sections it cannot observe -- the roofline comparison, the sizing result, the "
+    "scaling table, and the theoretical and recommended capacity tiers -- are left "
+    "unknown rather than estimated, and they are why the grade is what it is. The claim "
+    "below was written by `ascep conformance` from the findings it computed; running that "
+    "command again on this file reproduces the grade."
+)
+
 
 def _is_placeholder_text(value: str) -> bool:
     """Whether a string is generated scaffolding rather than something a person wrote.
@@ -143,6 +169,27 @@ def _compute_level(findings: tuple[Finding, ...]) -> str:
     if errors or findings:
         return "partial"
     return "conforming"
+
+
+def raise_claim(report: dict, verdict: Verdict) -> bool:
+    """Write the computed level into ``report`` in place; return whether anything changed.
+
+    This never decides whether raising is *allowed* -- the caller owns that, and the
+    overstated case is the author's to face rather than a flag's to erase. Two rules keep
+    the write honest. The note swap is an exact prefix match on :data:`DRAFT_NOTE`, never a
+    pattern: a fuzzy match that half-eats an appended caveat is worse than leaving the note
+    alone, so a note that does not open with the draft paragraph is someone's own prose and
+    is left as written. And whatever the harness appended after that paragraph -- the
+    censoring sentence, the lower-bound caveat, the cache caveat -- rides along untouched,
+    because dropping it would turn a declared lower bound into a bare maximum.
+    """
+    changed = report.get("conformance") != verdict.level
+    report["conformance"] = verdict.level
+    note = report.get("conformance_note")
+    if isinstance(note, str) and note.startswith(DRAFT_NOTE):
+        report["conformance_note"] = GRADED_NOTE + note[len(DRAFT_NOTE) :]
+        changed = True
+    return changed
 
 
 def _is_number(value: Any) -> bool:
