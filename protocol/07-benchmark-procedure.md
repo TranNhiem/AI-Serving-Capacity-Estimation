@@ -207,9 +207,9 @@ The config is a single JSON object with exactly seven sections. Every section an
 | `endpoint` | `timeout_s` | number, > 0 | Per-request timeout. |
 | `declarations` | `hardware`, `model`, `serving`, `workload` | string | Paths to the four layer documents the run is bound to (**C3**). Each MUST parse and pass schema validation. |
 | `workload` | `corpus` | string | `"synthetic"`, or a path to a JSONL corpus replayed from its `messages` field. |
-| `workload` | `input_tokens` | integer, > 1 | Target input length per request (§2). |
-| `workload` | `output_tokens` | integer, > 1 | Target output length per request (§2). |
-| `workload` | `ignore_eos` | boolean | Whether output length is fixed (`true`) or model-decided (`false`) (§2). |
+| `workload` | `input_tokens` | integer > 1, or `null` | Target input length per request (§2). Sizes the synthetic corpus, and MUST be `null` whenever `corpus` names a file: the corpus's own records fix the prompt length, so a number here would be a claim nothing checks. |
+| `workload` | `output_tokens` | integer > 1, or `null` | Output length per request (§2). Under `ignore_eos: true` it is the exact decoded length; under `false` it is a ceiling; `null` means no length on the wire at all. |
+| `workload` | `ignore_eos` | boolean | Whether the output length is fixed (`true`) or the model may stop at EOS (`false`) (§2). The pair encodes three modes: **fixed** (`true` with a length), **capped** (`false` with a length — EOS honoured, the length a ceiling), and **uncapped** (`false` with `null`). `true` with `null` is refused: it asks the server to generate until the context limit on every request. |
 | `workload` | `cache_policy` | string | Cache handling, from the closed vocabulary in `ascep.bench.workloads.CACHE_POLICIES` (§3). |
 | `workload` | `seed` | integer | Workload sampling seed. |
 | `workload` | `think_time_s` | number, >= 0 | Closed-loop think time (§2). |

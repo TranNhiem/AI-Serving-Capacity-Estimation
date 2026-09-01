@@ -155,8 +155,14 @@ _TYPES = {
     ("declarations", "serving"): (str,),
     ("declarations", "workload"): (str,),
     ("workload", "corpus"): (str,),
-    ("workload", "input_tokens"): (int,),
-    ("workload", "output_tokens"): (int,),
+    # On a real corpus this key is consumed nowhere, so any int here is a prompt-length
+    # claim the published config carries and nothing checks. Null is admitted so the
+    # corpus-mode rule in _check_values can refuse every other value.
+    ("workload", "input_tokens"): (int, type(None)),
+    # Null is the declared uncapped mode. It is admitted here so the ignore_eos rule in
+    # _check_values can tell it apart from the one combination that must be refused --
+    # true with no length -- rather than dying of a bare None <= 1 TypeError downstream.
+    ("workload", "output_tokens"): (int, type(None)),
     ("workload", "ignore_eos"): (bool,),
     ("workload", "cache_policy"): (str,),
     ("workload", "seed"): (int,),
@@ -308,13 +314,56 @@ def _check_values(config):
             f"got {rungs}. A repeated rung pools independent repetitions into one "
             "operating point; a descending one disables the collapse test"
         )
+    # On anything but the synthetic corpus this number is consumed nowhere: the corpus's
+    # own records fix the prompt length, so a declared value is validated and then used
+    # for nothing, and the published config carries a prompt-length claim that can
+    # disagree with the run by any margin without a single check firing.
+    corpus = config["workload"]["corpus"]
+    input_tokens = config["workload"]["input_tokens"]
+    if corpus == "synthetic":
+        # The synthetic corpus is generated to exactly this length and has no other
+        # source for it; a null here is not deference to the corpus but a workload with
+        # an unknowable prompt, and a default would measure a workload nobody declared.
+        if input_tokens is None:
+            raise ConfigError(
+                "'input_tokens' must be a positive integer when 'corpus' is 'synthetic': "
+                "the synthetic corpus has no other source for its length (section 7)"
+            )
+        if input_tokens <= 1:
+            raise ConfigError("config key 'input_tokens' must be greater than 1 (section 7)")
+    elif input_tokens is not None:
+        raise ConfigError(
+            f"'input_tokens' must be null when 'corpus' names a corpus file; got "
+            f"{input_tokens!r} against corpus '{corpus}' (section 7). The corpus's own "
+            "records fix the prompt length, so this number is read, checked and used for "
+            "nothing. The measured prompt-token figure belongs in the workload "
+            "declaration, which the report grades -- nothing grades a number in the bench "
+            "config against it"
+        )
+    # Like input_tokens above, this pair is mode-conditional: false with a null length is a
+    # legal declaration, the explicitly uncapped mode, but true turns off the model's only
+    # way to stop on its own, so a length must travel with it. A null there is not
+    # deference to the model; it asks the server to generate until the context limit on
+    # every single request.
+    ignore_eos = config["workload"]["ignore_eos"]
+    output_tokens = config["workload"]["output_tokens"]
+    if ignore_eos:
+        if output_tokens is None:
+            raise ConfigError(
+                "'output_tokens' must be a positive integer when 'ignore_eos' is true: "
+                "ignore_eos with no output length asks the server to generate until the "
+                "context limit on every single request, which is a decode storm wearing a "
+                "benchmark's name (section 7)"
+            )
+        if output_tokens <= 1:
+            raise ConfigError("config key 'output_tokens' must be greater than 1 (section 7)")
+    elif output_tokens is not None and output_tokens <= 1:
+        raise ConfigError("config key 'output_tokens' must be greater than 1 (section 7)")
     numeric_floors = [
         ("ladder", "repetitions", 1, "section 7"),
         ("window", "window_s", 0, "section 7"),
         ("window", "drain_deadline_s", 0, "section 7.6"),
         ("window", "warmup_requests", -1, "section 7.3"),
-        ("workload", "input_tokens", 1, "section 7"),
-        ("workload", "output_tokens", 1, "section 7"),
         # A non-positive timeout aborts every request before the first token and reports
         # a 100% error rate as a property of the server.
         ("endpoint", "timeout_s", 0, "section 7"),
@@ -600,7 +649,17 @@ def _build_workload(config, config_dir):
             source = _build_multimodal_corpus(wl, corpus_path, media_root, config_dir)
     if wl["ignore_eos"]:
         output_plan = workloads.FixedOutput(int(wl["output_tokens"]), True)
+    elif wl["output_tokens"] is not None:
+        # EOS honoured, the declared number a ceiling rather than a commitment: the mode a
+        # production latency claim is actually measured in. The two-state code read,
+        # type-checked and range-checked this number and then built the uncapped plan, so a
+        # declared 512 went out as no cap at all and one degenerate generation monopolised
+        # an entire measurement window.
+        output_plan = workloads.CappedOutput(int(wl["output_tokens"]))
     else:
+        # An explicit null: the one mode where no length goes on the wire. The choice to
+        # run uncapped is declared here, never fallen into because a number was quietly
+        # dropped on the way.
         output_plan = workloads.ModelDecidedOutput()
     workload_cls = (
         _MediaShapeWorkload

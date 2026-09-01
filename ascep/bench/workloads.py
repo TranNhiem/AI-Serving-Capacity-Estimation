@@ -54,6 +54,31 @@ class FixedOutput:
 
 
 @dataclass(frozen=True)
+class CappedOutput:
+    """A ceiling on output length with EOS honoured: the production-realistic mode.
+
+    Sits between FixedOutput, which suppresses EOS and makes every request pay exactly the
+    declared decode cost, and ModelDecidedOutput, which sends no length at all. Here the
+    model may stop early, so the number is not a decode commitment -- it is the ceiling
+    that stops a single degenerate generation from monopolising a measurement window. The
+    failure that ceiling exists to stop was measured, not hypothetical: on an H100 serving
+    a 4B VLM against a real image corpus, a bench config declaring output_tokens 512 with
+    ignore_eos false had the cap silently discarded, and one request that never emitted EOS
+    generated alone for 90 consecutive seconds (engine log: one running request, zero
+    prompt throughput the whole time, on the order of 14,000 tokens). The concurrency-1
+    rung's three repetitions came out at 9 completions / 126.95 output tok/s, 12 / 113.23,
+    and 2 / 13.87 -- a 9x collapse across repetitions caused by one runaway request, and it
+    would have been published as throughput variance of the server.
+    """
+
+    output_tokens: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.output_tokens, int) or self.output_tokens <= 0:
+            raise ValueError(f"output_tokens must be a positive int, got {self.output_tokens!r}")
+
+
+@dataclass(frozen=True)
 class ModelDecidedOutput:
     """The output length the model chose. Not a sampled distribution: declaring it as one
     would claim a distribution that does not exist in the reproduction bundle."""
@@ -665,7 +690,7 @@ class Workload:
     because a default is how a conditional permission becomes the silent norm."""
 
     source: PromptSource
-    output_plan: FixedOutput | ModelDecidedOutput
+    output_plan: FixedOutput | CappedOutput | ModelDecidedOutput
     cache_policy: str
     seed: int
     think_time_s: float
@@ -691,7 +716,7 @@ class Workload:
                 "think time distributions are not implemented; only a constant is "
                 "supported, and silently running one would mislabel the workload"
             )
-        if not isinstance(self.output_plan, (FixedOutput, ModelDecidedOutput)):
+        if not isinstance(self.output_plan, (FixedOutput, CappedOutput, ModelDecidedOutput)):
             raise ValueError(f"unrecognised output plan {self.output_plan!r}")
 
     def _window_tag(self, repetition: int, concurrency: int | None) -> str:
@@ -732,6 +757,12 @@ class Workload:
             if isinstance(self.output_plan, FixedOutput):
                 max_tokens: int | None = self.output_plan.output_tokens
                 extra = {"ignore_eos": self.output_plan.ignore_eos}
+            elif isinstance(self.output_plan, CappedOutput):
+                # The ceiling goes on the wire by itself. An explicit ignore_eos: false
+                # would be the same request at the server, but the record would then claim
+                # a key nobody asked for.
+                max_tokens = self.output_plan.output_tokens
+                extra = {}
             else:
                 # None means server default; coercing it here would change the workload
                 # invisibly, since the record shows only what the server was asked for.
@@ -752,15 +783,31 @@ class Workload:
     def manifest(self) -> dict:
         """The reproduction bundle's half of the promise: everything needed to regenerate
         the exact prompt sequence, as a plain JSON-serialisable dict."""
-        fixed = isinstance(self.output_plan, FixedOutput)
+        plan = self.output_plan
+        if isinstance(plan, FixedOutput):
+            basis, ignore_eos, output_tokens = "fixed", plan.ignore_eos, plan.output_tokens
+        elif isinstance(plan, CappedOutput):
+            basis, ignore_eos, output_tokens = "capped", False, plan.output_tokens
+        else:
+            basis, ignore_eos, output_tokens = "model-decided", False, None
         m = {
             "run_label": self.run_label,
             "seed": self.seed,
             "sampler": self.source.sampler_rule,
             "cache_policy": self.cache_policy,
             "think_time_s": self.think_time_s,
-            "output_basis": "fixed" if fixed else "model-decided",
-            "ignore_eos": self.output_plan.ignore_eos if fixed else False,
+            # Three bases, and a bundle must keep them recognisable after publication:
+            # "fixed" sent ignore_eos with the length and every request decoded exactly
+            # output_tokens; "capped" sent the length alone, an anti-collapse ceiling with
+            # EOS honoured; "model-decided" sent no length at all. ignore_eos and
+            # output_tokens therefore record what went on the wire, and output_tokens is
+            # present exactly when a length was sent -- if "capped at 512" and "uncapped"
+            # were indistinguishable in this file, the run could not be reproduced from its
+            # own bundle. output_basis gains a third value rather than a new key being
+            # invented, because how the output length was decided is the axis that key
+            # already names.
+            "output_basis": basis,
+            "ignore_eos": ignore_eos,
             "corpus_name": self.source.name,
             "corpus_digest": self.source.digest,
             "corpus_size": self.source.size,
@@ -773,8 +820,8 @@ class Workload:
             ),
             "temperature": self.temperature,
         }
-        if fixed:
-            m["output_tokens"] = self.output_plan.output_tokens
+        if output_tokens is not None:
+            m["output_tokens"] = output_tokens
         if self.cache_policy == "unknown":
             m["cache_policy_u_reason"] = self.unknown_cache_reason
         return m

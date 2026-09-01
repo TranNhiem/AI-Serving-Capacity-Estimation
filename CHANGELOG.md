@@ -206,6 +206,43 @@ cross-version comparisons valid.
   error-free on the admitted reading. **Issued** is now normative, refusals at
   admission count as failures, and an admitted-only rate may be reported
   alongside but never substituted.
+- `ascep bench` no longer accepts `workload.input_tokens` on a real-corpus run.
+  The key sized only the synthetic corpus; with `corpus` naming a JSONL file it
+  was read, type-checked and range-checked and then used for nothing, so a
+  published bench config could carry a prompt-length claim nothing checked -- a
+  run whose corpus averaged 722 prompt tokens could declare 4096 and the harness
+  would agree in silence. The key now must be `null` whenever the corpus names a
+  file (it stays required: an absent key and an explicit `null` say different
+  things), a null under the synthetic corpus is refused as that workload's only
+  source of prompt length, and the refusal says where the figure belongs
+  instead: the measured prompt-token count goes in the workload declaration,
+  which the report grades. No published number is affected, because the field
+  was inert rather than wrong -- it changed no measurement.
+- `ascep bench` no longer discards `workload.output_tokens` when `ignore_eos`
+  is false. The two keys encoded only two states -- a fixed output budget with
+  EOS suppressed, or no length on the wire at all -- so a config declaring
+  `output_tokens: 512, ignore_eos: false` had the number read, type-checked and
+  range-checked and then thrown away: every request went out with no output cap,
+  the bundle's manifest recorded neither the cap nor its absence, and the number
+  survived only in the verbatim copy of the config, the worst of both. Unlike
+  the `input_tokens` rule directly above, this one moved measurements. Measured
+  on a live H100 serving a 4B VLM against a real image corpus with exactly that
+  config: for 90 consecutive seconds the engine logged one running request and
+  0.0 prompt tokens/s while generation throughput decayed smoothly from 169 to
+  149 tok/s -- a single request that never emitted EOS produced on the order of
+  14,000 tokens because nothing capped it, and the concurrency-1 rung's three
+  repetitions came out at 9 completions / 126.95 output tok/s, 12 / 113.23, and
+  2 / 13.87. That 9x collapse across repetitions was one runaway request eating
+  an entire measurement window, and it would have been published as throughput
+  variance of the server. The keys now encode three states -- fixed (`true` with
+  a positive length), capped (`false` with a positive length: EOS honoured, the
+  length a ceiling), and uncapped (`false` with a null length) -- and
+  `ignore_eos: true` with a null length is refused, because it asks the server
+  to generate until the context limit on every single request. No number
+  published in this repository is affected: every workload under `examples/`
+  declares `ignore_eos: true`, so none of them was ever in the discarding state.
+  The cost fell on live runs of operator configs, and any such run has windows
+  whose output throughput is not comparable across its own repetitions.
 
 ### Security
 

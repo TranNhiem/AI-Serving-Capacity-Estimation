@@ -773,7 +773,11 @@ def test_a_media_root_that_is_not_a_directory_is_refused_before_the_first_reques
     Refusing before the first request is the whole point, because the alternative is
     discovering it in a report after the GPU hours are spent."""
     _media_corpus(tmp_path)
-    overrides = {"workload.corpus": "corpus.jsonl", "workload.media_root": "nowhere"}
+    overrides = {
+        "workload.corpus": "corpus.jsonl",
+        "workload.input_tokens": None,
+        "workload.media_root": "nowhere",
+    }
     assert _dry_run(tmp_path, **overrides) != 0
     err = capsys.readouterr().err
     assert "workload media_root is not an existing directory" in err
@@ -787,6 +791,7 @@ def test_url_transport_without_a_url_prefix_is_refused_as_a_url_that_resolves_to
     a URL that resolves to nothing, and the run measures 404s rather than images."""
     overrides = {
         "workload.corpus": "corpus.jsonl",
+        "workload.input_tokens": None,
         "workload.media_root": ".",
         "workload.image_input_transport": "url",
     }
@@ -804,6 +809,7 @@ def test_a_url_prefix_with_base64_transport_is_refused_because_it_would_be_ignor
     _media_corpus(tmp_path)
     overrides = {
         "workload.corpus": "corpus.jsonl",
+        "workload.input_tokens": None,
         "workload.media_root": ".",
         "workload.media_url_prefix": "http://h/m/",
     }
@@ -858,3 +864,84 @@ def test_a_missing_required_workload_key_is_still_named_after_the_optional_keys_
     err = capsys.readouterr().err
     assert "bench config is missing 'cache_policy' (section 'workload')" in err
     assert "section 7 requires it" in err
+
+
+# --- input_tokens is consumed only by the synthetic corpus -----------------------------
+
+
+def test_input_tokens_on_a_jsonl_corpus_is_refused_because_nothing_would_check_it(tmp_path, capsys):
+    """The corpus's own records fix the prompt length, so a declared number beside a real
+    corpus is read, type-checked and range-checked and then used for nothing: a published
+    config can claim 4096 tokens over a corpus averaging 722 and no rule fires. A warning
+    in a scrollback is not visible to a reader of the published config, so the refusal
+    names the corpus and says where the number belongs."""
+    overrides = {"workload.corpus": "corpus.jsonl", "workload.input_tokens": 722}
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "corpus.jsonl" in err, f"the error must name the corpus path: {err}"
+    assert "workload declaration" in err, f"the error must say where the number belongs: {err}"
+
+
+def test_input_tokens_null_on_a_jsonl_corpus_passes_this_rule_and_fails_only_elsewhere(
+    tmp_path, capsys
+):
+    """Null is the declaration that the corpus, not the config, fixes the prompt length.
+    This config names a corpus file that does not exist, so it must get all the way to the
+    corpus-existence check -- proving the null itself was not refused."""
+    overrides = {"workload.corpus": "nowhere.jsonl", "workload.input_tokens": None}
+    assert _dry_run(tmp_path, **overrides) != 0
+    err = capsys.readouterr().err
+    assert "'input_tokens' must be null" not in err, f"the null was refused: {err}"
+    assert "corpus file not found" in err, f"the run stopped before the corpus check: {err}"
+
+
+def test_a_synthetic_corpus_with_input_tokens_null_is_refused_because_it_sizes_the_corpus(
+    tmp_path, capsys
+):
+    """SyntheticCorpus is generated to exactly the length this key declares, so a null
+    leaves nothing to build the prompts from; the refusal has to say the synthetic corpus
+    has no other source for its length, or an operator reads it as a type complaint rather
+    than as a missing measurement."""
+    assert _dry_run(tmp_path, **{"workload.input_tokens": None}) != 0
+    err = capsys.readouterr().err
+    assert "no other source" in err, f"the error must say why null cannot stand: {err}"
+
+
+# --- output_tokens and ignore_eos encode three states, and none of them silently ------
+
+
+def test_ignore_eos_false_with_a_declared_length_puts_that_ceiling_on_every_request(tmp_path):
+    """The live defect's exact config: output_tokens: 512, ignore_eos: false.
+
+    The old two-state build read the 512, type-checked it, range-checked it and then
+    constructed the uncapped plan, so the request went out with no cap at all -- and one
+    degenerate generation ate an entire 90-second window, collapsing the concurrency-1
+    rung's output throughput 9x across repetitions. This is the assertion whose absence
+    let that through."""
+    config = _config(tmp_path, **{"workload.ignore_eos": False, "workload.output_tokens": 512})
+    workload = bench_run._build_workload(config, str(tmp_path))
+    spec = workload.for_repetition(0)(0)
+    assert spec.max_tokens == 512
+    assert "ignore_eos" not in spec.extra
+
+
+def test_ignore_eos_true_with_no_length_is_refused_as_an_instruction_to_generate_forever(
+    tmp_path, capsys
+):
+    """ignore_eos removes the model's only way to stop on its own, so with no length it
+    asks the server to generate until the context limit on every single request. That is
+    a decode storm wearing a benchmark's name, and the refusal must say so."""
+    assert _dry_run(tmp_path, **{"workload.output_tokens": None}) != 0
+    err = capsys.readouterr().err
+    assert "context limit" in err
+    assert "every single request" in err
+
+
+def test_ignore_eos_false_with_a_null_length_is_accepted_and_sends_no_max_tokens(tmp_path):
+    """Uncapped is a legal measurement as long as it was declared: false with a null
+    output_tokens puts no length on the wire at all, and nothing between the config and
+    the adapter may grow a cap the operator did not ask for."""
+    overrides = {"workload.ignore_eos": False, "workload.output_tokens": None}
+    assert _dry_run(tmp_path, **overrides) == 0
+    workload = bench_run._build_workload(_config(tmp_path, **overrides), str(tmp_path))
+    assert workload.for_repetition(0)(0).max_tokens is None

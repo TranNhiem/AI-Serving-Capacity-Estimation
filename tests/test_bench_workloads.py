@@ -19,6 +19,7 @@ import pytest
 from ascep.bench.adapters.base import RequestSpec
 from ascep.bench.workloads import (
     CACHE_POLICIES,
+    CappedOutput,
     FixedOutput,
     JsonlCorpus,
     ModelDecidedOutput,
@@ -97,6 +98,41 @@ def test_a_fixed_output_plan_puts_its_budget_on_every_spec():
     spec = _workload(output_plan=plan).for_repetition(0)(3)
     assert spec.max_tokens == 97
     assert spec.extra.get("ignore_eos") is True
+
+
+def test_a_capped_output_plan_puts_a_ceiling_on_every_spec_and_says_nothing_about_eos():
+    """EOS is honoured and the number is a ceiling, not a length: the production-realistic
+    mode. The defect this mode fixes was a key that never made it onto the wire, so the
+    absence of ignore_eos is asserted, not merely its value -- an extra carrying
+    ignore_eos: false is the same request at the server while claiming a key nobody asked
+    for."""
+    spec = _workload(output_plan=CappedOutput(output_tokens=512)).for_repetition(0)(0)
+    assert spec.max_tokens == 512
+    assert "ignore_eos" not in spec.extra
+
+
+def test_a_capped_output_plan_refuses_a_non_positive_ceiling():
+    """A ceiling of zero stops nothing: it can only be a config typo, and a typo the
+    harness accepts is a workload nobody declared."""
+    with pytest.raises(ValueError, match="positive int"):
+        CappedOutput(output_tokens=0)
+
+
+def test_the_three_output_plans_leave_manifests_a_reader_can_tell_apart():
+    """A bundle that cannot tell "capped at 512, EOS honoured" from "uncapped" cannot be
+    used to reproduce the run: the live defect published the second while the config
+    declared the first."""
+    fixed = _workload(output_plan=FixedOutput(output_tokens=64, ignore_eos=True)).manifest()
+    capped = _workload(output_plan=CappedOutput(output_tokens=64)).manifest()
+    decided = _workload(output_plan=ModelDecidedOutput()).manifest()
+    assert fixed["output_basis"] == "fixed"
+    assert fixed["ignore_eos"] is True and fixed["output_tokens"] == 64
+    assert capped["output_basis"] == "capped"
+    assert capped["ignore_eos"] is False and capped["output_tokens"] == 64
+    assert decided["output_basis"] == "model-decided"
+    assert decided["ignore_eos"] is False and "output_tokens" not in decided
+    serialised = {json.dumps(m, sort_keys=True) for m in (fixed, capped, decided)}
+    assert len(serialised) == 3, "the three modes must not collapse into one manifest"
 
 
 def test_a_synthetic_corpus_cannot_be_built_without_a_tokenizer():
