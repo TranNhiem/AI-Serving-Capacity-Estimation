@@ -17,6 +17,7 @@ import pathlib
 
 import pytest
 
+from ascep import ASCEP_VERSION, __version__
 from ascep.bench.driver import Boundary, WindowPolicy, WindowRun
 from ascep.bench.persist import capture_environment, verify_bundle, write_bundle
 from ascep.bench.records import Outcome, RequestRecord, read_records
@@ -244,6 +245,17 @@ def test_the_environment_capture_reports_what_it_could_read():
     assert "driver_version_u_reason" not in env
     assert env["python_version"]
     assert env["platform"]
+
+
+def test_the_environment_capture_pins_the_harness_that_produced_the_numbers():
+    """The bundle pins fourteen packages of serving stack and, until this, not the tool that
+    drove them. Every cluster run in this repository is launched from a checkout on
+    PYTHONPATH with nothing installed, so importlib.metadata would report the harness absent
+    -- the one distribution that provably ran. Without both numbers a reader of an old report
+    cannot tell whether its ITL figures predate the release that fixed how ITL is reduced."""
+    env = capture_environment(runner=lambda argv: "555.42.06\n")
+    assert env["ascep_package_version"] == __version__
+    assert env["ascep_protocol_version"] == ASCEP_VERSION
 
 
 def test_caller_supplied_environment_facts_are_merged_and_win(tmp_path):

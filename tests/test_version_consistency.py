@@ -42,6 +42,26 @@ def test_the_package_and_the_protocol_both_declare_a_real_version():
     assert SEMVER.match(ASCEP_VERSION), f"protocol version is not semver: {ASCEP_VERSION!r}"
 
 
+def test_the_protocol_version_does_not_lag_the_package():
+    """The failure this exists for happened. Release 0.3.0 was cut *because* the ITL fix
+    altered the numbers a conforming report publishes -- the commit message says so and
+    invokes the versioning rule by name -- and it bumped `__version__` while leaving
+    `ASCEP_VERSION` at 0.2.0. Reports cite the protocol version and nothing else, so for the
+    length of that release a report reduced the corrected way was indistinguishable from one
+    reduced the broken way, by exactly the field the spec designates to tell them apart.
+
+    Major and minor must agree; the patch level may run ahead, because a fix to the CLI that
+    touches no number is a package release and not a protocol one. Under 0.x the minor is
+    the breaking axis, so this is the same rule the CHANGELOG states in prose.
+    """
+    package = tuple(int(p) for p in __version__.split(".")[:2])
+    protocol = tuple(int(p) for p in ASCEP_VERSION.split(".")[:2])
+    assert protocol == package, (
+        f"package {__version__} ships against protocol {ASCEP_VERSION}; a release that "
+        "changes what a report says must move the version the report cites"
+    )
+
+
 def test_pyproject_agrees_with_the_package():
     """The wheel's metadata version is what `pip` and PyPI show; `__version__` is what the
     CLI prints and what gets stamped into reports. A user reconciling a report against an

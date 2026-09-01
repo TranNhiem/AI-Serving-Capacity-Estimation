@@ -33,7 +33,7 @@ from ascep.capacity import (
 )
 
 __version__ = "0.3.0"
-ASCEP_VERSION = "0.2.0"
+ASCEP_VERSION = "0.3.0"
 
 __all__ = [
     "ASCEP_VERSION",

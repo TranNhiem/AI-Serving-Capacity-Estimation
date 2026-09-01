@@ -26,6 +26,8 @@ from importlib import metadata as _metadata
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+from ascep import ASCEP_VERSION
+from ascep import __version__ as _ascep_version
 from ascep.bench.driver import WindowRun
 from ascep.bench.records import write_records
 
@@ -87,6 +89,11 @@ def capture_environment(*, runner: Callable[[list[str]], str] | None = None, **e
     describe the harness process: the benchmark client and the model server need not be one
     environment, and a reader who assumes they are will read a pin for software that never
     ran the model.
+
+    The harness pins itself too, from the imported module rather than from dist-info. A
+    bundle that records the whole serving stack and not the tool that drove it cannot answer
+    the first question a reader of an old report has -- whether the numbers predate the fix
+    to the code that computed them.
 
     Caller-supplied ``extra`` facts merge in and win: the caller knows things the process
     cannot see, such as the Slurm allocation, and silently dropping them would make the
@@ -164,6 +171,17 @@ def capture_environment(*, runner: Callable[[list[str]], str] | None = None, **e
         # that looks complete and silently omits whatever the loop had not reached yet.
         env["packages"] = {}
         env["packages_u_reason"] = f"(U) could not be probed: {type(exc).__name__}: {exc}"
+
+    # The two versions dist-info cannot supply here. `ascep` is routinely run from a checkout
+    # on PYTHONPATH with nothing installed -- the way every cluster run in this repository was
+    # done -- and importlib.metadata would then record the harness as absent, which is the one
+    # package in the mapping that provably ran. They are separate keys because they answer
+    # separate questions: the package version identifies the code that produced the numbers,
+    # and 0.3.0 reduces ITL over a population 0.2.0 got wrong, while the protocol version
+    # identifies the rules the report is graded against. Read from the imported module, so
+    # they cannot disagree with what the process is executing.
+    env["ascep_package_version"] = _ascep_version
+    env["ascep_protocol_version"] = ASCEP_VERSION
 
     # Extra facts merge in last: an operator's "slurm_job_id" must not be lost because a
     # probe happened to know a same-named fact, and a same-named extra is the caller

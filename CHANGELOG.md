@@ -34,6 +34,31 @@ cross-version comparisons valid.
 
 ### Fixed
 
+- **`ASCEP_VERSION` stayed at 0.2.0 through the 0.3.0 release, so reports could
+  not cite the protocol they were produced under.** 0.3.0 was cut precisely
+  because the ITL fix alters the numbers a conforming report publishes; its own
+  commit message invokes the versioning rule. It bumped `__version__` and left
+  the protocol constant behind, and the protocol constant is the one thing a
+  report carries. For the length of that release a report reduced the corrected
+  way was indistinguishable from one reduced the broken way, by exactly the
+  field the spec designates to tell them apart — "cross-version comparison of
+  numbers requires the majors to match", against a version that did not move.
+  The two constants are now bumped together, as 0.2.0's release did and 0.3.0's
+  did not, and a test requires the major and minor to agree. Nothing enforced
+  that before, which is why it slipped in silence; the patch level may still run
+  ahead, since a CLI fix that touches no number is a package release and not a
+  protocol one.
+- **The reproduction bundle pinned the whole serving stack and not the harness.**
+  `environment.json` records fourteen packages, from vLLM down to the httpx that
+  sits inside every TTFT this tool measures, and said nothing about `ascep`
+  itself. Adding it to that list would not have worked: every cluster run in this
+  repository is launched from a checkout on `PYTHONPATH` with nothing installed,
+  where `importlib.metadata` reports the one distribution that provably ran as
+  absent. The capture now writes "ascep_package_version" and
+  "ascep_protocol_version" from the imported module, so they cannot disagree with
+  what the process is executing. A reader of an old bundle can now answer the
+  first question an old measurement raises — whether it predates the fix to the
+  code that computed it.
 - **`ascep bench` could not emit a draft that `ascep conformance` would grade
   above `non-conforming`.** Three nulls the harness chose itself, none of them a
   property of the run, put five findings in every draft it has ever written:
