@@ -162,7 +162,7 @@ def test_attention_family_requires_matching_geometry(name, extra, expected):
     assert _valid({**BASE_MODEL, **extra}) is expected, name
 
 
-def test_chapters_do_not_name_fields_the_schemas_reject():
+def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     """The chapters tell a reader what to declare; the schemas decide whether it validates.
 
     A chapter naming `n_experts` while the schema requires `moe_experts` sends every reader
@@ -223,6 +223,35 @@ def test_chapters_do_not_name_fields_the_schemas_reject():
         ours |= set(table)
         for section_keys in table.values():
             ours |= set(section_keys)
+    # `media_shape()` writes its keys straight into a published workload manifest, and most of
+    # them are schema fields already -- but not all, and `media_bytes_resident` is the one a
+    # reader most needs the prose to name, because it is what an operator sizes
+    # `media_max_records` against. Take the keys from a real corpus rather than listing them:
+    # a hand-kept copy would go stale in the direction that silences accurate prose.
+    _mm_root = tmp_path / "vocab-media"
+    (_mm_root / "images").mkdir(parents=True)
+    (_mm_root / "images" / "a.jpg").write_bytes(b"\xff\xd8\xff\xe0" + bytes(16))
+    _mm_path = tmp_path / "vocab.jsonl"
+    _mm_path.write_text(
+        json.dumps(
+            {
+                "image": "images/a.jpg",
+                "width": 16,
+                "height": 16,
+                "conversations": [
+                    {"from": "human", "value": "<image>\nWhat is happening?"},
+                    {"from": "gpt", "value": "A lathe."},
+                ],
+                "id": "r1",
+            }
+        )
+        + "\n"
+    )
+    ours |= set(
+        workloads.MultimodalJsonlCorpus(
+            path=_mm_path, media_root=_mm_root, transport="base64"
+        ).media_shape()
+    )
     ours |= {
         # Intermediate names the chapters use when walking through a derivation by hand; they
         # are prose variables, so no signature will ever contain them.

@@ -359,6 +359,17 @@ class MultimodalJsonlCorpus(PromptSource):
     removes the marker from the text and emits a real content part in its place: sending
     the marker itself is the five-token prompt MEDIA_PLACEHOLDER exists to refuse, and
     dropping the media is a text benchmark wearing a media benchmark's name.
+
+    Under transport="base64" every referenced file is read and encoded exactly once, at
+    construction, and render_content only looks the finished data URL up. Reading and
+    encoding per request instead costs 1.93 ms of blocking work per request on the
+    corpus this reader is run against, and the driver calls render_content from a
+    single-threaded event loop between issuing requests. That is a client-side ceiling
+    of roughly 518 requests per second that has nothing to do with the server, so a
+    ladder climbing into it would report the load generator's limit as the model's
+    throughput collapse -- and every blocking call also stalls the other in-flight
+    requests, so the same 1.93 ms lands in the ITL and TTFT samples of requests that
+    did no reading at all, arriving in the report as server latency.
     """
 
     path: Path
@@ -375,7 +386,9 @@ class MultimodalJsonlCorpus(PromptSource):
     #: Dotted path to the conversation list; the prompt is the first turn from "human".
     prompt_field: str = "conversations"
     #: Cap for a smoke run. Truncation changes the corpus, so it changes the digest and
-    #: is named in the sampler rule.
+    #: is named in the sampler rule. Under transport="base64" it also bounds memory:
+    #: every record kept holds its media as a resident data URL, and media_shape
+    #: reports the total as media_bytes_resident.
     max_records: int | None = None
 
     def __post_init__(self) -> None:
@@ -412,6 +425,13 @@ class MultimodalJsonlCorpus(PromptSource):
         digest.update(f"transport={self.transport};max_records={self.max_records}".encode())
         self._digest = digest.hexdigest()
         steps = self.prompt_field.split(".")
+        # The base64 encode happens once, here at construction, so its cost lands before
+        # the first request rather than inside the window being measured. A pre-encode
+        # that ran lazily on first touch would just move the same stall to a random
+        # point in the ladder. Keyed on the resolved path so two records naming the
+        # same file are encoded once, not twice.
+        self._data_urls: dict[Path, str] = {}
+        self._media_bytes_resident = 0
         records: list[_MmRecord] = []
         truncated = False
         for lineno, line in enumerate(data.decode("utf-8").splitlines(), start=1):
@@ -425,6 +445,34 @@ class MultimodalJsonlCorpus(PromptSource):
             raise ValueError(f"corpus {self.path} is empty")
         self._records = records
         self._truncated = truncated
+
+    def _encode_once(self, resolved: Path, lineno: int) -> None:
+        """Read and base64-encode one media file into the data-URL cache.
+
+        The cache is keyed on the resolved path, so two records naming the same file
+        pay the read and the encode once. Doing this per request instead put 1.93 ms
+        of blocking file I/O and encoding on the event loop for every request
+        generated: a client-side ceiling of roughly 518 requests per second that a
+        ladder would report as the model's throughput collapse, and a stall that
+        inflates the ITL and TTFT samples of every other in-flight request as if it
+        were server latency.
+        """
+        if resolved in self._data_urls:
+            return
+        mime, _ = mimetypes.guess_type(resolved.name)
+        if mime is None:
+            # Refusing at load rather than mid-ladder is consistent with the
+            # missing-file and marker-mismatch checks above: the operator's next move
+            # is to look at that record, so the message names its line.
+            raise ValueError(
+                f"line {lineno}: cannot guess a MIME type for {resolved}; refusing to "
+                "default to jpeg, because a wrong type is a request the server may "
+                "decode differently than the corpus intended"
+            )
+        encoded = base64.b64encode(resolved.read_bytes()).decode("ascii")
+        url = f"data:{mime};base64,{encoded}"
+        self._data_urls[resolved] = url
+        self._media_bytes_resident += len(url)
 
     def _parse_record(self, record: dict, lineno: int, steps: list[str]) -> _MmRecord:
         turns = _resolve(record, steps, lineno, self.prompt_field)
@@ -485,6 +533,10 @@ class MultimodalJsonlCorpus(PromptSource):
                     # text one, the failure media_arrival_check exists to catch after
                     # the fact.
                     raise ValueError(f"line {lineno}: media file {resolved} does not exist")
+                if self.transport == "base64":
+                    # Under "url" nothing is read: no file bytes, no encoding, no
+                    # resident cost -- the server fetches from url_prefix instead.
+                    self._encode_once(resolved, lineno)
                 media.append(
                     _MediaRef(
                         kind=kind,
@@ -549,16 +601,11 @@ class MultimodalJsonlCorpus(PromptSource):
         if self.transport == "url":
             url = f"{self.url_prefix.rstrip('/')}/{ref.rel_path}"
         else:
-            resolved = self.media_root / ref.rel_path
-            mime, _ = mimetypes.guess_type(resolved.name)
-            if mime is None:
-                raise ValueError(
-                    f"cannot guess a MIME type for {resolved}; refusing to default to "
-                    "jpeg, because a wrong type is a request the server may decode "
-                    "differently than the corpus intended"
-                )
-            encoded = base64.b64encode(resolved.read_bytes()).decode("ascii")
-            url = f"data:{mime};base64,{encoded}"
+            # A pure lookup: the bytes were read and encoded once at construction, so
+            # the request path touches no disk. Blocking here instead would cap the
+            # load generator near 518 requests per second and bill the stall to the
+            # server's ITL and TTFT samples.
+            url = self._data_urls[self.media_root / ref.rel_path]
         key = "image_url" if ref.kind == "image" else "video_url"
         return {"type": key, key: {"url": url}}
 
@@ -579,6 +626,13 @@ class MultimodalJsonlCorpus(PromptSource):
         requires the effective sampling rate to be measured from the corpus and declared
         rather than derived here. A 0 below means the modality was measured and is
         absent; it is never None, because section 9.6 makes null mean "not reported".
+
+        media_bytes_resident is the total size of the encoded data URLs held in memory,
+        and it is the number an operator sizes max_records against. It is 0 under url
+        transport -- measured and genuinely none, never None. There is no hidden
+        ceiling on it: asking for the whole corpus holds the whole corpus in RAM, and
+        an unbounded corpus here is a declaration, not an accident. At this corpus's
+        mean media size, 21,494 records is about 10 GB of resident base64.
         """
         n = len(self._records)
         total_images = sum(1 for r in self._records for m in r.media if m.kind == "image")
@@ -600,6 +654,7 @@ class MultimodalJsonlCorpus(PromptSource):
             "image_resolution_mix": mix,
             "records": n,
             "records_with_reasoning": sum(1 for r in self._records if r.has_reasoning),
+            "media_bytes_resident": self._media_bytes_resident,
         }
 
 

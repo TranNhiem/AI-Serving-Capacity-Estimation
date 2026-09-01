@@ -705,16 +705,22 @@ def test_a_media_run_carries_the_measured_media_shape_in_its_manifest(tmp_path):
     """C4 requires images_per_request and its kin beside any throughput figure, and the
     only version of those numbers that is not someone's recollection is the one measured
     off the corpus. An absent key and a zeroed one say different things, which is why the
-    text run has no media_shape at all rather than a zeroed one."""
+    text run has no media_shape at all rather than a zeroed one. media_bytes_resident is
+    derived from the rendered request itself, so the assertion stays exact without
+    pinning a number that depends on the fixture's encoding."""
     workload = _media_workload(tmp_path)
     assert type(workload).__name__ == "_MediaShapeWorkload"
     assert type(workload.source).__name__ == "MultimodalJsonlCorpus"
+    content = workload.for_repetition(0)(0).messages[0]["content"]
+    image_part = next(part for part in content if part["type"] == "image_url")
+    expected_resident = len(image_part["image_url"]["url"])
     assert workload.manifest()["media_shape"] == {
         "images_per_request": 1.0,
         "videos_per_request": 0.0,
         "image_resolution_mix": [{"width": 1920, "height": 1080, "share": 1.0}],
         "records": 1,
         "records_with_reasoning": 0,
+        "media_bytes_resident": expected_resident,
     }
     assert workload.manifest()["media_placeholders_stripped"] is False
 

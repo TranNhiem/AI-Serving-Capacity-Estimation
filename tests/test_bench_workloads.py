@@ -11,6 +11,7 @@ from a published manifest is the strongest reproduction check there is, and it m
 require installing our HTTP client to perform.
 """
 
+import base64
 import json
 
 import pytest
@@ -552,7 +553,9 @@ def test_media_shape_reports_absent_video_as_zero_never_as_null(tmp_path):
     """0.0 means measured and genuinely absent; None means not reported. media_shape feeds
     the workload declaration directly, so emitting None here would put an unmeasurable
     claim into a published report -- and section 9.6 makes a reader trust that null really
-    means nobody looked."""
+    means nobody looked. media_bytes_resident follows the same rule: it is the measured
+    total of the data URLs the corpus holds in memory, derived here from the fixture
+    bytes so the equality stays exact rather than pinned to a magic number."""
     reasoning = _mm_record(
         "images/b.png",
         768,
@@ -566,6 +569,9 @@ def test_media_shape_reports_absent_video_as_zero_never_as_null(tmp_path):
         media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)],
     )
     corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    expected_resident = len(
+        "data:image/jpeg;base64," + base64.b64encode(_JPEG).decode("ascii")
+    ) + len("data:image/png;base64," + base64.b64encode(_PNG).decode("ascii"))
     assert corpus.media_shape() == {
         "images_per_request": 1.0,
         "videos_per_request": 0.0,
@@ -575,6 +581,7 @@ def test_media_shape_reports_absent_video_as_zero_never_as_null(tmp_path):
             {"width": 768, "height": 432, "share": 0.5},
             {"width": 1920, "height": 1080, "share": 0.5},
         ],
+        "media_bytes_resident": expected_resident,
     }
 
 
@@ -676,3 +683,106 @@ def test_a_text_only_source_produces_a_byte_identical_request_spec(tmp_path):
         extra={"ignore_eos": True},
     )
     assert isinstance(spec.messages[0]["content"], str)
+
+
+def test_a_base64_corpus_still_renders_after_its_media_file_is_deleted(tmp_path):
+    """The bytes are resident at construction, so the request path touches no disk.
+
+    The old code read and base64-encoded the file inside render_content: 1.93 ms of
+    blocking work per generated request (1.24 ms mean read, 0.69 ms mean encode) on the
+    driver's single-threaded event loop. That is a client-side ceiling of roughly 518
+    requests per second that has nothing to do with the server, so a ladder climbing
+    into it would report the load generator's limit as the model's throughput collapse.
+    And because the loop is blocked for those 1.93 ms, every other in-flight request
+    waits too, so the same milliseconds land in the ITL and TTFT samples of requests
+    that read nothing -- arriving in the report as server latency. Deleting the file
+    after construction and still rendering the identical data URL is the proof that
+    cost is gone from the request path.
+    """
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    before = corpus.render_content(seed_material=1, prefix=None)
+    (root / "images" / "a.jpg").unlink()
+    after = corpus.render_content(seed_material=2, prefix=None)
+    assert after == before
+
+
+def test_an_unguessable_mime_type_is_refused_at_construction_naming_the_line(tmp_path):
+    """A wrong MIME type is a request the server may decode differently than the corpus
+    intended, and defaulting to jpeg would make that substitution invisible in every
+    record the run writes. The refusal happens at construction -- before the first
+    request, not mid-ladder -- and names the record's line, because the operator's next
+    move is to look at that record."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.unknownext", 1920, 1080)],
+        media=[("images/a.unknownext", _JPEG)],
+    )
+    with pytest.raises(ValueError) as exc:
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    message = str(exc.value)
+    assert "line 1" in message
+    assert "refusing to default to jpeg" in message
+
+
+def test_media_bytes_resident_is_the_sum_of_the_data_urls_the_corpus_emits(tmp_path):
+    """The resident total is the number an operator sizes max_records against, so it
+    must be the number the run actually puts on the wire. Computing the expectation by
+    rendering every record -- rather than re-reading the files -- means the test fails
+    if the resident total ever drifts from what is sent."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [
+            _mm_record("images/a.jpg", 1920, 1080, rid="r1"),
+            _mm_record("images/b.png", 768, 432, rid="r2"),
+        ],
+        media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    emitted = set()
+    for seed in range(32):
+        parts = corpus.render_content(seed_material=seed, prefix=None)
+        emitted.add(parts[1]["image_url"]["url"])
+    assert len(emitted) == 2, "every record must be rendered for the sum to mean anything"
+    assert corpus.media_shape()["media_bytes_resident"] == sum(len(url) for url in emitted)
+
+
+def test_media_bytes_resident_is_a_measured_zero_of_type_int_under_url_transport(tmp_path):
+    """Under url transport nothing is read, so nothing is resident. That is a measured
+    and genuinely empty total, and section 9.6 makes null mean "not reported" -- so the
+    value must be the int 0, and a False or a None smuggled through the equality check
+    would be a different claim than the one the corpus measured."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [_mm_record("images/a.jpg", 1920, 1080)],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(
+        path=path, media_root=root, transport="url", url_prefix="http://host/media"
+    )
+    resident = corpus.media_shape()["media_bytes_resident"]
+    assert type(resident) is int
+    assert resident == 0
+
+
+def test_two_records_sharing_one_image_hold_its_bytes_once(tmp_path):
+    """The encode is keyed on the resolved path, so a corpus whose records share a media
+    file pays the read, the encode and the resident memory once. Counting it per record
+    would overstate the memory an operator sizes max_records against by the corpus's
+    duplication factor."""
+    path, root = _mm_corpus(
+        tmp_path,
+        [
+            _mm_record("images/a.jpg", 1920, 1080, rid="r1"),
+            _mm_record("images/a.jpg", 1920, 1080, rid="r2"),
+        ],
+        media=[("images/a.jpg", _JPEG)],
+    )
+    corpus = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    assert corpus.size == 2
+    url = corpus.render_content(seed_material=1, prefix=None)[1]["image_url"]["url"]
+    assert corpus.media_shape()["media_bytes_resident"] == len(url)

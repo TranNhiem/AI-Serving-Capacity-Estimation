@@ -103,14 +103,18 @@ cross-version comparisons valid.
   such; there was nowhere to put the label, so the same three rows read as a
   curve. Setting it does not raise the grade — a single point still caps at
   `partial` — it records that the limit was known.
-
-### Changed
-
 - `capacity_tiers.<tier>.headroom` now states in its description that it is a
   **divisor**, matching `sizing_result.headroom_factor`. The two descriptions
   previously said "factor" and "divisor" for the same quantity, so a generator
   and a validator reading them literally would disagree on the recommended tier
   by the square of the headroom.
+- A multimodal corpus reads and base64-encodes each media file **once, at construction**,
+  and the request path is a dict lookup. `media_shape()` gained a `media_bytes_resident`
+  total so the memory that buys is declared rather than hidden: it is the size of the
+  encoded data URLs held in RAM, `0` under `url` transport because nothing is read there,
+  and it is the number an operator sizes `media_max_records` against. There is no ceiling
+  on it -- asking for the whole corpus holds the whole corpus, which at the FineVision
+  corpus's mean media size is about 10 GB for 21,494 records.
 - `ascep.capacity.fits` raises `ValueError` when `min_kv_tokens` is asserted
   without `kv_per_token`. It previously returned `True` as soon as the weights
   loaded, so a caller who explicitly asked for a KV floor got a "fits" verdict
@@ -121,6 +125,22 @@ cross-version comparisons valid.
 ### Removed
 
 ### Fixed
+
+- **The load generator no longer does blocking file I/O on the request path.**
+  `MultimodalJsonlCorpus` read and base64-encoded the media inside `render_content`, which
+  the driver calls from its single-threaded asyncio loop between issuing requests. Measured
+  on the FineVision corpus that is 1.93 ms per request (1.24 ms read, 0.69 ms encode; p95
+  read 1.96 ms, max 16.8 ms): a client-side ceiling of roughly 518 requests per second with
+  nothing to do with the server, so a ladder climbing into it would have published the load
+  generator's limit as the model's throughput collapse. Worse, each blocking call stalled
+  every other in-flight request, so the same milliseconds landed in the ITL and TTFT samples
+  of requests that read nothing -- client stalls arriving in the report as server latency,
+  which is the one thing the measured tier exists to rule out. No published number is
+  affected: no multimodal run has been measured yet.
+- An unguessable media MIME type is refused at load, naming the record's line, rather than
+  mid-ladder. It joins the missing-file and marker-mismatch checks, which refuse there for
+  the same reason: after the GPU hours are spent is the wrong time to learn the corpus was
+  unusable.
 
 - The `chatbot-10k-dau` document-assistant walkthrough quoted its two capacity
   floors (610 KV, 784 throughput) at **4 GPUs** immediately after a table of
