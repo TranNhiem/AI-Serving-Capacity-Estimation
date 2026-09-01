@@ -222,33 +222,22 @@ def test_a_bundle_backed_example_verifies_its_own_manifest(bundle):
     assert not problems, "\n".join(problems)
 
 
-def test_a_rung_row_is_the_median_repetition_and_not_a_pool_of_all_three(bundle):
-    """A pooled row is a row no window exhibited; a fourth repetition shifts the median.
+def _rung_mismatches(bundle: _Bundle) -> list[str]:
+    """Every published rung figure that the bundled records do not reduce back to.
 
-    The failure this test exists to catch is a rung row computed by concatenating the
-    rung's repetitions and reducing the pool: pooled percentiles sit between the per-window
-    ones, pooled ``output_tok_s`` is a rate no single window sustained, and such a row
-    agrees with itself, its digests and its schema while quoting a rung nobody measured.
-    The same address houses a second failure -- counting the section 5 confirmation window
-    as a fourth repetition, which can move the chosen median at exactly the boundary rung
-    the confirmation window guards. Only re-running the harness's actual rule sees either.
-
-    That rule, re-implemented here independently: group each rung's windows by
+    The harness's rule, re-implemented here independently: group each rung's windows by
     concurrency; drop repetitions whose index is not below the declared repetition count
     (the confirmation repetition is deliberately not counted, chapter 7 section 254);
-    reduce each surviving repetition SEPARATELY through ``reduce_window`` with that
-    window's own ``t0`` and ``window_s``; discard repetitions with no throughput figure
-    unless every repetition is in that state (``None`` means tokens were never counted,
-    not "slowest window"); stable-sort the survivors by ``output_tok_s``; and take the
-    LOWER median, ``(len - 1) // 2``, so an even count picks the slower of the two middle
-    windows. The harness's private picker is deliberately not imported: a test that calls
-    the same helper the harness calls cannot catch the harness getting the rule wrong.
+    reduce each surviving repetition SEPARATELY through ``reduce_window`` with that window's
+    own ``t0`` and ``window_s``; take the median by :func:`_median_counted_repetition`; and
+    compare that one reduction's fields against the published row. The harness's private
+    picker is deliberately not imported: a test that calls the same helper the harness calls
+    cannot catch the harness getting the rule wrong.
 
-    The SLO gates are reconstructed from ``run.slo_gates`` rather than redeclared here.
-    Warm-up traffic is not pre-filtered: the bundle retains it and ``reduce_window``
-    excludes it itself, exactly as the harness's own reduction did. Declaration order is
-    execution order for these windows, so the stable sort breaks ties the way the
-    harness's does.
+    The SLO gates are reconstructed from ``run.slo_gates`` rather than redeclared. Warm-up
+    traffic is not pre-filtered: the bundle retains it and ``reduce_window`` excludes it
+    itself, exactly as the harness's own reduction did. Declaration order is execution order
+    for these windows, so the stable sort breaks ties the way the harness's does.
     """
     run = bundle.report["run"]
     gate_block = run["slo_gates"]
@@ -311,9 +300,78 @@ def test_a_rung_row_is_the_median_repetition_and_not_a_pool_of_all_three(bundle)
                     "but the lower-median counted repetition of the bundled records "
                     f"reduces to {actual!r}"
                 )
+    return mismatches
+
+
+def _assert_recomputes(bundle: _Bundle) -> None:
+    mismatches = _rung_mismatches(bundle)
     assert not mismatches, (
         "figures in run.results are not the median counted repetition of the bundled "
         "records:\n  " + "\n  ".join(mismatches)
+    )
+
+
+def test_a_rung_row_is_the_median_repetition_and_not_a_pool_of_all_three(bundle):
+    """A pooled row is a row no window exhibited; a fourth repetition shifts the median.
+
+    The failure this test exists to catch is a rung row computed by concatenating the rung's
+    repetitions and reducing the pool: pooled percentiles sit between the per-window ones,
+    pooled ``output_tok_s`` is a rate no single window sustained, and such a row agrees with
+    itself, its digests and its schema while quoting a rung nobody measured. The same
+    address houses a second failure -- counting the section 5 confirmation window as a
+    fourth repetition, which can move the chosen median at exactly the boundary rung the
+    confirmation window guards. Only re-running the harness's actual rule sees either.
+    """
+    _assert_recomputes(bundle)
+
+
+def test_the_recomputation_agrees_with_a_bundle_the_harness_has_just_written(
+    tmp_path, monkeypatch
+):
+    """The recomputation above skips until an example ships a bundle. This one never skips.
+
+    A checker that has never run against a bundle is not yet a checker. Worse, the two ways
+    it can be wrong are both silent: a rule that drifts from the harness's reports
+    mismatches on every example at once and reads as a broken example, and a rule that is
+    accidentally the harness's own -- pooling where the harness pools -- reports a clean
+    match forever. Only a bundle whose provenance is known can tell those apart, and the
+    offline adapter in ``test_cli_bench`` produces one on any machine, in under a second,
+    with no GPU and no server.
+
+    The ladder it drives ends with a section 5 confirmation window at the boundary rung, so
+    the bundle written here carries one more window than the rung is scored on. That is the
+    case the comparison most needs: counting it would move the median at exactly the rung
+    whose grade the confirmation exists to defend.
+    """
+    pytest.importorskip("httpx", reason="ascep bench needs the [run] extra")
+    # Imported inside the test, not at module scope: test_cli_bench skips itself when httpx
+    # is absent, and a module-level import would turn that skip into a collection error for
+    # every test in this file, including the ones that need no harness at all.
+    import test_cli_bench as harness
+
+    from ascep.cli import main
+
+    config_path = harness._write(tmp_path, harness._config(tmp_path))
+    harness._run_offline(monkeypatch)
+    assert main(["bench", config_path]) == 0, "the offline ladder did not complete"
+
+    report = _load(tmp_path / "report.json")
+    bundle_dir = tmp_path / "bundle"
+    with (bundle_dir / "records.jsonl").open(encoding="utf-8") as fp:
+        records = read_records(fp)
+    run_configs = _load(bundle_dir / "run_configs.json")
+    assert len(run_configs["windows"]) > report["run"]["repeats"] * len(report["run"]["results"]), (
+        "this ladder was expected to end with a confirmation window beyond the counted "
+        "repetitions; without one the test is not exercising the case it exists for"
+    )
+    _assert_recomputes(
+        _Bundle(
+            example_dir=tmp_path,
+            report=report,
+            bundle_dir=bundle_dir,
+            records=records,
+            run_configs=run_configs,
+        )
     )
 
 
