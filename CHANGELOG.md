@@ -18,10 +18,9 @@ cross-version comparisons valid.
 - **Declared-value notes (`notes`).** Every declaration layer -- hardware,
   model, serving, workload, and the nested `media_preprocessing` block -- gains
   an optional `notes` object, keyed by field name, recording why a non-null
-  declared value is what it is: the attention backend that was a forced
-  substitution rather than a tuning choice, the `mm_processor_cache_gb` of 0 set
-  on purpose so preprocessing cost stays inside the measurement, the `cpu_cores`
-  that is a cluster allocation and not the node's. The `(U)` mechanism could
+  declared value is what it is: the `mm_processor_cache_gb` of 0 set on purpose
+  so preprocessing cost stays inside the measurement, the `cpu_cores` that is a
+  cluster allocation and not the node's. The `(U)` mechanism could
   only ever justify a null, and authors were already abusing `(U)` reason fields
   to carry value-justifications; a convention people have to abuse is a missing
   feature. Three rules keep notes honest: a note never substitutes for a value

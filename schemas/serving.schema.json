@@ -313,7 +313,7 @@
     },
     "notes": {
       "type": "object",
-      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that an attention backend was a forced substitution rather than a tuning choice, so a reader can tell a fallback from a decision. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that prefix_caching is on because production runs it on, not because it flattered the measurement. Keys MUST be field names this schema declares -- a note is an annotation on a declaration, not a place to record something the schema has no field for, and an invented key puts a fact where no reader queries it and no checker sees it. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade.",
       "additionalProperties": {
         "type": "string",
         "minLength": 1
