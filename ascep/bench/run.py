@@ -1112,6 +1112,29 @@ def _mean_reported(records, field):
     return sum(values) / len(values) if values else None
 
 
+def _mean_context(records):
+    """Mean of the per-request context lengths the server counted, else None.
+
+    C4 binds every throughput figure in a row to the context length beside it, so that
+    length must be one some request actually occupied. mean(input_tokens) +
+    mean(output_tokens) fails that: each mean is taken over whichever records happened
+    to carry that count, so a record reporting only one side still votes in its half,
+    and the sum of the two can be a context no request ever had -- yet it would be
+    published in a row tagged (M). A record therefore contributes its input + output
+    only when it carries both counts; a half-reported request contributes nothing.
+    """
+    contexts = [
+        record.input_tokens + record.output_tokens
+        for record in records
+        if record.in_window and record.input_tokens is not None and record.output_tokens is not None
+    ]
+    mean = sum(contexts) / len(contexts) if contexts else None
+    # An empty prompt with an empty completion can report 0 + 0, and a mean of those is
+    # 0.0: a measured context of no tokens, which is not a context. The schema floor is
+    # exclusive anyway, so it takes the same justified null as no measurement at all.
+    return mean if mean else None
+
+
 def _conformance_note(censor, result):
     """Write the note that stops ``non-conforming`` reading as a verdict on the hardware."""
     note = (
@@ -1293,6 +1316,7 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
             "prompts actually cost were never counted; the configured value is a request, "
             "not a measurement, and publishing it in a row tagged (M) would launder it"
         )
+        _measured(row, "context_tokens", _mean_context(records), no_usage)
         _measured(row, "input_tokens", _mean_reported(records, "input_tokens"), no_usage)
         _measured(row, "output_tokens", _mean_reported(records, "output_tokens"), no_usage)
         _known(row, "concurrency", concurrency)

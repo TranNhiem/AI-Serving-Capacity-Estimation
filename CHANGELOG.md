@@ -148,6 +148,22 @@ cross-version comparisons valid.
 
 ### Fixed
 
+- **`ascep bench` measured the context length of every rung and never published
+  it.** The identifier `context_tokens` did not appear anywhere in
+  `ascep/bench/`, though the comment above the row's token counts already said
+  "C4 binds every throughput figure in this row to the context length beside
+  it". Because the key was absent rather than null, C1 never fired, and the
+  visible symptom was C4 reporting the opposite of the truth: on a real
+  three-rung H100 ladder with zero errors it warned that *zero* distinct context
+  lengths had been measured, when one had, at about 1316 tokens per request. The
+  Markdown renderer meanwhile printed "not reported context" beside both halves
+  of the sum it was holding, and C7's chapter-5.5 envelope exemption -- keyed on
+  `row["context_tokens"] <= envelope` -- could never apply to a report this
+  harness wrote. Rows now carry `context_tokens` as the mean of the per-request
+  `input_tokens + output_tokens` the server accounted. It is taken per record,
+  not as `mean(input) + mean(output)`: each of those means is over whichever
+  records carried that count, so their sum can be a context no request ever had.
+
 - **The rendered Markdown report showed a rung that did not complete as a clean
   pass.** The benchmark table's SLO column was driven by `slo_pass` alone, which
   grades only the pooled sustained window, so a rung whose `outcome` was `failed`

@@ -1123,3 +1123,94 @@ def test_ignore_eos_false_with_a_null_length_is_accepted_and_sends_no_max_tokens
     assert _dry_run(tmp_path, **overrides) == 0
     workload = bench_run._build_workload(_config(tmp_path, **overrides), str(tmp_path))
     assert workload.for_repetition(0)(0).max_tokens is None
+
+
+def test_the_results_row_publishes_the_measured_context_length_not_the_configured_request_shape(
+    tmp_path, monkeypatch
+):
+    """C4 binds every throughput figure in the row to the context beside it, and the only
+    context length that is not a request is the one the server counted. The configured
+    512 words of synthetic filler tokenise to more than 512 tokens, so a row carrying the
+    configured 640 (512 + 128) would publish its throughput against a context no request
+    was served at -- while the server actually accounted 768 per request."""
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline(monkeypatch, reported_input_tokens=640)
+    assert main(["bench", path]) == 0
+    rows = _report(tmp_path)["run"]["results"]
+    assert [row["context_tokens"] for row in rows] == [768.0, 768.0, 768.0]
+
+
+def test_a_rung_the_server_never_counted_leaves_the_context_out_rather_than_inventing_one(
+    tmp_path, monkeypatch
+):
+    """`run.results[]` carries an anyOf, not a required pair: `ascep init` reports it as a
+    decision -- context_tokens OR input_tokens -- and the skeleton emits neither, so
+    neither has a `_u_reason` companion and `_unknown` will not invent one. A server that
+    counts nothing therefore leaves bench with no branch it can satisfy, and the honest
+    outcome is the refusal it already prints, not a context length back-computed from the
+    request shape. This pins the absence: filling the key from the config would put a
+    number in a row tagged (M) that no request was served at."""
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline_with_usage(monkeypatch, lambda index: (None, None))
+    assert main(["bench", path]) == 3, (
+        "an unvalidatable draft must be reported, not shipped quietly"
+    )
+    rows = _report(tmp_path)["run"]["results"]
+    assert all("context_tokens" not in row for row in rows)
+
+
+def test_the_context_mean_is_taken_over_complete_records_not_as_a_sum_of_two_means(
+    tmp_path, monkeypatch
+):
+    """Half the records report both counts (600 + 100) and half report an input count with
+    no output count (800, None). mean(all inputs) + mean(all outputs) is 700 + 100 = 800,
+    a context length no request ever occupied; the mean over the per-record sums of the
+    complete records is 700. Only 700 may be published in a row tagged (M) -- this is the
+    assertion that fails if the helper is ever "simplified" into adding two means."""
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline_with_usage(
+        monkeypatch, lambda index: (600, 100) if index % 2 == 0 else (800, None)
+    )
+    assert main(["bench", path]) == 0
+    rows = _report(tmp_path)["run"]["results"]
+    assert all(row["context_tokens"] == 700.0 for row in rows)
+
+
+def _run_offline_with_usage(monkeypatch, usage_for):
+    """Patch the adapter as _run_offline does, with per-request usage from ``usage_for``.
+
+    ``usage_for`` receives the request ordinal, counting from zero across the whole ladder,
+    and returns the ``(input_tokens, output_tokens)`` the record will carry; ``None`` on
+    either side is a server that answered the request without counting that side.
+    """
+    import ascep.cli as cli
+    from ascep.bench.records import Outcome, RequestRecord
+
+    issued = {"n": 0}
+
+    class _Fake:
+        name = "fake"
+
+        def __init__(self, *a, **k):
+            pass
+
+        async def aclose(self):
+            pass
+
+        async def issue(self, spec, *, clock, sink=None):
+            index = issued["n"]
+            issued["n"] = index + 1
+            input_tokens, output_tokens = usage_for(index)
+            t = clock()
+            return RequestRecord(
+                request_id=spec.request_id,
+                issued_ts=t,
+                outcome=Outcome.OK,
+                first_token_ts=t + 0.001,
+                token_ts=[t + 0.001 + 0.0005 * i for i in range(8)],
+                end_ts=t + 0.005 + 0.0005 * 7,
+                output_tokens=output_tokens,
+                input_tokens=input_tokens,
+            )
+
+    monkeypatch.setattr(cli, "_bench_adapter", lambda config: _Fake(), raising=False)
