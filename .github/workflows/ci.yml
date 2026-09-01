@@ -25,10 +25,12 @@ jobs:
       - name: Unit tests
         run: pytest -q
       - name: the auditable modules must import with no third-party deps
-        # Three promises, one mechanism. `capacity` is the formula set: if it grows a
+        # Four promises, one mechanism. `capacity` is the formula set: if it grows a
         # dependency, anyone wanting to check the maths has to adopt our stack first.
-        # `bench.records` is the published record format: re-deriving someone else's
-        # percentiles from their records must not require our HTTP client either.
+        # `bench.records` is the published record format and `bench.metrics` is the reduction
+        # applied to it, so re-deriving someone else's percentiles from their records -- the
+        # single most useful thing a sceptical reader can do -- must not require our HTTP
+        # client either.
         # `bench.adapters.base` is the contract a third party implements to support their own
         # framework, so it must be readable and subclassable without installing ours -- which
         # also pins the package initialiser, since one eager re-export of the concrete
@@ -60,6 +62,7 @@ jobs:
           targets = (
               "ascep.capacity",
               "ascep.bench.records",
+              "ascep.bench.metrics",
               "ascep.bench.adapters.base",
           )
           for target in targets:
