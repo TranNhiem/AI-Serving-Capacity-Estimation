@@ -16,8 +16,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
-_VALID_PROVENANCE = frozenset({"M", "I", "T", "U"})
-_TIERS = ("theoretical", "measured", "sustainable", "recommended")
+from ascep.capacity import Provenance, Tier
+
+# Derived, never retyped. A grader holding its own copy of the vocabulary it grades against
+# will pass a report that the schemas reject, or reject one they accept, the first time the
+# two drift — and the drift is invisible because each file reads correctly on its own.
+_VALID_PROVENANCE = frozenset(p.value for p in Provenance)
+_TIERS = tuple(t.value for t in Tier)
 _TIER_NUMBER_FIELDS = (
     "max_concurrent_users",
     "max_tokens_per_s",

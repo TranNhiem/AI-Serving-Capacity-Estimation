@@ -56,6 +56,18 @@ class Tier(str, Enum):
     RECOMMENDED = "recommended"
 
 
+class Provenance(str, Enum):
+    """How a reported number came to exist (C2). One definition, here, because the tag is
+    what separates a measurement from a guess — and a benchmark harness, a validator and a
+    renderer that each carry their own copy will eventually disagree about what ``T`` means
+    and publish an inferred number as a measured one."""
+
+    MEASURED = "M"  # observed on the hardware under test
+    INFERRED = "I"  # computed from (M) values by a formula in this module
+    THEORETICAL = "T"  # from a datasheet or a roofline; never observed
+    UNMEASURED = "U"  # not established; requires a stated reason (C1)
+
+
 class Constraint(str, Enum):
     """Which floor binds. Reporting this is mandatory — a capacity number without its
     binding constraint cannot be acted on, because it does not say what to buy."""

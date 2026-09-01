@@ -16,7 +16,7 @@ import re
 import pytest
 from jsonschema import Draft202012Validator as Validator
 
-from ascep.capacity import DTYPE_BYTES, Constraint, Tier
+from ascep.capacity import DTYPE_BYTES, Constraint, Provenance, Tier
 
 ROOT = pathlib.Path(__file__).parent.parent
 SCHEMAS = sorted(glob.glob(str(ROOT / "schemas" / "*.schema.json")))
@@ -58,6 +58,7 @@ def test_enums_match_capacity_vocabulary(schema):
     for key, allowed in (
         ("tier", {t.value for t in Tier}),
         ("binding_constraint", {c.value for c in Constraint}),
+        ("provenance", {p.value for p in Provenance}),
     ):
         for enum in _enums(schema, key):
             # None is permitted on every enum: rule C1 requires an unknown value to be
