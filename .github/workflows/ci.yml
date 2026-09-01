@@ -27,17 +27,25 @@ jobs:
       - name: capacity.py must import with no third-party deps
         # The formula set is the auditable core of the protocol. If it ever grows a
         # dependency, anyone wanting to check the maths has to adopt our stack first.
+        # Third-party means "came out of site-packages", not "absent from
+        # sys.stdlib_module_names": that attribute is 3.10+ and this job runs on the
+        # 3.9 leg of the matrix too, where it raised AttributeError and failed the
+        # build for a reason that had nothing to do with the dependency being checked.
         run: |
           python - <<'EOF'
           import subprocess, sys, textwrap
           code = textwrap.dedent("""
-              import sys
+              import os, sys, sysconfig
               before = set(sys.modules)
               import ascep.capacity  # noqa: F401
-              stdlib = set(sys.stdlib_module_names)
-              new = {m.split('.')[0] for m in set(sys.modules) - before}
-              extra = {m for m in new if m not in stdlib and not m.startswith('ascep')
-                       and not m.startswith('_')}
+              paths = sysconfig.get_paths()
+              sitedirs = tuple(os.path.realpath(p) + os.sep
+                               for p in {paths.get('purelib'), paths.get('platlib')} if p)
+              def installed(name):
+                  f = getattr(sys.modules.get(name), '__file__', None)
+                  return bool(f) and os.path.realpath(f).startswith(sitedirs)
+              extra = {m.split('.')[0] for m in set(sys.modules) - before
+                       if installed(m) and not m.startswith(('ascep', '_'))}
               assert not extra, f"ascep.capacity pulled in non-stdlib modules: {sorted(extra)}"
               print("ascep.capacity is stdlib-only")
           """)

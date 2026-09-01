@@ -74,10 +74,12 @@ cross-version comparisons valid.
 - `ascep.init`'s docstring claimed `if`/`then` requirements surface through
   `decisions()`; only `anyOf`/`oneOf` ever did. The docstring now says what
   actually happens and why it is the right behaviour.
-- The two tests that guard the stdlib-only promise used `sys.stdlib_module_names`,
-  which arrived in Python 3.10 while `requires-python` is `>=3.9` — so the
-  `py3.9` CI job failed with `AttributeError` and the guarantee went unchecked on
-  the oldest supported interpreter. They now detect a third-party import by
+- The three checks that guard the stdlib-only promise — two tests and the
+  `capacity.py must import with no third-party deps` step in `ci.yml` — used
+  `sys.stdlib_module_names`, which arrived in Python 3.10 while
+  `requires-python` is `>=3.9`. The `py3.9` job therefore failed with
+  `AttributeError` and the guarantee went unchecked on the oldest supported
+  interpreter. All three now detect a third-party import by
   install location (`sysconfig` `purelib`/`platlib`), which works on every
   supported version and states the promise more directly: what is forbidden is
   reaching a *pip-installed* dependency.
