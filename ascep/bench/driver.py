@@ -35,9 +35,16 @@ class WindowPolicy:
     window_s: float
     # No default: this number changes the reported error rate, so it must be chosen.
     drain_deadline_s: float
+    # No default either, for the same reason one layer up. Section 7.2 makes think time a
+    # required declaration and permits zero only when the product really does submit the
+    # next request immediately; a default of zero grants that permission to every caller
+    # who forgot to carry the workload's figure across, and the run then saturates the
+    # server with fewer users than the report claims -- with nothing in the records saying
+    # so, because a request that was never delayed looks exactly like one that had no
+    # delay to make.
+    think_time_s: float
     warmup_requests: int = 0
     warmup_s: float = 0.0
-    think_time_s: float = 0.0
     loop: str = "closed"
     repetition: int = 0
     poll_interval_s: float = 0.005

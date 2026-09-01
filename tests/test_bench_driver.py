@@ -199,13 +199,24 @@ def test_a_policy_cannot_be_built_without_declaring_a_drain_deadline():
     A default would be a number nobody chose deciding whether a straddler counted.
     """
     with pytest.raises(TypeError):
-        WindowPolicy(concurrency=8, window_s=60.0, warmup_requests=8)
+        WindowPolicy(concurrency=8, window_s=60.0, think_time_s=0.0, warmup_requests=8)
+
+
+def test_a_policy_cannot_be_built_without_declaring_think_time():
+    """Section 7.2 makes think time a required declaration for a closed loop.
+
+    Zero is a legitimate answer and the common one, which is exactly why it must not be the
+    default: a caller who declared 1.2 s in the workload and forgot to carry it into the
+    policy would run a saturation test the report describes as interactive.
+    """
+    with pytest.raises(TypeError):
+        WindowPolicy(concurrency=8, window_s=60.0, drain_deadline_s=5.0, warmup_requests=8)
 
 
 def test_a_policy_without_warm_up_is_rejected():
     """Section 7.3: every repetition includes its own warm-up. Zero of both is not one."""
     with pytest.raises(ValueError, match="warm-up"):
-        WindowPolicy(concurrency=8, window_s=60.0, drain_deadline_s=5.0)
+        WindowPolicy(concurrency=8, window_s=60.0, drain_deadline_s=5.0, think_time_s=0.0)
 
 
 @pytest.mark.parametrize(
@@ -218,7 +229,9 @@ def test_a_policy_without_warm_up_is_rejected():
     ],
 )
 def test_a_policy_with_an_impossible_operating_point_is_rejected(kw):
-    base = dict(concurrency=8, window_s=60.0, drain_deadline_s=5.0, warmup_requests=8)
+    base = dict(
+        concurrency=8, window_s=60.0, drain_deadline_s=5.0, think_time_s=0.0, warmup_requests=8
+    )
     with pytest.raises(ValueError):
         WindowPolicy(**{**base, **kw})
 
@@ -231,7 +244,12 @@ def test_an_open_loop_policy_says_it_is_not_implemented_rather_than_running_clos
     """
     with pytest.raises(ValueError, match="open"):
         WindowPolicy(
-            concurrency=8, window_s=60.0, drain_deadline_s=5.0, warmup_requests=8, loop="open"
+            concurrency=8,
+            window_s=60.0,
+            drain_deadline_s=5.0,
+            think_time_s=0.0,
+            warmup_requests=8,
+            loop="open",
         )
 
 
@@ -275,6 +293,7 @@ def _policy(**kw):
         concurrency=4,
         window_s=0.20,
         drain_deadline_s=0.20,
+        think_time_s=0.0,
         warmup_requests=4,
         repetition=1,
     )
