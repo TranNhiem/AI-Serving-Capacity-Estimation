@@ -270,6 +270,7 @@
     "peak_concurrent_users": 400,
     "active_sessions": 160.0,
     "avg_context_tokens": 2000.0,
+    "avg_context_tokens_tag": "I",
     "demand_tok_s": 2400.0
   },
   "capacity_tiers": {

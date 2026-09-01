@@ -395,6 +395,18 @@ def _warn_schema_skipped(findings: list[Finding]) -> None:
 # ---------------------------------------------------------------------- C2 provenance
 
 
+#: Numbers whose provenance travels in a sibling ``*_tag`` rather than a ``provenance`` key,
+#: as (layer, number, tag). The schemas require the number and leave the tag optional, so
+#: nothing but this table stops the three highest-lever figures in a report -- the weight
+#: bytes the whole weights floor rests on, the user count the demand is scaled from, and the
+#: mean context the KV floor divides by -- from being published with no provenance at all.
+_TAGGED_NUMBERS = (
+    ("model", "weight_bytes_on_disk", "weight_bytes_tag"),
+    ("workload", "daily_active_users", "daily_users_tag"),
+    ("workload", "avg_context_tokens", "avg_context_tokens_tag"),
+)
+
+
 def _check_c2(report: dict, findings: list[Finding]) -> None:
     _walk_provenance(report, "", findings)
     tag_hint = (
@@ -407,6 +419,21 @@ def _check_c2(report: dict, findings: list[Finding]) -> None:
     for index, row in _scaling_rows(report):
         if row.get("provenance") is None and _has_number(row, _SCALING_NUMBER_FIELDS):
             findings.append(Finding("C2", "error", f"scaling.{index}.provenance", tag_hint))
+    for layer, number, tag in _TAGGED_NUMBERS:
+        section = _get(report, layer)
+        if not isinstance(section, dict) or section.get(number) is None:
+            # A null number is C1's business: it needs a reason, not a provenance tag. Asking
+            # for both would make every honestly-unmeasured field fail two rules for one gap.
+            continue
+        if section.get(tag) is None:
+            findings.append(
+                Finding(
+                    "C2",
+                    "error",
+                    f"{layer}.{tag}",
+                    f"{layer}.{number} is published as a number with no provenance. {tag_hint}",
+                )
+            )
 
 
 def _walk_provenance(node: Any, path: str, findings: list[Finding]) -> None:

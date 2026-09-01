@@ -1,0 +1,20 @@
+# A null with nothing to say for itself
+
+**Rule broken:** C1
+**The one edit:** `hardware.node_exclusivity` is set to `null`
+
+A reader who re-runs this workload and gets lower throughput has no way to know whether the original run shared its node with another tenant's job, and contention from a co-located process is the single most common reason a published throughput figure fails to reproduce. The null here says "we forgot", because nothing distinguishes it from a field that was never filled in; only a null paired with a node_exclusivity_u_reason string starting "(U)" would say "we looked and could not tell". Omitting the field is no better: C1 requires it to be present, so a missing key fails the same rule from the other direction. The case grades non-conforming because the declaration is incomplete where it matters most: an unknown exclusivity state silently contaminates every measured capacity figure in the file.
+
+## Reproduce
+
+```bash
+ascep conformance examples/negative/c1/report.json
+```
+
+Every other byte of this report is identical to `examples/negative/baseline.json`, which grades
+`conforming` with no findings. Diff the two to see the edit on its own:
+
+```bash
+diff <(jq -S . examples/negative/baseline.json) \
+     <(jq -S . examples/negative/c1/report.json)
+```

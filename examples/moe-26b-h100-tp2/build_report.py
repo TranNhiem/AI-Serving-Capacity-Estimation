@@ -425,6 +425,11 @@ def build() -> dict:
             "peak_concurrent_users": work.peak_concurrent_users(),
             "active_sessions": work.active_sessions(),
             "avg_context_tokens": work.avg_context_tokens(),
+            # (I), and the tag has to name the formula: this is the declared default rather
+            # than a measured context distribution. It is the number the KV floor divides by,
+            # so a reader who mistakes the default for a measurement inherits its error at
+            # full weight in the session count.
+            "avg_context_tokens_tag": "I",
             "demand_tok_s": work.demand_tok_s(),
         },
         "capacity_tiers": {

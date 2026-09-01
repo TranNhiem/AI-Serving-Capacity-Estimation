@@ -135,6 +135,33 @@ def test_a_c1_error_forces_non_conforming(report):
     assert check(report).level == "non-conforming"
 
 
+# --- C2: provenance tagging -------------------------------------------------------------
+
+
+def test_a_number_whose_provenance_travels_in_a_sibling_tag_still_needs_one(report):
+    """Three figures carry provenance in a ``*_tag`` field rather than a ``provenance`` key,
+    and the schemas require the number while leaving the tag optional.
+
+    Nothing but this check stands between that and an untagged claim. It is not hypothetical:
+    the published moe-26b example shipped an untagged ``avg_context_tokens`` -- the number the
+    KV floor divides by -- and graded partial on unrelated grounds the whole time.
+    """
+    report["workload"]["avg_context_tokens"] = 2000.0
+    report["workload"].pop("avg_context_tokens_tag", None)
+    findings = [f for f in check(report).errors if f.rule == "C2"]
+    assert [f.path for f in findings] == ["workload.avg_context_tokens_tag"]
+
+
+def test_an_untagged_number_that_is_null_is_c1s_business_not_c2s(report):
+    """An honestly unmeasured field needs a reason, not a provenance tag. Charging it under
+    both rules would report two defects for one gap and send the author looking for a second
+    thing to fix."""
+    report["workload"]["avg_context_tokens"] = None
+    report["workload"]["avg_context_tokens_u_reason"] = "(U) no context distribution recorded"
+    report["workload"].pop("avg_context_tokens_tag", None)
+    assert not [f for f in check(report).errors if f.rule == "C2"]
+
+
 # --- C3: topology binding -------------------------------------------------------------
 
 

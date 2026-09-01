@@ -1,0 +1,3 @@
+Every threshold value is unchanged, and every SLO rung still passes exactly as it did in the baseline. What changed is the declared_before_run flag: the gates were chosen after the latency numbers were already on screen. A gate picked that way is a description of the run, not a test of it, because you can always set the limit one notch above whatever the engine happened to produce -- a failing run becomes passing by moving the line, not by changing the result.
+
+A reader comparing two published configs cannot tell whether "all SLO gates passed" means the system met a target or the target was fitted to the system. The grade drops to partial: the measurements themselves are still trustworthy, but the pass/fail claim they support is not.
