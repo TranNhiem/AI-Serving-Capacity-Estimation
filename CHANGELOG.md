@@ -148,6 +148,24 @@ cross-version comparisons valid.
 
 ### Fixed
 
+- **`ascep bench` computed, and then discarded, the reason for every failed or
+  invalid ladder rung.** `grade_rung` and `grade_ladder` build `RungResult.reasons`
+  as full sentences with section citations -- which repetition failed, on which gate
+  or boundary condition, and why that fails the rung -- but nothing outside the
+  grader ever read them: the report row carried only `slo_pass` and `outcome`, and
+  the only consumer of `reasons` in the whole package was the line that appends to
+  it. Measured consequence on a live H100 calibration ladder: the concurrency-8 rung
+  published `slo_pass: true` and `outcome: "failed"` in the same row with no third
+  field to reconcile them -- two keys answering different questions (the pooled
+  window verdict versus any single failing repetition, section 5) reading as a
+  harness contradiction, with the operator's only recourse to re-derive the grading
+  by hand from `records.jsonl`, exactly the work `reasons` had already done. Report
+  rows now carry `reasons` whenever the outcome is `failed` or `invalid`, and the run
+  schema requires it there (an `if`/`then` beside the `itl_population` one), so a
+  boundary published with no stated cause cannot validate. The requirement binds only
+  rows claiming a non-COMPLETE outcome: every result row under `examples/` is
+  `complete` or null, so no published report gains a key or is invalidated.
+
 - **The load generator no longer does blocking file I/O on the request path.**
   `MultimodalJsonlCorpus` read and base64-encoded the media inside `render_content`, which
   the driver calls from its single-threaded asyncio loop between issuing requests. Measured

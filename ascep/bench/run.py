@@ -1323,6 +1323,12 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
             "the reducer could not grade this rung against the declared gates",
         )
         _known(row, "outcome", rung.outcome.value.lower())
+        # A non-COMPLETE row must arrive with the sentence that produced the verdict:
+        # without it, a rung can publish "failed" beside a passing slo_pass -- two keys
+        # answering different questions -- and read as a harness contradiction, leaving the
+        # operator to re-derive from records.jsonl what grading already knew.
+        if rung.reasons:
+            _known(row, "reasons", list(rung.reasons))
         _unknown(
             row,
             "gpu_util_pct",

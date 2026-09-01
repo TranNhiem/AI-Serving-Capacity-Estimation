@@ -261,6 +261,36 @@
                 }
               }
             }
+          },
+          {
+            "$comment": "slo_pass grades the pooled window while outcome fails the rung on any single failing repetition, so one row can legitimately carry slo_pass: true beside outcome: 'failed'; published without the grading sentences, that pair reads as a harness contradiction and the boundary it asserts is unexplained.",
+            "if": {
+              "required": [
+                "outcome"
+              ],
+              "properties": {
+                "outcome": {
+                  "enum": [
+                    "failed",
+                    "invalid"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "reasons"
+              ],
+              "properties": {
+                "reasons": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -414,6 +444,13 @@
               null
             ],
             "description": "Closed outcome vocabulary for this ladder rung (chapter 7 \u00a77). 'failed' is a real result \u2014 capacity ends here; 'invalid' is a defective measurement and is not a result at all. slo_pass alone conflates the two, which lets a true system limit be laundered into an instrumentation excuse and a broken harness into a capacity boundary."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The grader's own record of why this rung is not COMPLETE: full sentences, in grading order, each naming the repetition or boundary test that failed and the section that requires the verdict. REQUIRED whenever outcome is 'failed' or 'invalid'. §5 fails a rung on any single failing repetition while slo_pass grades the pooled window, so the two keys answer different questions, and a row that asserts both without the sentence that produced the verdict hands the reader a capacity boundary with no stated cause, to be re-derived by hand from the raw records."
           },
           "outcome_u_reason": {
             "type": "string",

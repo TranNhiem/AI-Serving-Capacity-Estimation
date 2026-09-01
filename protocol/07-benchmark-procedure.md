@@ -259,6 +259,10 @@ The reproduction bundle (**C8**) holds `records.jsonl` (per-request records), `r
 
 Alongside it, `report_path` receives a DRAFT capacity report claiming `non-conforming`. That is the weakest claim the schema offers, and it grades the report rather than the hardware: a load generator observes latency and throughput over HTTP and nothing else, so the roofline comparison, the sizing result, the scaling table and the Theoretical and Recommended tiers are left unknown with reasons rather than estimated. `ascep conformance` is the command that MAY raise the claim; a harness that graded its own output would be asserting the one thing it is not in a position to know.
 
+Each row of the draft's `run.results` carries one rung's measured window figures, its `slo_pass` verdict, and its `outcome`. Whenever the outcome is FAILED or INVALID the row MUST additionally carry `reasons`: the grader's own sentences, in grading order, naming the repetition or boundary test that produced the verdict and the section that requires it. A FAILED or INVALID row whose reasons are absent or empty does not validate — a rung that claims "capacity ends here" and declines to say why is an assertion, not a result, and the sentence that produced the verdict exists at the moment the verdict does.
+
+`slo_pass` and `outcome` legitimately disagree in one row, because they answer different questions over different populations: `slo_pass` is the gate verdict of the window published in the row, while `outcome` grades every counted repetition at the rung and fails it if any single one failed, since §5 defines capacity by the worst served user and not by best-of-N. The `reasons` sentences are what reconcile the two.
+
 ### Exit codes
 
 | Code | Meaning |

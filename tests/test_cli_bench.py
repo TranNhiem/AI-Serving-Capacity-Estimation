@@ -540,6 +540,65 @@ def test_the_results_row_publishes_the_servers_token_count_not_the_configured_on
     assert [row["input_tokens"] for row in rows] == [640, 640, 640]
 
 
+def test_a_failed_rungs_row_carries_the_reason_sentence_and_its_section_citation(
+    tmp_path, monkeypatch
+):
+    """outcome and slo_pass answer different questions, so a row can honestly carry one
+    verdict beside the other -- but only the reason sentence tells the reader which
+    repetition failed the rung and under which rule. Publishing the verdict without the text
+    forces the operator to re-derive the grading from records.jsonl, work the reasons
+    already did, so the assertion is on the section 5 citation and the worst-served-user
+    rule rather than on a merely non-empty list."""
+    path = _write(tmp_path, _config(tmp_path, **{"slo_gates.itl_p95_max_s": 0.01}))
+    _run_offline(monkeypatch, token_gap_s=0.05)
+    assert main(["bench", path]) == 0
+    rows = _report(tmp_path)["run"]["results"]
+    assert [row["concurrency"] for row in rows] == [1, 2, 4]
+    assert [row["outcome"] for row in rows] == ["failed", "failed", "failed"]
+    for row in rows:
+        reasons = row["reasons"]
+        assert isinstance(reasons, list) and reasons
+        assert all(isinstance(sentence, str) for sentence in reasons)
+        assert any("(section 5)" in sentence for sentence in reasons)
+        assert any("worst served user" in sentence for sentence in reasons)
+
+
+def test_a_complete_rungs_row_omits_reasons_because_there_is_nothing_to_reconcile(
+    tmp_path, monkeypatch
+):
+    """The schema requires reasons only where the outcome needs one, so the healthy run
+    proves the conditional shape by asserting the key's absence: an always-present empty
+    array would be noise on every complete rung and would bind nothing."""
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline(monkeypatch)
+    assert main(["bench", path]) == 0
+    rows = _report(tmp_path)["run"]["results"]
+    assert [row["outcome"] for row in rows] == ["complete", "complete", "complete"]
+    assert all("reasons" not in row for row in rows)
+
+
+def test_a_failed_row_that_declines_to_say_why_does_not_validate(tmp_path, monkeypatch):
+    """A rung that says "capacity ends here" and declines to say why is the exact skeleton
+    this protocol refuses to accept. The guard goes through the real validator on a report
+    bench actually emitted -- once with the key stripped and once with it emptied, because
+    "absent" and "an empty array" are the same refusal."""
+    from ascep.validation import validate
+
+    path = _write(tmp_path, _config(tmp_path, **{"slo_gates.itl_p95_max_s": 0.01}))
+    _run_offline(monkeypatch, token_gap_s=0.05)
+    main(["bench", path])
+    report = _report(tmp_path)
+    assert validate("capacity-report", report) == []
+    without_reasons = json.loads(json.dumps(report))
+    for row in without_reasons["run"]["results"]:
+        row.pop("reasons", None)
+    assert validate("capacity-report", without_reasons) != []
+    with_empty_reasons = json.loads(json.dumps(report))
+    for row in with_empty_reasons["run"]["results"]:
+        row["reasons"] = []
+    assert validate("capacity-report", with_empty_reasons) != []
+
+
 def test_every_window_in_the_bundle_is_labelled_with_the_repetition_it_was(tmp_path, monkeypatch):
     """Section 7.5 grades a rung on the dispersion across its repetitions. Windows that all
     claim to be repetition 0 make that dispersion unrecoverable from the bundle, and the
@@ -713,7 +772,10 @@ def test_an_interrupted_ladder_says_the_result_is_a_lower_bound(tmp_path, monkey
 
 
 def _run_offline(
-    monkeypatch, interrupt_after_s: float | None = None, reported_input_tokens: int = 512
+    monkeypatch,
+    interrupt_after_s: float | None = None,
+    reported_input_tokens: int = 512,
+    token_gap_s: float = 0.0005,
 ):
     """Replace the adapter with one that answers instantly, so the suite needs no server.
 
@@ -724,6 +786,10 @@ def _run_offline(
     ``interrupt_after_s`` is a deadline rather than a request count on purpose: a count that
     lands mid-ladder on one machine lands before the first window completes on a slower one,
     and the test would then assert that an empty bundle is a bundle.
+
+    ``token_gap_s`` widens the simulated inter-token gap so a test can cross a declared ITL
+    gate; it moves timestamps only, never the order or the outcome of a request, so the
+    default keeps every existing run exactly as green as it was.
     """
     import time
 
@@ -750,8 +816,8 @@ def _run_offline(
                 issued_ts=t,
                 outcome=Outcome.OK,
                 first_token_ts=t + 0.001,
-                token_ts=[t + 0.001 + 0.0005 * i for i in range(8)],
-                end_ts=t + 0.005,
+                token_ts=[t + 0.001 + token_gap_s * i for i in range(8)],
+                end_ts=t + 0.005 + token_gap_s * 7,
                 output_tokens=spec.max_tokens or 128,
                 input_tokens=reported_input_tokens,
             )
