@@ -36,6 +36,8 @@ import re
 
 import pytest
 
+from ascep import conformance
+from ascep.bench import ladder
 from ascep.bench import run as bench_run
 from ascep.cli import main
 
@@ -1214,3 +1216,153 @@ def _run_offline_with_usage(monkeypatch, usage_for):
             )
 
     monkeypatch.setattr(cli, "_bench_adapter", lambda config: _Fake(), raising=False)
+
+
+# --- the draft names the floor it observed and tags the rows it left empty -------------
+
+
+def _offline_report(tmp_path: pathlib.Path, monkeypatch) -> dict:
+    """Run the whole offline ladder and return the draft it wrote."""
+    path = _write(tmp_path, _config(tmp_path))
+    _run_offline(monkeypatch)
+    assert main(["bench", path]) == 0, "the offline ladder did not complete"
+    return _report(tmp_path)
+
+
+def _hand_built_ladder(*rungs):
+    """A LadderResult whose only content is its rung verdicts.
+
+    Nothing else varies, because the constraint label must follow from the rungs alone and
+    not from the narrative -- censoring, monotonicity, a cache caveat -- the ladder attaches
+    around them.
+    """
+    return ladder.LadderResult(
+        rungs={rung.concurrency: rung for rung in rungs},
+        terminated_at=None,
+        monotone=True,
+        bisection_permitted=True,
+        is_lower_bound=False,
+        censoring_cause=None,
+        max_sustainable_concurrency=None,
+        confirmed=False,
+        sustainable_publishable=False,
+        cache_caveat=None,
+    )
+
+
+def test_a_gated_failure_above_the_tier_labels_the_constraint_slo():
+    """A tier stating a concurrency with a null constraint is a C5 error the run itself could
+    have answered: the failed rung above is the observed floor, and chapter 5 puts the slo
+    label there. Withholding it made every draft this harness emits non-conforming."""
+    result = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
+    )
+    assert bench_run._boundary_constraint(result, 4) == "slo"
+
+
+def test_a_failure_that_delivered_nothing_labels_the_constraint_throughput():
+    """Zero completions is a throughput collapse, not a missed latency gate. Grading it slo
+    would send the author renegotiating latency promises against a system that had stopped
+    delivering at all."""
+    result = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(
+            concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True
+        ),
+    )
+    assert bench_run._boundary_constraint(result, 4) == "throughput"
+
+
+def test_the_lowest_failing_rung_above_the_tier_is_the_boundary_that_labels_it():
+    """Taking any failing rung instead of the lowest lets the collapse at 16 shadow the missed
+    gate at 8: the report would print throughput where the climb actually broke on slo, and
+    the operator would buy bandwidth to fix a latency promise."""
+    result = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
+        ladder.RungResult(
+            concurrency=16, outcome=ladder.RungOutcome.FAILED, zero_completions=True
+        ),
+    )
+    assert bench_run._boundary_constraint(result, 4) == "slo"
+
+
+def test_no_failing_rung_above_the_tier_means_no_constraint_is_named():
+    """A ladder exhausted without failure measured "at least this much"; a label would print
+    that lower bound as a maximum. An ABORTED rung is failure evidence by cause rather than
+    evidence that a floor binds, and a rung that failed BELOW the tier was climbed past, so
+    neither may conjure a label either."""
+    exhausted = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.COMPLETE),
+    )
+    assert bench_run._boundary_constraint(exhausted, 4) is None
+    aborted_above = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.ABORTED),
+    )
+    assert bench_run._boundary_constraint(aborted_above, 4) is None
+    failed_below = _hand_built_ladder(
+        ladder.RungResult(concurrency=2, outcome=ladder.RungOutcome.FAILED),
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+    )
+    assert bench_run._boundary_constraint(failed_below, 4) is None
+
+
+def test_an_exhausted_ladder_leaves_the_constraint_unknown_beside_a_filled_tier(
+    tmp_path, monkeypatch
+):
+    """The offline ladder completes every declared rung, so its figure is a lower bound.
+    Labelling it with a constraint would print "at least this much" as "this much at most";
+    the C5 error on the null is the correct grade and must not be silenced."""
+    tier = _offline_report(tmp_path, monkeypatch)["capacity_tiers"]["measured"]
+    assert tier["max_concurrent_users"] is not None
+    assert tier["binding_constraint"] is None
+    assert tier["binding_constraint_u_reason"].startswith("(U)")
+
+
+def test_every_row_bench_leaves_empty_carries_provenance_u(tmp_path, monkeypatch):
+    """A null provenance on an empty row is a C1 error nothing can justify, because the schema
+    defines no provenance_u_reason to put a sibling reason in. "U" is the only tag that says
+    the row states nothing, so a null here means bench emitted an unanswerable C1 again."""
+    report = _offline_report(tmp_path, monkeypatch)
+    tiers = report["capacity_tiers"]
+    assert tiers["theoretical"]["provenance"] == "U"
+    assert tiers["recommended"]["provenance"] == "U"
+    assert report["sizing_result"]["provenance"] == "U"
+
+
+def test_a_campaign_at_one_context_length_declares_single_point(tmp_path, monkeypatch):
+    """An unlabelled single point reads as a curve. The flag does not raise the grade -- it
+    states the limit the grade already reflects -- but leaving the default stands the draft up
+    as a multi-context measurement it never was."""
+    assert _offline_report(tmp_path, monkeypatch)["run"]["single_point"] is True
+
+
+def test_the_emitted_draft_carries_no_null_it_cannot_justify(tmp_path, monkeypatch):
+    """Every C1 finding a draft carries is the harness's doing, not the run's: bench chooses
+    what to null and what to say about it, so an unjustified null here is unfixable by the
+    operator who ran it. This is the regression test for the whole class."""
+    verdict = conformance.check(_offline_report(tmp_path, monkeypatch))
+    c1 = [
+        f"{finding.path}: {finding.message}"
+        for finding in verdict.findings
+        if finding.rule == "C1"
+    ]
+    assert not c1, "bench emitted a null C1 cannot accept:\n  " + "\n  ".join(c1)
+
+
+def test_a_decidable_boundary_reaches_both_filled_tiers(tmp_path, monkeypatch):
+    """The rule and the report are separate failures: `_boundary_constraint` can be right
+    while the tier it should label is still emitted null, which is the C5 error the operator
+    cannot fix. The offline ladder never fails a rung, so the boundary is stubbed here --
+    what is under test is the wiring, not the rule the tests above cover directly."""
+    monkeypatch.setattr(bench_run, "_boundary_constraint", lambda result, concurrency: "slo")
+    tiers = _offline_report(tmp_path, monkeypatch)["capacity_tiers"]
+    for name in ("measured", "sustainable"):
+        assert tiers[name]["binding_constraint"] == "slo", f"{name} dropped the label"
+        assert "binding_constraint_u_reason" not in tiers[name], (
+            f"{name} states a constraint and keeps the reason it was unknown; a stale (U) "
+            "tells a reviewer to discount a figure the run actually pinned down"
+        )

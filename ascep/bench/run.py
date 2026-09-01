@@ -1174,6 +1174,28 @@ _TIER_FIELDS = (
 )
 
 
+def _boundary_constraint(result, concurrency):
+    """Name the floor the ladder actually hit above ``concurrency``, or say nothing.
+
+    Chapter 5 settles the label: a rung that failed its declared gates has observed which
+    floor binds, and ``slo`` overrides the constraint label exactly there. A rung that
+    delivered nothing collapsed on throughput, not on a latency gate. ABORTED rungs are
+    excluded deliberately: they are failure evidence by cause, not evidence that a floor
+    binds. A ladder exhausted without a failing rung has shown no floor at all -- its
+    figure is "at least this much", and naming a constraint there would print a lower
+    bound as a measured maximum.
+    """
+    failures = [
+        rung
+        for rung in result.rungs.values()
+        if rung.concurrency > concurrency and rung.outcome is ladder.RungOutcome.FAILED
+    ]
+    if not failures:
+        return None
+    boundary = min(failures, key=lambda rung: rung.concurrency)
+    return "throughput" if boundary.zero_completions else "slo"
+
+
 def _fill_tier(tier, concurrency, rung, median):
     """Fill one capacity tier from a graded rung and its median repetition."""
     _known(tier, "max_concurrent_users", concurrency)
@@ -1392,6 +1414,19 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
                 "bench did not measure this; it is not observable by a load generator over HTTP",
             )
 
+    # Fewer than three measured context lengths is a point, not a scaling curve. Setting the
+    # flag does not raise the grade -- it states the limit the grade already reflects, and an
+    # unlabelled single point reads as a curve to whoever builds on the draft. single_point is
+    # a plain boolean with no _u_reason companion, so it is set directly, after the sweep
+    # above so nothing clobbers it.
+    context_lengths = {
+        row["context_tokens"]
+        for row in rows
+        if isinstance(row.get("context_tokens"), (int, float))
+        and not isinstance(row["context_tokens"], bool)
+    }
+    run_block["single_point"] = len(context_lengths) < 3
+
     tiers = report["capacity_tiers"]
     # n_gpus is the topology the run was bound to in all four tiers, not a per-tier finding.
     n_gpus = declarations["serving"]["gpu_count"]
@@ -1400,10 +1435,9 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         _unknown(
             tier,
             "binding_constraint",
-            "bench exercises the throughput floor only; which of the three floors -- "
-            "weights, KV, or throughput -- actually binds is not decidable from latency, "
-            "and naming throughput because that is what was measured is how a KV-bound "
-            "deployment gets sized against a throughput number",
+            "bench exercises the throughput and latency floors only; the weights and KV "
+            "floors are never evaluated, and a rung whose gates held still says nothing "
+            "about whether KV would have bound first at another context length",
         )
 
     roofline_reason = (
@@ -1418,8 +1452,12 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
     )
     for field in _TIER_FIELDS:
         _unknown(tiers["recommended"], field, policy_reason)
-    # Theorem/recommended provenance stays exactly as the skeleton left it: that field has
-    # no _u_reason companion, and inventing one is the laundering C2 stops.
+    # Null provenance on an empty tier is a C1 error with no lawful answer: the schema has
+    # no provenance_u_reason companion for the sibling fix, and "U" is the enum member that
+    # means exactly that this row states nothing. The tag is the statement; inventing a
+    # reason string beside it would only restate the tag less clearly.
+    tiers["theoretical"]["provenance"] = "U"
+    tiers["recommended"]["provenance"] = "U"
 
     complete_rungs = [
         c
@@ -1435,12 +1473,19 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
             result.rungs[top],
             _median_repetition(_counted(repetitions[top])),
         )
+        # A ladder that stopped on a failed rung observed which floor binds, and chapter 5
+        # settles the label there. Leaving the constraint null beside this number is a C5
+        # error the run itself could have answered.
+        constraint = _boundary_constraint(result, top)
+        if constraint is not None:
+            _known(tiers["measured"], "binding_constraint", constraint)
     else:
         why = "no rung completed its declared repetitions"
         if censor:
             why += f"; the ladder was censored ({censor})"
         for field in _TIER_FIELDS:
             _unknown(tiers["measured"], field, why)
+        tiers["measured"]["provenance"] = "U"
 
     top_sustainable = result.max_sustainable_concurrency
     sustainable_rung = result.rungs.get(top_sustainable) if top_sustainable is not None else None
@@ -1457,6 +1502,11 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
             sustainable_rung,
             _median_repetition(_counted(repetitions[top_sustainable])),
         )
+        # Same boundary, same rule as the measured tier: the first failed rung above is the
+        # observed floor, and silence there is a C5 error the run could answer.
+        constraint = _boundary_constraint(result, top_sustainable)
+        if constraint is not None:
+            _known(tiers["sustainable"], "binding_constraint", constraint)
     else:
         if censor is not None:
             why = f"the ladder was censored before a sustainable tier emerged ({censor})"
@@ -1478,6 +1528,7 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
                 field,
                 f"the ladder produced no sustainable tier: {why}",
             )
+        tiers["sustainable"]["provenance"] = "U"
 
     roofline = report["roofline_comparison"]
     _unknown(roofline, "decode_tok_s_theoretical", roofline_reason)
@@ -1523,6 +1574,7 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "utilization_at_target_pct",
         "a bench run has no declared demand target to compute utilization against",
     )
+    sizing["provenance"] = "U"
 
     # One topology is not a scaling curve, and the row shape requires a numeric
     # scaling_efficiency, so a single row could only be published as a fabricated 1.0.
@@ -1569,11 +1621,14 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
             "as chapter 4.7.1 requires; bench ships no tokenizer to do it.",
         ),
         _assumption(
-            "capacity_tiers.*.binding_constraint (unbound)",
-            "Sizing a KV-bound deployment against a throughput number provisions the "
+            "capacity_tiers.*.binding_constraint (weights and KV floors not evaluated)",
+            "The named constraint is the floor observed under the declared gates. A "
+            "weights or KV floor lower than it would not have been seen, so a deployment "
+            "whose true floor is KV at another context length is still sized against the "
             "wrong resource, and the shortfall appears only in production.",
-            "Inspect engine-reported KV cache occupancy and memory headroom on the "
-            "serving host during the run; latency alone cannot decide it.",
+            "Inspect engine-reported KV cache occupancy and memory headroom on the serving "
+            "host during the run, and repeat the ladder at longer context lengths; latency "
+            "at one context length cannot decide the weights or KV floors.",
         ),
         _assumption(
             "run.results[].gpu_util_pct and gpu_mem_util_pct (not observed)",

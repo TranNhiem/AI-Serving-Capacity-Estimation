@@ -13,6 +13,37 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ascep bench` could not emit a draft that `ascep conformance` would grade
+  above `non-conforming`.** Three nulls the harness chose itself, none of them a
+  property of the run, put five findings in every draft it has ever written:
+  `capacity_tiers.measured.binding_constraint` and its `sustainable` twin
+  (C5 errors, a capacity number with no named floor), and the `provenance` tags
+  on `capacity_tiers.theoretical`, `capacity_tiers.recommended` and
+  `sizing_result` (C1 errors with no lawful answer, since the schema defines no
+  "provenance_u_reason" to hold a sibling reason). The operator who ran the
+  benchmark could not fix any of them. All three are now the harness's to say:
+  a filled tier names the floor the ladder actually hit, and a row the harness
+  leaves empty carries the `U` tag that means it states nothing — the same
+  convention `examples/moe-26b-h100-tp2` already used.
+- **The floor a ladder hit is now named rather than withheld on principle.** The
+  harness argued that latency cannot decide which of the three floors binds, and
+  so named none. Chapter 5's own table settles it: `slo` overrides the
+  constraint label when gates fail. The first rung above a filled tier that
+  failed its declared gates is the observed boundary, and it labels the tier
+  `slo`, or `throughput` when that rung delivered nothing at all — a collapse,
+  not a missed latency gate. A ladder exhausted without any failing rung still
+  names nothing and still fails C5, which is the correct grade: its figure is a
+  lower bound, and the remedy is to declare more rungs, not to invent a label.
+  The register entry that recorded the constraint as unbound now records what
+  remains true — that the weights and KV floors were never evaluated, so a floor
+  lower than the observed one would not have been seen.
+- **A single-context campaign now declares itself one.** The harness knew it had
+  measured one context length and left `run.single_point` at its default, so C4
+  asked the author to state a limit the harness could already see. Setting it
+  does not raise the grade; it stops an unlabelled point from reading as a curve.
+
 ## [0.3.0] — 2026-09-02
 
 One defect is fixed that changes the numbers a conforming report publishes: the
