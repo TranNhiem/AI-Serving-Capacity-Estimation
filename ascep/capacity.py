@@ -354,6 +354,343 @@ def roofline_prefill_ttft_s(
     return (2.0 * active_params * prompt_tokens) / (flops_per_s * mfu)
 
 
+# ---------------------------------------------------------------------- media token model
+
+
+def image_tokens(
+    width_px: int,
+    height_px: int,
+    *,
+    policy: str,
+    patch_px: int | None = None,
+    spatial_merge: int = 1,
+    fixed_tokens: int | None = None,
+    table: Sequence[Mapping[str, int]] | None = None,
+    longest_edge_px: int | None = None,
+    tokens_min: int | None = None,
+    tokens_max: int | None = None,
+) -> int:
+    """Visual tokens for one image, under the model's declared ``image_token_policy``.
+
+    ``policy`` must be one of ``fixed-grid``, ``dynamic-resolution`` or ``declared-table``.
+    An unknown policy, or a policy whose required argument is missing, raises
+    :class:`ValueError` naming the field - a silent default here becomes a wrong token
+    count in every downstream floor.
+
+    ``fixed-grid`` returns ``fixed_tokens`` verbatim: every image costs the same.
+    ``declared-table`` returns the ``tokens`` of the smallest table row whose
+    ``max_width``/``max_height`` both cover the input, and raises if no row does.
+
+    ``dynamic-resolution`` is the real one, and follows the preprocessor in order:
+
+    1. If ``longest_edge_px`` is set and ``width_px * height_px`` exceeds it, both
+       dimensions are scaled by ``sqrt(longest_edge_px / (width_px * height_px))``,
+       preserving aspect ratio. Despite the name it carries upstream, this is an **area**
+       budget, not a per-side limit.
+    2. Each dimension is rounded UP to a multiple of ``patch_px * spatial_merge`` - a
+       partial patch is still a patch.
+    3. ``tokens = (w / patch_px) * (h / patch_px) / spatial_merge ** 2``, as an integer.
+    4. The result is clamped into ``[tokens_min, tokens_max]`` when either is given.
+
+    Sanity check, from a real config: ``patch_px=16`` with ``spatial_merge=2`` gives one
+    visual token per 32x32 px, so the default ``longest_edge_px`` of 25,165,824 caps any
+    single input at 24,576 visual tokens.
+    """
+    if width_px < 1 or height_px < 1:
+        raise ValueError("width_px and height_px must be >= 1")
+    if policy == "fixed-grid":
+        if fixed_tokens is None:
+            raise ValueError("fixed_tokens is required for policy 'fixed-grid'")
+        return fixed_tokens
+    if policy == "declared-table":
+        if table is None:
+            raise ValueError("table is required for policy 'declared-table'")
+        covering = [
+            row for row in table if row["max_width"] >= width_px and row["max_height"] >= height_px
+        ]
+        if not covering:
+            raise ValueError(
+                f"no declared-table row covers {width_px}x{height_px}; the image would be "
+                "rejected or rescaled by the preprocessor, and either way this token count "
+                "would be wrong"
+            )
+        return min(covering, key=lambda row: row["max_width"] * row["max_height"])["tokens"]
+    if policy == "dynamic-resolution":
+        if patch_px is None:
+            raise ValueError("patch_px is required for policy 'dynamic-resolution'")
+        if patch_px < 1 or spatial_merge < 1:
+            raise ValueError("patch_px and spatial_merge must be >= 1")
+        unit = patch_px * spatial_merge
+        w = float(width_px)
+        h = float(height_px)
+        if longest_edge_px is not None and w * h > longest_edge_px:
+            scale = math.sqrt(longest_edge_px / (w * h))
+            w *= scale
+            h *= scale
+        w_padded = math.ceil(w / unit) * unit
+        h_padded = math.ceil(h / unit) * unit
+        tokens = (w_padded // patch_px) * (h_padded // patch_px) // (spatial_merge**2)
+        if tokens_min is not None:
+            tokens = max(tokens, tokens_min)
+        if tokens_max is not None:
+            tokens = min(tokens, tokens_max)
+        return tokens
+    raise ValueError(
+        f"unknown image token policy {policy!r}; "
+        "known: fixed-grid, dynamic-resolution, declared-table"
+    )
+
+
+def video_frames(
+    duration_s: float,
+    *,
+    policy: str,
+    sampling_fps: float | None = None,
+    frame_count: int | None = None,
+    max_frames: int | None = None,
+) -> int:
+    """Frames sampled from a clip, under the model's declared ``video_frame_policy``.
+
+    ``uniform-fps`` uses ``ceil(duration_s * sampling_fps)``; ``uniform-count`` returns
+    ``frame_count`` regardless of duration; ``native-timestamped`` requires ``sampling_fps``
+    and behaves like ``uniform-fps``. A positive duration always yields at least one frame.
+
+    ``max_frames`` is applied as a hard clamp last. That clamp is the reason a long clip and
+    a short one can cost the same - which is exactly the failure the calibration check in
+    :func:`media_token_cap_check` exists to catch, so never treat this function's output as
+    evidence that cost scales with duration.
+    """
+    if policy in ("uniform-fps", "native-timestamped"):
+        if sampling_fps is None:
+            raise ValueError(f"sampling_fps is required for policy {policy!r}")
+        frames = math.ceil(duration_s * sampling_fps)
+    elif policy == "uniform-count":
+        if frame_count is None:
+            raise ValueError("frame_count is required for policy 'uniform-count'")
+        frames = frame_count
+    else:
+        raise ValueError(
+            f"unknown video frame policy {policy!r}; "
+            "known: uniform-fps, uniform-count, native-timestamped"
+        )
+    if duration_s > 0:
+        frames = max(1, frames)
+    if max_frames is not None:
+        frames = min(frames, max_frames)
+    return frames
+
+
+def video_tokens(
+    duration_s: float,
+    width_px: int,
+    height_px: int,
+    *,
+    frame_policy: str,
+    sampling_fps: float | None = None,
+    frame_count: int | None = None,
+    max_frames: int | None = None,
+    temporal_merge: int = 1,
+    image_policy: str = "dynamic-resolution",
+    patch_px: int | None = None,
+    spatial_merge: int = 1,
+    fixed_tokens: int | None = None,
+    longest_edge_px: int | None = None,
+    tokens_max: int | None = None,
+) -> int:
+    """Visual tokens for a whole clip.
+
+    Frames come from :func:`video_frames`, are grouped by ``temporal_merge``
+    (``groups = ceil(frames / temporal_merge)``), and each group costs the per-frame count
+    from :func:`image_tokens` computed WITHOUT the area budget - the real preprocessor does
+    not apply it per frame.
+
+    ``longest_edge_px`` and ``tokens_max`` clamp the **whole clip**, because that is where
+    the preprocessor applies them: measured on one server, three clips of 94.8 s, 47.4 s and
+    39.1 s all landed within 2% of each other at ~12.3k tokens under the default budget, and
+    the 94.8 s one rose to 32,853 tokens when the budget was raised.
+
+    The budget is counted in pixels of the **raw** frame set, so it binds before frames are
+    merged in time and the conversion carries ``temporal_merge``::
+
+        ceiling = longest_edge_px / ((patch_px * spatial_merge) ** 2 * temporal_merge)
+
+    Dropping that last factor is the easy mistake and it overstates the ceiling by exactly
+    ``temporal_merge``: the default 25,165,824 px budget then predicts 24,576 tokens for a
+    clip the server actually truncates at 12,288, so a capped run reads as an uncapped one
+    and the cap is discovered after the cluster is sized. With the factor, the prediction is
+    12,288 against measurements of 12,090, 12,333 and 12,345.
+    """
+    if temporal_merge < 1:
+        raise ValueError("temporal_merge must be >= 1")
+    frames = video_frames(
+        duration_s,
+        policy=frame_policy,
+        sampling_fps=sampling_fps,
+        frame_count=frame_count,
+        max_frames=max_frames,
+    )
+    per_frame = image_tokens(
+        width_px,
+        height_px,
+        policy=image_policy,
+        patch_px=patch_px,
+        spatial_merge=spatial_merge,
+        fixed_tokens=fixed_tokens,
+    )
+    groups = math.ceil(frames / temporal_merge)
+    tokens = groups * per_frame
+    if longest_edge_px is not None:
+        if patch_px is None:
+            raise ValueError(
+                "patch_px is required to apply longest_edge_px: the area budget is converted "
+                "to a token ceiling as longest_edge_px / ((patch_px * spatial_merge) ** 2 "
+                "* temporal_merge)"
+            )
+        ceiling = int(longest_edge_px / ((patch_px * spatial_merge) ** 2 * temporal_merge))
+        tokens = min(tokens, ceiling)
+    if tokens_max is not None:
+        tokens = min(tokens, tokens_max)
+    return tokens
+
+
+def media_tokens_per_request(
+    *,
+    images: int = 0,
+    tokens_per_image: float = 0.0,
+    videos: int = 0,
+    tokens_per_video: float = 0.0,
+) -> float:
+    """Total media tokens attached to one request.
+
+    A trivial sum; it exists so the arithmetic has one name in the report and the reader can
+    see the image and video contributions separately.
+    """
+    return images * tokens_per_image + videos * tokens_per_video
+
+
+def vision_encoder_bytes(
+    params: int,
+    precision: str,
+    *,
+    tensor_parallel: int = 1,
+    replicated_per_rank: bool = True,
+) -> int:
+    """Resident bytes of the vision encoder, per GPU.
+
+    When ``replicated_per_rank`` is true the encoder is NOT sharded: every rank pays the
+    full ``params * bytes`` and tensor parallelism buys nothing. When false, the cost
+    divides by ``tensor_parallel``. Assuming the encoder shards with the language model is
+    how a vision tower goes missing from a memory budget - and on a small model it is a
+    double-digit percentage of the weight floor.
+    """
+    if tensor_parallel < 1:
+        raise ValueError("tensor_parallel must be >= 1")
+    total = params * dtype_bytes(precision)
+    if replicated_per_rank:
+        return int(total)
+    return int(total / tensor_parallel)
+
+
+@dataclass(frozen=True)
+class CapCheck:
+    """Outcome of a calibration check: whether a hidden cap (or a missing input) was found,
+    plus a human-readable explanation that names the evidence. The explanation is not
+    optional decoration - a bare boolean gets quoted without its caveat."""
+
+    capped: bool
+    explanation: str
+
+
+def media_token_cap_check(
+    samples: Sequence[tuple[float, float]],
+    *,
+    size_ratio: float = 2.0,
+    token_tolerance: float = 0.10,
+) -> CapCheck:
+    """Detect a hidden media-token cap from ``(input_magnitude, measured_tokens)`` samples.
+
+    ``samples`` are pixels for images, seconds for video. They are sorted by magnitude; if
+    the largest and smallest magnitudes differ by at least ``size_ratio`` while their
+    measured token counts differ by less than ``token_tolerance`` in relative terms, the
+    preprocessor is capping and ``capped=True`` is returned with an explanation naming both
+    points.
+
+    Raises :class:`ValueError` on fewer than two samples, or when the magnitudes do not span
+    ``size_ratio``: an inconclusive check must not be reported as a pass, because "we looked
+    and found no cap" and "we could not look" size a cluster differently.
+    """
+    if len(samples) < 2:
+        raise ValueError(
+            "need at least two samples to compare; an inconclusive check must not be "
+            "reported as a pass"
+        )
+    pts = sorted(samples)
+    lo_mag, lo_tok = pts[0]
+    hi_mag, hi_tok = pts[-1]
+    if lo_mag <= 0:
+        raise ValueError("sample magnitudes must be positive for a size ratio to be meaningful")
+    if hi_mag < lo_mag * size_ratio:
+        raise ValueError(
+            f"samples span only {hi_mag / lo_mag:.2f}x (< required {size_ratio}x); the check "
+            "is inconclusive and must not be reported as a pass"
+        )
+    denom = max(hi_tok, lo_tok)
+    rel = abs(hi_tok - lo_tok) / denom if denom > 0 else 0.0
+    if rel < token_tolerance:
+        return CapCheck(
+            capped=True,
+            explanation=(
+                f"token count is flat across a {hi_mag / lo_mag:.1f}x size range: "
+                f"{lo_mag} -> {lo_tok} tokens vs {hi_mag} -> {hi_tok} tokens (relative "
+                f"difference {rel:.1%} < tolerance {token_tolerance:.1%}); the preprocessor "
+                "is capping media tokens"
+            ),
+        )
+    return CapCheck(
+        capped=False,
+        explanation=(
+            f"token count scales with input size: {lo_mag} -> {lo_tok} tokens vs {hi_mag} "
+            f"-> {hi_tok} tokens (relative difference {rel:.1%} >= tolerance "
+            f"{token_tolerance:.1%}); no cap detected"
+        ),
+    )
+
+
+def media_arrival_check(
+    measured_prompt_tokens: float,
+    text_only_prompt_tokens: float,
+    *,
+    tolerance: float = 0.05,
+) -> CapCheck:
+    """Detect media that never reached the model.
+
+    Returns ``capped=True`` - "the media did not arrive" - when ``measured_prompt_tokens``
+    is within ``tolerance`` of the text-only prediction. On one real run the corpus was AV1,
+    the container's decoder produced zero frames, and every request went through as text
+    with no error at all: the run published a media capacity figure measured on no media.
+    """
+    if text_only_prompt_tokens <= 0:
+        raise ValueError("text_only_prompt_tokens must be > 0 to serve as a baseline")
+    rel = abs(measured_prompt_tokens - text_only_prompt_tokens) / text_only_prompt_tokens
+    if rel <= tolerance:
+        return CapCheck(
+            capped=True,
+            explanation=(
+                f"the media did not arrive: measured prompt {measured_prompt_tokens} tokens "
+                f"is within {tolerance:.1%} of the text-only prediction "
+                f"{text_only_prompt_tokens}"
+            ),
+        )
+    return CapCheck(
+        capped=False,
+        explanation=(
+            f"media arrived: measured prompt {measured_prompt_tokens} tokens differs from "
+            f"the text-only prediction {text_only_prompt_tokens} by {rel:.1%} "
+            f"(tolerance {tolerance:.1%})"
+        ),
+    )
+
+
 # ------------------------------------------------------------------- workload -> demand
 
 
@@ -378,6 +715,15 @@ class Workload:
     concurrent_users: float | None = None
     input_tokens_per_request: float = 0.0
     output_tokens_per_request: float = 0.0
+    #: Visual tokens attached to the prompt, from :func:`media_tokens_per_request`. They sit
+    #: in the prompt for the whole request, so unlike output they are NOT halved in
+    #: :meth:`avg_context_tokens`.
+    media_tokens_per_request: float = 0.0
+    #: Reasoning ("thinking") tokens generated per request. They accumulate exactly like
+    #: output tokens, so they are halved in :meth:`avg_context_tokens` and counted in
+    #: :meth:`demand_tok_s`; omitting them understates the throughput floor by the
+    #: reasoning-to-visible ratio, which can be two orders of magnitude.
+    reasoning_tokens_per_request: float = 0.0
     requests_per_session: float = 1.0
     #: Per-stream generation speed the product requires (e.g. faster than reading speed, or
     #: fast enough to feed a TTS pipeline without underrun).
@@ -405,19 +751,34 @@ class Workload:
     def avg_context_tokens(self) -> float:
         """Mean KV footprint per active session.
 
-        Approximates a session mid-generation as its full input plus half its output. If you
-        have real conversation-length data, override this — it is the highest-leverage single
-        input in the whole protocol.
+        Approximates a session mid-generation as its full input plus half its generated
+        tokens. Two terms are new: ``media_tokens_per_request`` sits in the prompt for the
+        whole request, so it is added in full and NOT halved;
+        ``reasoning_tokens_per_request`` is generated and accumulates exactly like output,
+        so it is halved together with ``output_tokens_per_request``. If you have real
+        conversation-length data, override this - it is the highest-leverage single input
+        in the whole protocol.
         """
-        return self.input_tokens_per_request + self.output_tokens_per_request / 2.0
+        return (
+            self.input_tokens_per_request
+            + self.media_tokens_per_request
+            + (self.reasoning_tokens_per_request + self.output_tokens_per_request) / 2.0
+        )
 
     def demand_tok_s(self) -> float:
-        """Aggregate output tokens/s required at peak."""
+        """Aggregate output tokens/s required at peak.
+
+        ``reasoning_tokens_per_request`` counts as generated output: thinking mode took one
+        checkpoint from 120 to 33,829 completion tokens per request, so omitting reasoning
+        tokens understates the throughput floor by exactly that factor.
+        """
         if self.target_tok_s_per_user > 0:
             return self.active_sessions() * self.target_tok_s_per_user
         if self.avg_session_seconds <= 0:
             raise ValueError("need target_tok_s_per_user or avg_session_seconds")
-        tokens_per_session = self.output_tokens_per_request * self.requests_per_session
+        tokens_per_session = (
+            self.output_tokens_per_request + self.reasoning_tokens_per_request
+        ) * self.requests_per_session
         return self.peak_concurrent_users() * tokens_per_session / self.avg_session_seconds
 
 
