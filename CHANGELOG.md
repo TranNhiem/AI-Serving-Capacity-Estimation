@@ -31,9 +31,11 @@ cross-version comparisons valid.
 - **Breaking for existing multimodal reports: C1 now requires a note on the
   hardware layer's `cpu_cores` whenever `input_modalities` contains image or
   video.** Under a media workload the host CPU decodes and patchifies every
-  image, so the core count is a capacity input rather than an inventory fact --
-  measured at 11.33 of 12 cores busy while the GPU sat at 91% at concurrency 32,
-  the host was co-limiting and the ceiling was unattributable to a reader. An
+  image, so the core count is a capacity input rather than an inventory fact.
+  Measured: across 6,587 one-second samples the serving process peaked at 11.53
+  of its 12 allocated cores on a node Slurm reports as having 112, and in the
+  samples where it was above 10 the GPU averaged 59% -- pinned host, unsaturated
+  accelerator, a ceiling no reader could attribute. An
   existing multimodal report without the note now grades non-conforming. Nothing
   published here is affected: the only example report is text-only.
 - **Multimodal and reasoning-mode capacity**, as [chapter 9](protocol/09-multimodal-and-reasoning.md)
