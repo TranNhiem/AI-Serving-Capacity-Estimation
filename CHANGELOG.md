@@ -13,8 +13,103 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-02
+
+One defect is fixed that changes the numbers a conforming report publishes: the
+harness was reducing the wrong distribution and calling it ITL, and correcting
+it moves published `itl_p95_s` values and therefore moves which rung a ladder
+reports as sustainable. Under the versioning rule a change that alters a
+conforming report's numbers is a breaking bump, so this is 0.3.0. It is cut
+immediately after the fix rather than batched, because every rung graded on the
+old reduction is grading the transport and not the decoder, and no published
+report should spend another release cycle on the wrong population.
+
+### Added
+
+- **Section 4.1.1, "Chunk gaps are not token gaps", the normative rules for the
+  two ITL populations.** A pooled-gaps ITL percentile now requires
+  `tokens_per_stream_chunk` per rung. Above 1.05 tokens per chunk the pooled
+  population MUST NOT be published as ITL and `itl_population` MUST read
+  `per-request-mean`, because each pooled gap then spans several tokens and the
+  percentile measures the transport, not the decoder. The observed chunk gaps
+  MUST still be published as `stream_chunk_gap_p50_s` / `stream_chunk_gap_p95_s`
+  whenever per-token stamps exist: a smoothness SLO written against what the
+  client actually receives is legitimate, it is simply not ITL. The factor is
+  load-dependent -- 1.00 at concurrency 1 and 6.65 at concurrency 128 in one
+  measured run -- so it is declared per rung, never once per run, where a
+  single run-level figure would average the one regime where pooling is honest
+  into the regime where it is not. See
+  [§4.1.1](protocol/04-measurement.md).
+- **Three fields on `run.schema.json`'s results rows:** `tokens_per_stream_chunk`,
+  `stream_chunk_gap_p50_s` and `stream_chunk_gap_p95_s`, each with a
+  `*_u_reason` companion, so a rung whose transport was not instrumented says so
+  under C1 rather than falling silent.
+
+### Changed
+
+- **Breaking: a results row declaring `itl_population: "pooled-gaps"` now
+  requires `tokens_per_stream_chunk`.** Null with a `(U)` reason is accepted;
+  silence is not, because an unsupported pooled percentile is indistinguishable
+  from a supported one, and the whole point of the population field is lost if
+  the reader cannot tell which kind they are looking at. Rows on the per-request
+  population owe nothing: their denominator is the server's own token count,
+  which no transport batching can inflate. Existing pooled-gaps reports must add
+  the field; a report that does not now grades non-conforming.
+- **The rendered report table now says which ITL it is showing.** The ITL cell
+  carries its population in parentheses, and a "tok per chunk; chunk gap p50 /
+  p95" column appears whenever any row declares those fields. The column is
+  omitted entirely when no row does, so a report from a harness that never
+  measured the transport does not grow a column of identical `(U)` cells.
+- `examples/negative/baseline.json` and the eight regenerated cases now declare
+  `tokens_per_stream_chunk` of 1.0 and chunk-gap figures equal to their ITL
+  figures -- what a clean per-token stream looks like -- so the fixtures read
+  as worked examples of the new rule rather than as rows that predate it.
+
 ### Fixed
 
+- **The harness published the pooled gaps between streamed chunks as the ITL
+  percentile, and under load those are not the decoder's gaps.** `reduce_window`
+  computed ITL percentiles from the pooled gaps between streamed content chunks
+  and labelled the result `pooled-gaps`, which section 4.1 defines as one sample
+  per decode step. The two are the same population only while the server emits
+  one token per SSE delta; under load vLLM folds several decode steps into one
+  delta, so each "gap" spans several tokens and the percentile measures the
+  transport. The harness already knew: its OpenAI-compatible adapter appends an
+  "itl-granularity: N chunks for M tokens" note to the record whenever the two
+  disagree, and 99.5% of the 16,720 records in the H100 rehearsal carried one.
+  It noted the discrepancy per record and then reduced as if it had not
+  happened. Measured on that rehearsal (Qwen3-VL-4B, 1x H100, vLLM 0.11.0,
+  closed-loop ladder, gates ttft_p95 4.0 s / itl_p95 0.05 s / e2e_p95 60 s /
+  error rate 1.0%) -- tokens per streamed chunk, pooled p95, then per-request
+  p95, by concurrency: 1 -> 1.00, 0.0060 s, 0.0060 s; 2 -> 1.03, 0.0063 s,
+  0.0063 s; 4 -> 1.08, 0.0066 s, 0.0068 s; 8 -> 1.20, 0.0072 s, 0.0076 s; 16 ->
+  1.43, 0.0288 s, 0.0092 s; 32 -> 1.95, 0.1100 s, 0.0130 s; 64 -> 3.54, 0.2374
+  s, 0.0196 s; 128 -> 6.65, 0.2953 s, 0.0247 s. On the pooled population every
+  rung above 16 breaches the ITL gate and sustainable capacity is concurrency 16
+  at 1,180 output tok/s, ITL-bound. On the per-request population every rung
+  passes the ITL gate and 128 fails on TTFT instead (9.670 s against the 4.0 s
+  gate), so sustainable capacity is concurrency 64 at 2,503 output tok/s,
+  TTFT-bound. That is 2.1x on capacity and a different named binding constraint,
+  from a ladder that was correct in every other respect. Throughput across the
+  ladder runs 93, 184, 354, 660, 1,180, 1,876, 2,503, 2,643 tok/s, so the knee
+  really is at 64 and the pooled reading placed the boundary three rungs early.
+  Two facts make the fix trustworthy rather than convenient: below the threshold
+  the two populations agree to three decimals (0.0060 s against 0.0060 s at
+  concurrency 1), and just above it the switch is conservative -- at concurrency
+  4 and 8 the per-request figure is the higher of the two -- so the rule does
+  not buy capacity where coalescing is mild. The coalescing is server-side
+  rather than assumed to be: a client that parses SSE can see that one delta
+  carried the text of several tokens, and no transport layer can synthesise
+  token text.
+- **The chunk count was off by one, and on short replies the error trips the
+  population switch by itself.** The adapter files the first content chunk's
+  timestamp in `first_token_ts` and only later ones in `token_ts`, so the count
+  must be `len(token_ts) + 1`. Counting `token_ts` alone reports tokens /
+  (tokens - 1) for a stream that is exactly one token per chunk: 1.02 on a
+  50-token reply and 1.33 on a four-token one. The second trips any threshold
+  worth setting, so a workload of short answers -- a VLM classification corpus
+  -- would have had its ITL population switched by where the harness files one
+  timestamp rather than by anything the server did.
 - **The reproduction bundle's environment capture named no library
   version.** On a real H100 run `environment.json` was 212 bytes -- driver,
   GPU model, Python version, platform -- so a bundle whose entire purpose is

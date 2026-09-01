@@ -19,9 +19,43 @@ Ambiguous timestamps are the cheapest way to inflate a report. The following def
 
 **An ITL percentile MUST name its population.** The formula above defines ITL *per request*, so a set of requests yields two different distributions that are routinely both called "the ITL distribution": the **pooled-gaps** population, one sample per decode step across every request in the window, and the **per-request-mean** population, one sample per request. They do not have the same tail and they do not have the same sample count. A report **MUST** declare which population every ITL percentile and every ITL gate was computed over, in an `itl_population` field taking exactly `pooled-gaps` or `per-request-mean`, and **MUST NOT** mix the two in one figure.
 
-Where per-token timestamps exist the pooled-gaps population **SHOULD** be used, because it is the one an ITL gate is for: a stall inside a single request survives pooling and vanishes under a per-request mean. Where they do not exist, the per-request-mean population is the only one available and is conforming, provided it is labelled — it is computed from the decode span and is therefore not the barred `e2e ÷ output_tokens` substitution of §4.7. A request with fewer than two output tokens has no decode phase and contributes no ITL sample to either population.
+Where per-token timestamps exist and each one really is a token, the pooled-gaps population **SHOULD** be used, because it is the one an ITL gate is for: a stall inside a single request survives pooling and vanishes under a per-request mean. §4.1.1 governs when that condition holds and **MUST** be read as part of this rule. Where per-token timestamps do not exist, the per-request-mean population is the only one available and is conforming, provided it is labelled — it is computed from the decode span and is therefore not the barred `e2e ÷ output_tokens` substitution of §4.7. A request with fewer than two output tokens has no decode phase and contributes no ITL sample to either population.
 
 **Failure prevented:** a 50-step stream that stalls for 0.9 s once per request, with every other gap at 0.01 s. Pooled, the p99 ITL is 0.9 s and a 0.1 s gate fails, correctly. Averaged per request first, every sample becomes 0.028 s, the gate passes, and the 1000-sample population has collapsed to 20 — below the p99 floor of §4.3, so the figure was never admissible in the first place. Both numbers were published as "p99 ITL".
+
+### 4.1.1 Chunk gaps are not token gaps
+
+The pooled-gaps population of §4.1 is not built from the arrival times of tokens. It is built from the arrival times of *streamed content chunks*. An OpenAI-compatible SSE stream delivers one delta per scheduler step, and a server under load folds several decode steps into one delta, so every pooled "inter-token gap" then spans several tokens at once and the percentiles computed from it measure the transport rather than the decoder. The name stays the same while the quantity underneath it changes, which is precisely the substitution this protocol exists to prevent.
+
+The evidence comes from the H100 rehearsal these rules were written from: Qwen3-VL-4B, 1× H100, vLLM 0.11.0, 16,720 records over a closed-loop concurrency ladder, gates `ttft_p95_max_s` 4.0 s, `itl_p95_max_s` 0.05 s, `e2e_p95_max_s` 60 s, `error_rate_max_pct` 1.0.
+
+| concurrency | `tokens_per_stream_chunk` | pooled-gaps p95 | per-request-mean p95 | admissible population |
+|---|---|---|---|---|
+| 1 | 1.00 | 0.0060 s | 0.0060 s | pooled-gaps |
+| 2 | 1.03 | 0.0063 s | 0.0063 s | pooled-gaps |
+| 4 | 1.08 | 0.0066 s | 0.0068 s | per-request-mean |
+| 8 | 1.20 | 0.0072 s | 0.0076 s | per-request-mean |
+| 16 | 1.43 | 0.0288 s | 0.0092 s | per-request-mean |
+| 32 | 1.95 | 0.1100 s | 0.0130 s | per-request-mean |
+| 64 | 3.54 | 0.2374 s | 0.0196 s | per-request-mean |
+| 128 | 6.65 | 0.2953 s | 0.0247 s | per-request-mean |
+
+Read as pooled gaps, every rung above 16 breaches the 0.05 s ITL gate, sustainable capacity is concurrency 16 at 1,180 output tok/s, and the binding constraint is reported as ITL. Read per request, every rung passes the ITL gate and concurrency 128 fails on TTFT instead (9.670 s against a 4.0 s gate), so sustainable capacity is concurrency 64 at 2,503 output tok/s and the binding constraint is TTFT. That is 2.1× on capacity and a different named constraint, decided entirely by which distribution the word ITL denoted. The corrected reading is also the physically sensible one: measured throughput across the ladder runs 93, 184, 354, 660, 1,180, 1,876, 2,503, 2,643 tok/s, so the knee is genuinely at 64 and the pooled reading placed the boundary three rungs early.
+
+The rules follow.
+
+1. A report that publishes any pooled-gaps ITL percentile **MUST** publish, per rung, `tokens_per_stream_chunk`: server-reported output tokens divided by streamed content chunks, summed across the window's usable records before dividing. It **MUST NOT** be computed as a mean of per-request ratios, which lets a handful of very short responses outvote the traffic that actually loaded the server.
+2. Above 1.05 tokens per chunk the pooled population **MUST NOT** be published as ITL and **MUST NOT** be compared against an ITL gate; `itl_population` **MUST** read `per-request-mean`. The threshold is a tolerance band around the 1.0 a genuinely per-token stream measures, wide enough to absorb an occasional double-packed delta: at 1.05 a gap is overstated by at most five percent, below the precision any capacity tier is reported at, while real coalescing runs to six and a half tokens per chunk.
+3. The observed chunk gaps **MUST** still be published, as `stream_chunk_gap_p50_s` and `stream_chunk_gap_p95_s`, whenever per-token stamps exist — not only on the rungs where the two populations diverge. A smoothness SLO written against what the client actually receives is a legitimate SLO and is gated on these figures. They are simply not ITL, and they **MUST NOT** be published under an ITL name. A field that appears only when something went wrong is a field nobody builds a comparison on.
+4. The factor is load-dependent — 1.00 at concurrency 1 and 6.65 at 128 within one run — so it **MUST** be declared per rung and **MUST NOT** be declared once per run. A single run-level figure is an average over the ladder, and it licenses the pooled population precisely on the rungs where the pooled population fails.
+5. The finer grain of pooling, which §4.1 prefers it for, is not a defence once the gaps no longer mean one token each: a finer sample of the wrong quantity is still the wrong quantity. The per-request mean is admissible in its place because its denominator is the server's own token count, which no transport-layer batching can inflate.
+6. Where the factor cannot be measured at all, the row **MUST** carry the field as null with a **(U)** reason under C1 rather than omit it, and `run.schema.json` requires the key on every pooled-gaps row. An absent factor is indistinguishable from a factor of one, and the table above is what that confusion is worth.
+
+Two properties of the table are worth stating because they are what make the rule trustworthy rather than convenient. Where the factor sits at or below the threshold the two populations agree to three decimal places (0.0060 s against 0.0060 s at concurrency 1), so the per-request estimator is validated against the pooled one on the rungs where both are admissible, rather than merely asserted for the rungs where only one is. And immediately above the threshold the switch is *conservative*: at concurrency 4 and 8 the per-request figure is the higher of the two, so the rule does not buy capacity where coalescing is mild — it only refuses to charge for it where coalescing is severe.
+
+A reader can settle the diagnosis rather than infer it. A harness whose client parses SSE can log that one delta carried the text of several tokens, which distinguishes server-side coalescing from client-side buffering: no transport layer can synthesise token text. A run **SHOULD** record that observation per request, and the reference driver does so in the record's `error` field.
+
+**Failure prevented:** pooled chunk gaps at concurrency 32 and above read as p95 ITL of 0.11–0.30 s, breach a 0.05 s gate that the decoder never actually breached, and cap sustainable capacity at concurrency 16 — 2.1× below the real knee at 64 — while naming ITL as the binding constraint when the true one is TTFT.
 
 ## 4.2 Throughput definitions
 

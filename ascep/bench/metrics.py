@@ -54,6 +54,16 @@ from ascep.bench.records import Outcome, RequestRecord
 #: measurements the validation exists to protect.
 _SKEW_SLACK_S = 1e-3
 
+#: Above this measured tokens-per-chunk ratio a window's pooled gaps are inter-chunk, not
+#: inter-token, and ITL is taken from the per-request means instead. A tolerance band, not
+#: a correction: a stream that really is one token per chunk measures exactly 1.0, and 1.05
+#: leaves room for the occasional double-packed delta without flipping the population of a
+#: window that is otherwise per-token. The band is safe because a mean chunk of 1.05 tokens
+#: cannot inflate a gap by more than five percent, which is below the precision any capacity
+#: tier is reported at -- while the coalescing this guards against runs to six and a half
+#: tokens a chunk.
+_COALESCED_ABOVE_TOKENS_PER_CHUNK = 1.05
+
 
 def percentile(samples: Sequence[float], p: float) -> float:
     """Hyndman-Fan type-7 quantile: linear interpolation on rank ``p * (n - 1)``.
@@ -160,6 +170,19 @@ class WindowSummary:
     this window, and valid latency observations. They are equal below saturation and
     differ under overload, so a reader comparing them is reading the boundary effect, not
     an inconsistency.
+
+    ``tokens_per_stream_chunk`` is the window's measured substitution factor:
+    server-reported output tokens divided by streamed content chunks, summed over the
+    usable records before dividing. A value above the coalescing threshold is what
+    switched :attr:`itl_population` to the per-request mean. ``stream_chunk_gap_p50_s``
+    and ``stream_chunk_gap_p95_s`` are what the client actually observed at the transport
+    -- one sample per chunk, however many decode steps the server folded into it --
+    published under a name that is not ITL because they are not ITL: on the rehearsal this
+    change serves, the concurrency-128 rung measured 6.65 tokens per chunk and a "pooled
+    ITL p95" of 0.2953 s was this chunk-gap tail while the per-request ITL p95 was
+    0.0247 s. Both are computed from the pooled gaps whenever those gaps exist, never only
+    on divergence, so a reader can compute the factor and compare across runs; a field
+    that appears only when something went wrong is a field nobody builds a comparison on.
     """
 
     n_issued: int
@@ -183,6 +206,15 @@ class WindowSummary:
     requests_per_s: float | None
     goodput_tok_s: float | None
     slo_pass: bool | None
+    # These three default to None ("unmeasured") so summaries built before they existed
+    # keep working -- a mandatory field here would raise in every hand-built WindowSummary
+    # in tests/test_bench_ladder.py the moment the module imports. A dataclass forbids a
+    # defaulted field ahead of the figure fields above, which pins them to the last slots
+    # before the defaulted containers rather than beside itl_population, whose disclosure
+    # they complete.
+    tokens_per_stream_chunk: float | None = None
+    stream_chunk_gap_p50_s: float | None = None
+    stream_chunk_gap_p95_s: float | None = None
     low_confidence: frozenset[str] = field(default_factory=frozenset)
     reasons: Mapping[str, str] = field(default_factory=dict)
 
@@ -361,27 +393,89 @@ def reduce_window(
         if record.e2e_s is not None:
             e2e.append(record.e2e_s)
 
-    # Chapter 4 section 4.1 defines ITL per request as the mean over the decode phase; the
-    # gap population is finer and is what an ITL gate is actually for, since a stall inside
-    # one request survives pooling and disappears under a per-request mean. They are
-    # different distributions with the same name, so the summary says which one it used --
-    # two labs reducing the same records and quietly choosing differently is the
-    # reproducibility failure the percentile convention exists to prevent.
-    if gaps:
+    # Summed across the window before dividing, never averaged per request: the
+    # substitution factor is a property of the window's whole token population, and a mean
+    # of per-request ratios would let a handful of very short responses outvote the
+    # traffic.
+    # The first content chunk is stamped in first_token_ts and every later one in token_ts,
+    # so the chunk count is len(token_ts) + 1 wherever a first token arrived. Counting only
+    # token_ts would report tokens/(tokens - 1) for a perfectly per-token stream -- 1.02 on
+    # a 50-token reply and 1.33 on a four-token one -- and the short answers in a VLM
+    # workload would trip the coalescing switch on an artefact of where the harness files
+    # the opening timestamp.
+    stamped = [record for record in usable if record.token_ts and record.output_tokens]
+    n_chunks = sum(
+        len(record.token_ts) + (1 if record.first_token_ts is not None else 0)
+        for record in stamped
+    )
+    tokens_per_stream_chunk: float | None
+    if n_chunks:
+        tokens_per_stream_chunk = sum(record.output_tokens for record in stamped) / n_chunks
+    else:
+        tokens_per_stream_chunk = None
+
+    # Two independent substitutions hide under the one word "ITL", and itl_population must
+    # disclose both.
+    #
+    # Pooled gaps versus per-request means: chapter 4 section 4.1 defines ITL per request
+    # as the mean over the decode phase; the gap population is finer and is what an ITL
+    # gate is actually for, since a stall inside one request survives pooling and
+    # disappears under a per-request mean.
+    #
+    # Token gaps versus chunk gaps: token_ts is stamped per streamed chunk, and a server
+    # under load coalesces several decode steps into one SSE delta, at which point a
+    # pooled "gap" is an inter-chunk latency wearing an inter-token name. On the vLLM
+    # rehearsal this reduction serves, the concurrency-128 rung packed 6.65 tokens into
+    # the average chunk and the pooled p95 read 0.2953 s against a per-request p95 of
+    # 0.0247 s; against a declared 0.05 s gate the choice of population moved sustainable
+    # capacity from 1,180 tok/s to 2,503 tok/s. Pooling's finer grain is no defence once
+    # the gaps no longer mean per token -- a finer sample of the wrong quantity is still
+    # the wrong quantity -- so a window past _COALESCED_ABOVE_TOKENS_PER_CHUNK takes the
+    # per-request means, whose denominator (each request's server-reported token count)
+    # the transport cannot inflate. Where the factor sits at or below the threshold the
+    # two populations agree, 0.0060 s against 0.0060 s at the rehearsal's concurrency-1
+    # rung, and that agreement is what validates the per-request estimator for the
+    # coalesced rungs rather than merely asserting it.
+    #
+    # The summary says which population it used either way: two labs reducing the same
+    # records and quietly choosing differently is the reproducibility failure the
+    # percentile convention exists to prevent.
+    if gaps and (
+        tokens_per_stream_chunk is None
+        or tokens_per_stream_chunk <= _COALESCED_ABOVE_TOKENS_PER_CHUNK
+    ):
         itl, itl_population = gaps, "pooled-gaps"
     elif means:
         itl, itl_population = means, "per-request-mean"
+    elif gaps:
+        # Coalesced, but no request yielded a per-request mean either: the pooled chunk
+        # gaps are the only samples left, and publishing them under their population label
+        # is honest where dropping them would hide the window's decode phase entirely.
+        itl, itl_population = gaps, "pooled-gaps"
     else:
         itl, itl_population = [], None
 
     reasons: dict[str, str] = {}
     low: set[str] = set()
+    if tokens_per_stream_chunk is None:
+        reasons["tokens_per_stream_chunk"] = (
+            "(U) no usable record carried both per-token stamps and a server token count"
+        )
     ttft_p50_s = _stat(ttft, 0.50, "ttft_p50_s", reasons, low)
     ttft_p95_s = _stat(ttft, 0.95, "ttft_p95_s", reasons, low)
     ttft_p99_s = _stat(ttft, 0.99, "ttft_p99_s", reasons, low)
     itl_p50_s = _stat(itl, 0.50, "itl_p50_s", reasons, low)
     itl_p95_s = _stat(itl, 0.95, "itl_p95_s", reasons, low)
     itl_p99_s = _stat(itl, 0.99, "itl_p99_s", reasons, low)
+    # Published from the pooled gaps whenever they exist, including windows whose ITL was
+    # taken from those same gaps: a field present in every row lets a reader compute the
+    # substitution factor and compare across runs, while one that appears only when
+    # something went wrong is a field nobody builds a comparison on. They carry a chunk
+    # name rather than the ITL name because each sample may span several decode steps. The
+    # section 4.3 floor discipline applies unmodified, since a chunk-gap tail estimated
+    # from too few stamps is overclaimed exactly as an ITL one is.
+    stream_chunk_gap_p50_s = _stat(gaps, 0.50, "stream_chunk_gap_p50_s", reasons, low)
+    stream_chunk_gap_p95_s = _stat(gaps, 0.95, "stream_chunk_gap_p95_s", reasons, low)
     e2e_p50_s = _stat(e2e, 0.50, "e2e_p50_s", reasons, low)
     e2e_p95_s = _stat(e2e, 0.95, "e2e_p95_s", reasons, low)
     e2e_p99_s = _stat(e2e, 0.99, "e2e_p99_s", reasons, low)
@@ -440,6 +534,9 @@ def reduce_window(
         requests_per_s=requests_per_s,
         goodput_tok_s=goodput_tok_s,
         slo_pass=slo_pass,
+        tokens_per_stream_chunk=tokens_per_stream_chunk,
+        stream_chunk_gap_p50_s=stream_chunk_gap_p50_s,
+        stream_chunk_gap_p95_s=stream_chunk_gap_p95_s,
         low_confidence=frozenset(low),
         reasons=reasons,
     )

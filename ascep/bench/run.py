@@ -1283,6 +1283,9 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
     # to publish, and the ladder's censoring cause explains its absence.
     row_template = copy.deepcopy(run_block["results"][0])
     rows = []
+    # The chunk-gap fields sit with the ITL figures because they are the transport trace the
+    # population label is about: a row whose ITL moved to per-request-mean is only auditable
+    # if the factor and the observed chunk gaps ride on the same row.
     summary_fields = (
         "ttft_p50_s",
         "ttft_p95_s",
@@ -1290,12 +1293,23 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "itl_p50_s",
         "itl_p95_s",
         "itl_population",
+        "tokens_per_stream_chunk",
+        "stream_chunk_gap_p50_s",
+        "stream_chunk_gap_p95_s",
         "e2e_p95_s",
         "e2e_p99_s",
         "output_tok_s",
         "requests_per_s",
         "error_rate_pct",
     )
+    # Those three are optional in the schema, so `ascep init` does not emit them and neither
+    # does the row template. _unknown fills only a companion that already exists -- right for
+    # a hand-filled report, wrong here: a transport figure the reduction computed and found
+    # empty would vanish from the row, and an absent key reads as "this rung never looked"
+    # when the truth is "it looked and the stamps were not there". Seeded so the (U) has
+    # somewhere to land; _known pops the companion on every rung that measured a value.
+    for name in ("tokens_per_stream_chunk", "stream_chunk_gap_p50_s", "stream_chunk_gap_p95_s"):
+        row_template.setdefault(f"{name}_u_reason", init.TODO)
     thin = []
     for concurrency in rung_list:
         rung = result.rungs.get(concurrency)

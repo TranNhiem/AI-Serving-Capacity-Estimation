@@ -406,13 +406,24 @@ def _section_benchmark(lines: list[str], run: Mapping[str, Any]) -> None:
     _rung_reasons(lines, results)
 
 
+#: Rendered together because they answer one question: is this row's ITL an inter-token
+#: figure at all (§4.1.1)? Kept out of the table entirely when no row declares any of them,
+#: so a report from a harness that never measured the transport does not grow a column of
+#: identical "(U) no reason given" cells that says nothing about that report.
+_CHUNK_FIELDS = ("tokens_per_stream_chunk", "stream_chunk_gap_p50_s", "stream_chunk_gap_p95_s")
+
+
 def _benchmark_table(lines: list[str], results: list[Any]) -> None:
+    rows = [_mapping(item) for item in results]
+    show_chunks = any(field in row for row in rows for field in _CHUNK_FIELDS)
+    chunk_header = " tok per chunk; chunk gap p50 / p95 (s) |" if show_chunks else ""
+    chunk_align = "---|" if show_chunks else ""
     lines.append(
         "| shape (in/out) | concurrency | TTFT p50 / p95 / p99 (s) | "
-        "ITL p50 / p95 (s) | e2e p95 / p99 (s) | output tok/s | req/s | GPU util % | "
-        "GPU mem util % | SLO |"
+        f"ITL p50 / p95 (s) |{chunk_header} e2e p95 / p99 (s) | output tok/s | req/s | "
+        "GPU util % | GPU mem util % | SLO |"
     )
-    lines.append("|---|---:|---|---|---|---:|---:|---:|---:|:--:|")
+    lines.append(f"|---|---:|---|---|{chunk_align}---|---:|---:|---:|---:|:--:|")
     for item in results:
         row = _mapping(item)
         if row.get("input_tokens") is None and row.get("output_tokens") is None:
@@ -425,6 +436,14 @@ def _benchmark_table(lines: list[str], results: list[Any]) -> None:
             f"{_field(row, 'ttft_p99_s')}"
         )
         itl = f"{_field(row, 'itl_p50_s')} / {_field(row, 'itl_p95_s')}"
+        # The population rides in the cell, not in a footnote: pooled-gaps and
+        # per-request-mean do not share a tail, and a reader comparing two rungs whose ITL
+        # was computed over different distributions must be able to see that from the row.
+        # Appended only when it is a real label -- where it is null every itl_p* is null
+        # too, so the cell already carries the (U) reason and would otherwise carry it twice.
+        population = row.get("itl_population")
+        if isinstance(population, str):
+            itl = f"{itl} ({_clean(population)})"
         e2e = f"{_field(row, 'e2e_p95_s')} / {_field(row, 'e2e_p99_s')}"
         slo = row.get("slo_pass")
         if slo is None:
@@ -443,6 +462,14 @@ def _benchmark_table(lines: list[str], results: list[Any]) -> None:
             _field(row, "concurrency"),
             ttft,
             itl,
+        ]
+        if show_chunks:
+            cells.append(
+                f"{_field(row, 'tokens_per_stream_chunk')}; "
+                f"{_field(row, 'stream_chunk_gap_p50_s')} / "
+                f"{_field(row, 'stream_chunk_gap_p95_s')}"
+            )
+        cells += [
             e2e,
             _field(row, "output_tok_s"),
             _field(row, "requests_per_s"),

@@ -8,8 +8,8 @@ abstract: >-
   tag; distinguishes theoretical, measured, sustainable and recommended capacity; and
   requires each capacity figure to name the floor that binds it.
 type: software
-version: "0.2.0"
-date-released: "2026-08-31"
+version: "0.3.0"
+date-released: "2026-09-02"
 license: Apache-2.0
 repository-code: "https://github.com/TranNhiem/AI-Serving-Capacity-Estimation"
 keywords:

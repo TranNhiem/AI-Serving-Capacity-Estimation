@@ -391,6 +391,7 @@ def test_a_reported_itl_percentile_must_name_its_population():
         dict(
             unlabelled["results"][0],
             itl_population="pooled-gaps",
+            tokens_per_stream_chunk=1.0,
         ),
         *unlabelled["results"][1:],
     ]
@@ -398,6 +399,46 @@ def test_a_reported_itl_percentile_must_name_its_population():
     assert not list(validator.iter_errors(labelled))
 
     assert list(validator.iter_errors(with_first_result(itl_population="mean-of-medians")))
+
+
+def test_a_pooled_gaps_row_must_carry_the_tokens_per_chunk_figure_that_licenses_it():
+    """Section 4.4: pooling is only inter-token latency while a chunk is one decode step.
+
+    A server under load folds several decode steps into one SSE delta, and the pooled gaps
+    then measure the transport, not the decoder. On the H100 rehearsal the concurrency-128
+    rung packed eight tokens into the average chunk and its pooled p95 read 0.2953 s against
+    a per-request 0.0247 s -- against a 0.05 s gate, sustainable capacity moved from 2,503
+    tok/s to 1,180 tok/s on nothing but the choice of population. So a row claiming the
+    pooled population owes the reader the factor that makes the claim checkable. Null with a
+    reason is an acceptable answer; saying nothing is not, because an unsupported pooled
+    percentile is indistinguishable from a supported one and that is the whole defect.
+    """
+    run_schema = json.loads((ROOT / "schemas" / "run.schema.json").read_text())
+    validator = Validator(run_schema)
+    run = json.loads((ROOT / "examples" / "negative" / "baseline.json").read_text())["run"]
+    assert not list(validator.iter_errors(run)), "the baseline row declares its factor"
+    assert run["results"][0]["itl_population"] == "pooled-gaps"
+
+    def with_first_result(row):
+        return {**run, "results": [row, *run["results"][1:]]}
+
+    stripped = dict(run["results"][0])
+    del stripped["tokens_per_stream_chunk"]
+    errors = list(validator.iter_errors(with_first_result(stripped)))
+    assert any("tokens_per_stream_chunk" in str(e.message) for e in errors), errors
+
+    # Unmeasured is a permitted answer, so long as the row says so: C1 takes it from there.
+    unmeasured = dict(
+        stripped,
+        tokens_per_stream_chunk=None,
+        tokens_per_stream_chunk_u_reason="(U) the client did not stamp per-chunk arrivals",
+    )
+    assert not list(validator.iter_errors(with_first_result(unmeasured)))
+
+    # A per-request row owes nothing here: its denominator is the server's own token count,
+    # which no amount of transport coalescing can inflate.
+    per_request = dict(stripped, itl_population="per-request-mean")
+    assert not list(validator.iter_errors(with_first_result(per_request)))
 
 
 # --- the pixel budget is a total count, and notes carry value-justifications ----------

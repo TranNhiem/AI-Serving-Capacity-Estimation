@@ -263,6 +263,24 @@
             }
           },
           {
+            "$comment": "A pooled-gaps row asserts that each streamed chunk carried one decode step, and only tokens_per_stream_chunk can support that: where a server coalesces, the pooled 'ITL' tail is an inter-chunk tail wearing an inter-token name and can be an order of magnitude high. On the H100 rehearsal the undeclared substitution moved sustainable capacity from 2,503 tok/s to 1,180 tok/s. The row may still say the factor is unknown, but it must say something -- an unsupported pooled percentile that is silently accepted is the whole defect. Rows on the per-request population owe nothing here: their denominator is the server's own token count, which no transport can inflate.",
+            "if": {
+              "required": [
+                "itl_population"
+              ],
+              "properties": {
+                "itl_population": {
+                  "const": "pooled-gaps"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "tokens_per_stream_chunk"
+              ]
+            }
+          },
+          {
             "$comment": "slo_pass grades the pooled window while outcome fails the rung on any single failing repetition, so one row can legitimately carry slo_pass: true beside outcome: 'failed'; published without the grading sentences, that pair reads as a harness contradiction and the boundary it asserts is unexplained.",
             "if": {
               "required": [
@@ -363,7 +381,29 @@
               "per-request-mean",
               null
             ],
-            "description": "Which ITL distribution the itl_p* figures were computed over (§4.1): one sample per decode step across the window, or one sample per request. The two have different tails and different sample counts, so an unlabelled percentile is not reproducible. Null only when every itl_p* is null."
+            "description": "Which ITL distribution the itl_p* figures were computed over (§4.1): one sample per streamed chunk across the window, or one sample per request. The two have different tails and different sample counts, so an unlabelled percentile is not reproducible. Where the server coalesced decode steps into one chunk the first is not inter-token latency at all, so tokens_per_stream_chunk decides which population a measured row may use (§4.4). Null only when every itl_p* is null."
+          },
+          "tokens_per_stream_chunk": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Output tokens per streamed content chunk over this window: server-reported output tokens summed over the usable records, divided by their summed chunk counts, so the window's whole token population speaks rather than a mean of per-request ratios. A value above 1 means the server coalesced several decode steps into one SSE delta, and past the switch point of 1.05 -- a tolerance band around the exact 1.0 a genuinely per-token stream measures, wide enough to absorb the occasional double-packed delta -- the itl_p* figures MUST be computed per request rather than per gap (§4.4), because pooled gaps between chunks are then inter-chunk latencies wearing an inter-token name, and a finer sample of the wrong quantity is still the wrong quantity. Measured at 6.65 on the concurrency-128 rung of the H100 rehearsal, where the two populations' p95 read 0.2953 s and 0.0247 s against a declared 0.05 s ITL gate. Null only when no usable record carried both per-token stamps and a usage count.",
+            "exclusiveMinimum": 0
+          },
+          "stream_chunk_gap_p50_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "p50 of the gaps between streamed content chunks, seconds -- what the client observed at the transport, one sample per chunk however many decode steps the server folded into it. Published under a name that is not ITL because it is not ITL, and published whenever per-token stamps exist rather than only on divergence: a field that appears only when something went wrong is a field nobody builds a comparison on. It coincides with itl_p50_s wherever tokens_per_stream_chunk sits below the coalescing switch and parts from it exactly where the server coalesced, so the divergence on a row is the substitution made visible."
+          },
+          "stream_chunk_gap_p95_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "p95 of the gaps between streamed content chunks, seconds -- the transport-side tail that a pooled \"ITL p95\" would otherwise reprint under the wrong name: 0.2953 s at the H100 rehearsal's concurrency-128 rung where the per-request ITL p95 was 0.0247 s. A smoothness SLO written against what the client actually sees is legitimately gated on this figure; it is simply not the ITL figure, and itl_population says which distribution itl_p95_s itself came from."
           },
           "e2e_p95_s": {
             "type": [
@@ -493,6 +533,18 @@
           "itl_population_u_reason": {
             "type": "string",
             "description": "(U) justification required when itl_population is null (C1)."
+          },
+          "tokens_per_stream_chunk_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when tokens_per_stream_chunk is null (C1)."
+          },
+          "stream_chunk_gap_p50_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when stream_chunk_gap_p50_s is null (C1)."
+          },
+          "stream_chunk_gap_p95_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when stream_chunk_gap_p95_s is null (C1)."
           },
           "e2e_p95_s_u_reason": {
             "type": "string",

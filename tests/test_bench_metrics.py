@@ -504,3 +504,116 @@ def test_records_outside_the_declared_window_land_in_no_slice():
     straggler.end_ts = 40.0  # finishes long after the window closed
     rows = slice_window(inside + [straggler], window_s=1.0, n_slices=1, t0=0.0)
     assert rows[0].completed == 10
+
+
+# --- token gaps versus chunk gaps: the coalescing switch ------------------------------
+
+
+def test_a_window_stamped_one_chunk_per_token_keeps_the_pooled_itl_population():
+    """Where every stamp is one decode step, the pooled gaps are inter-token latency itself.
+
+    Switching such a window to per-request means would trade 980 fine samples for 20 coarse
+    ones of the same quantity -- and the stall test above shows what per-request means hide.
+    At the rehearsal's concurrency-1 rung the two p95 figures agreed to three decimal places,
+    0.0060 s in both populations: pooling there is the validated estimator, and the reduction
+    must not flinch away from it.
+    """
+    recs = [_ok(f"r{i}", i * 0.5, 0.1, [0.01] * 49) for i in range(20)]
+    s = reduce_window(recs, window_s=10.0, t0=0.0)
+    assert s.tokens_per_stream_chunk == pytest.approx(1.0)
+    assert s.itl_population == "pooled-gaps"
+    assert s.itl_p95_s == pytest.approx(0.01)
+
+
+def test_a_coalesced_window_switches_itl_to_the_per_request_mean_and_says_so():
+    """Eight decode steps folded into one SSE delta must not be graded as inter-token latency.
+
+    On the rehearsal this change follows, the concurrency-128 rung packed six and a half tokens into
+    the average chunk and the pooled gap p95 read 0.2953 s where the per-request p95 was
+    0.0247 s; against a declared 0.05 s gate that difference moved sustainable capacity from
+    1,180 tok/s to 2,503 tok/s -- 2.1x decided entirely by which distribution the word "ITL"
+    named. A finer sample of the wrong quantity is still the wrong quantity, so the reduction
+    switches populations, and itl_population must make the switch visible on the row or the
+    gate verdict cannot be audited against the records.
+    """
+    recs = [_ok(f"r{i}", i * 0.5, 0.1, [0.08] * 9, out_tokens=80) for i in range(20)]
+    s = reduce_window(recs, window_s=10.0, t0=0.0)
+    assert s.tokens_per_stream_chunk == pytest.approx(8.0)
+    assert s.itl_population == "per-request-mean"
+    assert s.itl_p50_s == pytest.approx((9 * 0.08) / 79)
+    assert s.itl_p95_s < 0.05, "the per-request tail passes the gate the chunk tail failed"
+
+
+def test_the_first_content_chunk_counts_even_though_it_is_stamped_elsewhere():
+    """The opening content chunk lands in first_token_ts, not token_ts, and is still a chunk.
+
+    Counting only token_ts reports tokens/(tokens - 1) for a stream that is exactly one token
+    per chunk: 1.02 on the fifty-token reply above and 1.33 on the four-token reply here. The
+    second trips any threshold worth setting, so a workload of short answers -- a VLM
+    classification corpus, say -- would have its ITL population switched by where the harness
+    files one timestamp rather than by anything the server did.
+    """
+    recs = [_ok(f"r{i}", i * 0.5, 0.01, [0.01] * 3) for i in range(20)]
+    s = reduce_window(recs, window_s=10.0, t0=0.0)
+    assert s.tokens_per_stream_chunk == pytest.approx(1.0)
+    assert s.itl_population == "pooled-gaps"
+
+
+def test_the_substitution_factor_is_published_even_when_it_is_exactly_one():
+    """A null factor and a measured factor of 1.0 make different claims.
+
+    Null says the records could not show whether chunks were tokens; 1.0 says they could
+    and they were. A reader auditing whether a pooled ITL percentile was legitimate needs
+    the second sentence on the row -- "not measured" and "measured and fine" must never
+    share a rendering, or every honest run looks unaudited and every unaudited run looks
+    honest.
+    """
+    recs = [_ok(f"r{i}", i * 0.5, 0.1, [0.01] * 9, out_tokens=10) for i in range(20)]
+    s = reduce_window(recs, window_s=10.0, t0=0.0)
+    assert s.tokens_per_stream_chunk is not None
+    assert s.tokens_per_stream_chunk == pytest.approx(1.0)
+    assert "tokens_per_stream_chunk" not in s.reasons
+    assert s.itl_population == "pooled-gaps"
+
+
+def test_chunk_gap_percentiles_sit_beside_itl_and_diverge_exactly_when_coalesced():
+    """The transport trace belongs on the row whatever population the ITL figures drew from.
+
+    Published only when something went wrong, the chunk-gap tail is a field nobody builds a
+    comparison on; published always, it lets a reader compute the substitution factor and
+    compare across runs. The two populations coincide on a clean stream and part exactly
+    when the server coalesced -- on the rehearsal, from 0.0060 s versus 0.0060 s at
+    concurrency 1 to 0.2953 s versus 0.0247 s at concurrency 128 -- so the divergence on a
+    row is the substitution itself made visible rather than a footnote asserting it.
+    """
+    clean = [_ok(f"c{i}", i * 0.5, 0.1, [0.01] * 49) for i in range(20)]
+    s_clean = reduce_window(clean, window_s=10.0, t0=0.0)
+    assert s_clean.stream_chunk_gap_p50_s == pytest.approx(s_clean.itl_p50_s)
+    assert s_clean.stream_chunk_gap_p95_s == pytest.approx(s_clean.itl_p95_s)
+
+    coalesced = [_ok(f"k{i}", i * 0.5, 0.1, [0.08] * 9, out_tokens=80) for i in range(20)]
+    s_coal = reduce_window(coalesced, window_s=10.0, t0=0.0)
+    assert s_coal.stream_chunk_gap_p50_s == pytest.approx(0.08)
+    assert s_coal.stream_chunk_gap_p95_s == pytest.approx(0.08)
+    assert "stream_chunk_gap_p95_s" not in s_coal.reasons
+    assert s_coal.stream_chunk_gap_p95_s != pytest.approx(s_coal.itl_p95_s)
+
+
+def test_a_window_with_no_token_stamps_still_reduces_with_a_null_factor_and_a_reason():
+    """Usage counts without stamps still carry a decodable latency; only the factor is lost.
+
+    Such a window still owes the report its per-request ITL -- the decode-span figure the
+    no-stamps test above already requires -- while the substitution factor goes out null
+    with a recorded reason and the chunk-gap percentiles follow the same (U) discipline as
+    every other unsupported figure. What must not happen is the window failing to reduce
+    at all: missing stamps are a telemetry gap, not a corrupt run.
+    """
+    recs = [_no_stamps(f"r{i}", float(i), 3.0, 9.9, 100) for i in range(50)]
+    s = reduce_window(recs, window_s=50.0, t0=0.0)
+    assert s.tokens_per_stream_chunk is None
+    assert "(U)" in s.reasons["tokens_per_stream_chunk"]
+    assert s.itl_population == "per-request-mean"
+    assert s.itl_p50_s == pytest.approx(0.1)
+    assert s.stream_chunk_gap_p50_s is None
+    assert "stream_chunk_gap_p50_s" in s.reasons
+    assert s.e2e_p95_s is not None
