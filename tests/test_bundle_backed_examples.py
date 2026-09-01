@@ -79,17 +79,21 @@ def _load(path: pathlib.Path) -> dict:
 
 
 def _find_bundle_backed_reports() -> list[pathlib.Path]:
-    """Reports that prove provenance by bundle: no builder, but a records path + manifest.
+    """Every report that ships a bundle: a records path whose directory holds a manifest.
 
     A builderless example with no bundle at all is NOT silently skipped here -- that hole
     is test_report_conformance.py's business, and it fails there. This list is only the
     examples the tests below can sensibly exercise.
+
+    Having a `build_report.py` does not exempt an example, because the two checks answer
+    different questions: a builder proves the published numbers come out of the script, and
+    a bundle proves they come out of the records. An example that ships both and is checked
+    only against its builder can publish a figure its own raw records contradict, and the
+    contradiction is invisible precisely because a test appeared to cover it.
     """
     found = []
     for report_file in sorted((ROOT / "examples").glob("*/report.json")):
         example_dir = report_file.parent
-        if (example_dir / "build_report.py").is_file():
-            continue
         rel = _load(report_file).get("reproduction", {}).get("raw_records_path")
         if rel is None:
             continue
