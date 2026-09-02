@@ -1,0 +1,58 @@
+{
+  "endpoint": {
+    "base_url": "http://127.0.0.1:8137",
+    "model": "qwen3-vl-4b-instruct",
+    "timeout_s": 300
+  },
+  "declarations": {
+    "hardware": "hardware.json",
+    "model": "model.json",
+    "serving": "serving.json",
+    "workload": "workload.json"
+  },
+  "workload": {
+    "corpus": "corpus/finevision-open-ended-qa-split1.jsonl",
+    "media_root": "media",
+    "image_input_transport": "base64",
+    "media_max_records": 2000,
+    "input_tokens": null,
+    "output_tokens": 512,
+    "ignore_eos": false,
+    "cache_policy": "unique-prefix",
+    "seed": 20260902,
+    "think_time_s": 1.5,
+    "run_label": "qwen3-vl-4b-h100x1-tp1-image-qa"
+  },
+  "window": {
+    "window_s": 180,
+    "drain_deadline_s": 60,
+    "warmup_requests": 20
+  },
+  "ladder": {
+    "concurrency": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "repetitions": 3,
+    "throughput_collapse_ratio": 0.7
+  },
+  "slo_gates": {
+    "ttft_p95_max_s": 4.0,
+    "itl_p95_max_s": 0.05,
+    "e2e_p95_max_s": 60,
+    "error_rate_max_pct": 1.0,
+    "declared_before_run": true
+  },
+  "output": {
+    "bundle_dir": "full/bundle",
+    "report_path": "full/report.json",
+    "engine_logs_path": "vllm_server.out",
+    "container_digest": null
+  }
+}

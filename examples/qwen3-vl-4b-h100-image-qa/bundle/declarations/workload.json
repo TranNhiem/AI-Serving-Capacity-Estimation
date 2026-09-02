@@ -1,0 +1,76 @@
+{
+  "ascep_version": "0.4.0",
+  "application_type": "open-ended image question answering on a real corpus (FineVision QA, LLaVA/ShareGPT record shape)",
+  "daily_active_users": null,
+  "daily_active_users_u_reason": "(U) not applicable; this is a benchmark campaign, not a production forecast",
+  "concurrent_users": 200,
+  "sessions_per_user_per_day": null,
+  "sessions_per_user_per_day_u_reason": "(U) not applicable; benchmark campaign",
+  "avg_session_seconds": null,
+  "avg_session_seconds_u_reason": "(U) not applicable; benchmark campaign",
+  "peak_to_mean": null,
+  "peak_to_mean_u_reason": "(U) not applicable; benchmark campaign",
+  "duty_cycle": null,
+  "duty_cycle_u_reason": "(U) not captured: this is a closed-loop benchmark holding concurrency fixed per rung, so there is no duty cycle to observe -- the figure describes a production population, and inventing one here would let a load-generator artefact be read as user behaviour.",
+  "input_tokens_per_request": 722,
+  "output_tokens_per_request": null,
+  "output_tokens_per_request_u_reason": "(U) not declared: output length was capped at 512 and left to real EOS rather than fixed, so the per-request distribution is an outcome of the corpus and is published per rung in the run layer, not forecast here.",
+  "requests_per_session": null,
+  "requests_per_session_u_reason": "(U) not recorded",
+  "target_tok_s_per_user": 20,
+  "peak_concurrent_users": null,
+  "peak_concurrent_users_u_reason": "(U) not computable until concurrent_users is fixed by the run",
+  "active_sessions": null,
+  "active_sessions_u_reason": "(U) not computable until peak_concurrent_users and duty_cycle are fixed by the run",
+  "avg_context_tokens": null,
+  "avg_context_tokens_u_reason": "(U) not declared: context is whatever the sampled image and question cost, which the run measures per rung; a single forecast here would compete with the measured means beside it and C4 binds each throughput figure to the context measured with it.",
+  "avg_context_tokens_tag": null,
+  "avg_context_tokens_tag_u_reason": "(U) no avg_context_tokens value exists yet to tag",
+  "demand_tok_s": null,
+  "demand_tok_s_u_reason": "(U) not applicable: demand is a property of a user population, and this run drives a fixed concurrency ladder rather than a forecast population.",
+  "images_per_request": 1,
+  "image_resolution_mix": [
+    {
+      "width": 640,
+      "height": 480,
+      "fraction": 0.035
+    },
+    {
+      "width": 480,
+      "height": 320,
+      "fraction": 0.0225
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "fraction": 0.018
+    },
+    {
+      "width": 224,
+      "height": 224,
+      "fraction": 0.01775
+    },
+    {
+      "width": 500,
+      "height": 375,
+      "fraction": 0.0175
+    }
+  ],
+  "videos_per_request": 0,
+  "video_seconds_per_request": null,
+  "video_seconds_per_request_u_reason": "(U) no video is sent",
+  "video_sampling_fps": null,
+  "video_sampling_fps_u_reason": "(U) no video is sent",
+  "video_max_frames": null,
+  "video_max_frames_u_reason": "(U) no video is sent",
+  "media_tokens_per_request": null,
+  "media_tokens_per_request_u_reason": "(U) not captured: the server reports one prompt-token total per request and does not split it into media and text, so the media share was never observable through the API this run drove. Deriving it from the resolution formula would be a model of the preprocessor, not a measurement of it.",
+  "reasoning_mode": "non-thinking",
+  "reasoning_share": null,
+  "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload",
+  "reasoning_tokens_per_request": 0,
+  "max_output_tokens": 512,
+  "notes": {
+    "input_tokens_per_request": "722 is one observed datapoint, not a distribution: a single smoke request (a 960x720 PNG plus its question) against the live server returned prompt_tokens 722. The run's per-rung context means supersede it and are the figures to read; it is declared here because a workload layer carrying no input length at all cannot be composed with per-GPU figures measured anywhere else."
+  }
+}

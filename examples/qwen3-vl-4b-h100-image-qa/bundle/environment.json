@@ -1,0 +1,21 @@
+{
+  "driver_version": "535.161.08",
+  "gpu_model": "NVIDIA H100 80GB HBM3",
+  "python_version": "3.10.13",
+  "platform": "Linux-4.18.0-513.5.1.el8_9.x86_64-x86_64-with-glibc2.28",
+  "implementation": "CPython",
+  "packages": {
+    "vllm": "0.11.0",
+    "torch": "2.8.0",
+    "transformers": "4.57.0",
+    "tokenizers": "0.22.1",
+    "xformers": "0.0.32.post1",
+    "triton": "3.4.0",
+    "numpy": "2.2.6",
+    "httpx": "0.28.1",
+    "anyio": "4.11.0"
+  },
+  "packages_source": "importlib.metadata in the process running ascep bench. The benchmark client and the model server can be separate environments on separate hosts; when they are, these versions describe the harness and say nothing about what served the requests.",
+  "ascep_package_version": "0.4.0",
+  "ascep_protocol_version": "0.4.0"
+}

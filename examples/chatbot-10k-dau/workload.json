@@ -1,5 +1,5 @@
 {
-  "ascep_version": "0.3.0",
+  "ascep_version": "0.4.0",
   "application_type": "conversational assistant (chat), short context, single timezone, human-in-the-loop turns",
   "daily_active_users": 10000,
   "daily_users_tag": "U",

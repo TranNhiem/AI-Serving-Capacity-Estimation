@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -128,6 +129,14 @@ def test_report_is_regenerable(report_path):
     )
 
 
+#: The register's own ``value_used`` is the one null the schema exempts, in its own words:
+#: "Null means no substitute was plugged in -- the field was simply left unmeasured -- and it
+#: is the one null in a report needing no (U) reason: the entry around it IS the
+#: justification." Demanding one anyway would be unsatisfiable, since the entry's
+#: ``additionalProperties: false`` rejects a sibling ``value_used_u_reason`` outright.
+_REGISTER_VALUE_USED = re.compile(r"^unmeasured_assumptions\[\d+\]\.value_used$")
+
+
 def test_every_null_is_justified(report_path):
     """C1: unknown values are recorded as null with a (U) entry — never guessed, never omitted.
 
@@ -143,6 +152,7 @@ def test_every_null_is_justified(report_path):
         if not parent.get(f"{path.rsplit('.', 1)[-1]}_u_reason")
         and path not in registered
         and path.split(".", 1)[-1] not in registered
+        and not _REGISTER_VALUE_USED.match(path)
     ]
     assert not unjustified, "null with no (U) justification:\n  " + "\n  ".join(unjustified)
 
@@ -186,17 +196,42 @@ def test_u_reasons_are_tagged_and_not_stale(report_path):
     assert not problems, "\n  ".join(problems)
 
 
+def _registered_path(field: str) -> str | None:
+    """The dotted path a register entry names, or None if the entry is not naming one.
+
+    The schema calls ``field`` a dotted path, and for a single field it is one. But the
+    harness also registers gaps no single path names -- a whole missing scaling table, a set
+    of percentiles published below the advisory sample floor -- and those are legitimate
+    entries about things that are *not* null. Reading them as paths and then reporting them
+    as orphans would turn this check into pressure to delete honest caveats, which is the
+    opposite of what the register is for. A trailing parenthetical is stripped first, because
+    'run.engine_version (not observed)' is still naming ``run.engine_version`` and must stay
+    inside the check rather than escaping it on a technicality.
+    """
+    bare = re.sub(r"\s*\(.*\)\s*$", "", field).strip()
+    return bare if re.fullmatch(r"[a-z_][a-z0-9_]*(\.[a-z0-9_*\[\]]+)*", bare) else None
+
+
 def test_no_orphan_entries_in_the_unmeasured_register(report_path):
     """The other direction: the register must not list fields the report went on to measure."""
     report = _load(report_path)
     nulled = {p for p, _ in _nulls(report)}
-    # Register paths are written against the source declaration (e.g. 'model.n_kv_heads');
-    # accept any null whose dotted path ends the same way.
-    orphans = [
-        e["field"]
-        for e in report["unmeasured_assumptions"]
-        if not any(p == e["field"] or p.endswith("." + e["field"].split(".")[-1]) for p in nulled)
-    ]
+    orphans = []
+    for entry in report["unmeasured_assumptions"]:
+        named = _registered_path(entry["field"])
+        if named is None:
+            continue
+        leaf = named.split(".")[-1]
+        # Three ways an entry can be honest: it names the null itself; it names a subtree
+        # whose nulls are inside it ('sizing_result' backing sizing_result.gpus_required);
+        # or it is written against the source declaration, or globs a tier, and only the
+        # leaf lines up ('capacity_tiers.*.binding_constraint').
+        if any(
+            p == named or p.startswith(named + ".") or p.endswith("." + leaf) or p == leaf
+            for p in nulled
+        ):
+            continue
+        orphans.append(entry["field"])
     assert not orphans, f"registered as unmeasured but not null in the report: {orphans}"
 
 

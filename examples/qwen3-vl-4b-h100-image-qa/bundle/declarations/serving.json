@@ -1,0 +1,41 @@
+{
+  "ascep_version": "0.4.0",
+  "framework": "vllm",
+  "framework_version": "0.11.0",
+  "container_digest": null,
+  "container_digest_u_reason": "(U) not recorded at run time",
+  "tensor_parallel": 1,
+  "pipeline_parallel": 1,
+  "gpu_count": 1,
+  "max_model_len": 32768,
+  "memory_utilization": 0.9,
+  "batching_mode": "continuous",
+  "max_num_seqs": 512,
+  "max_num_batched_tokens": 8192,
+  "prefix_caching": "on",
+  "kv_cache_offload": "off",
+  "kv_cache_quantized": "off",
+  "chunked_prefill": "on",
+  "speculative_decoding": "off",
+  "engine_reported_kv_cache_tokens": 429952,
+  "cold_start_to_ready_s": 42.0,
+  "media_preprocessing": {
+    "video_sampling_fps": null,
+    "video_max_frames": null,
+    "image_pixel_budget_px": 16777216,
+    "mm_processor_cache_gb": 0,
+    "per_request_override_supported": false,
+    "notes": {
+      "mm_processor_cache_gb": "Set to 0 deliberately, so every request pays host-side decode and patchify and the measurement carries preprocessing cost. With the cache on, a corpus that repeats media reports a speedup the production workload would never see, and nothing in the response reveals it.",
+      "per_request_override_supported": "False was verified, not assumed: this engine answers a per-request mm_processor_kwargs with HTTP 400, so the pixel budget above is the only one any client can get."
+    },
+    "video_sampling_fps_u_reason": "(U) no rate is declared because the deployment refuses video: the engine was started with a per-prompt video limit of 0 and answers a video part with HTTP 400. There is no sampling rate to report, not one that went unmeasured.",
+    "video_max_frames_u_reason": "(U) the cap was looked for and is absent because no video reaches the preprocessor: the per-prompt video limit is 0, so the unbounded reading this null would otherwise carry -- unbounded frames, therefore unbounded context -- does not apply."
+  },
+  "image_input_transport": "base64",
+  "notes": {
+    "engine_reported_kv_cache_tokens": "Read from the engine log shipped in this bundle (job start 04:30, 429,952 tokens). The figure is not stable across boots of an identical configuration: an earlier start of the same sbatch on the same GPU reported 429,936, one 16-token KV block less, presumably because free memory after weight load moved slightly. Read it as +/- one block rather than exact, and never carry it between runs -- the bundle hashes the log beside this declaration, so a figure copied from a previous boot contradicts the evidence shipped with it.",
+    "cold_start_to_ready_s": "Measured from the engine first log line to Application startup complete, 04:30:19 to 04:31:01. This is a warm restart, not a first start: the log records \"Directly load the compiled graph(s) for dynamic shape from the cache, took 2.280 s\", so the torch.compile cache under VLLM_CACHE_ROOT was already populated by an earlier boot on this node. The same configuration's first start, with that cache empty, took 90 s. Size a cold rollout or an autoscaler that lands on a fresh node with the larger figure. Both are floors in any case: interpreter start and module import happen before anything is logged.",
+    "framework_version": "Operator-typed, but corroborated: the bundle environment capture reads the installed distribution versions, and on this deployment the benchmark client and the model server run in the same interpreter environment, so the vllm version it records is the one that served the requests rather than the harness host alone."
+  }
+}

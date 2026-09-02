@@ -13,6 +13,8 @@ cross-version comparisons valid.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-02
+
 ### Added
 
 - **`ascep conformance report.json --raise` writes the computed level into the
@@ -32,7 +34,76 @@ cross-version comparisons valid.
   bytes, because a flag that quietly rewrote an overstatement into an accurate
   claim would erase the evidence that anyone overstated.
 
+- **`examples/qwen3-vl-4b-h100-image-qa` — the first example this project
+  measured itself.** Qwen3-VL-4B-Instruct, dense, bf16, one H100 SXM at TP=1,
+  vLLM 0.11.0, answering open-ended visual questions over a 2,000-record
+  FineVision QA split with one base64-inline image per request. The ladder
+  climbed 1 → 128 streams in three 180-second repetitions per rung and left
+  17,680 request records behind it. Measured capacity is 128 streams at
+  2,668.1 tok/s; sustainable is 64 at 2,564.8 tok/s; both name `slo` as the
+  binding floor, TTFT p95 having gone from 2.310 s at 64 streams to 9.598 s at
+  128 against a 4.0 s gate.
+
+  It is three firsts at once, and each is a different kind of evidence. It is
+  the first **multimodal** report, so chapter 9 now has a worked example rather
+  than only a specification. It is the first **bundle-backed** one: there is no
+  `build_report.py`, because nothing was transcribed — the bundle *is* the
+  artifact, and every latency in the report recomputes from
+  `bundle/records.jsonl` under a sha256 manifest. And it is the first report
+  produced end to end by `ascep bench`, which is how the measured-tier defect
+  above was found at all: the repository's own harness wrote a report its own
+  conformance checker rejected. It also closes the gap 0.1.0 recorded as "a
+  dense-model report on the same hardware is the nearest gap".
+
+  It grades `partial`, for three warnings and no errors. `container_digest` is
+  null because the engine ran from a scheduler-managed environment rather than a
+  pinned image; the `theoretical` and `recommended` tiers are absent because the
+  roofline belongs to `ascep size` and a headroom factor is a policy nobody has
+  declared for this deployment. Prefix caching is on in the engine and
+  deliberately defeated by the workload's unique-prefix cache policy, since the
+  rungs climb in order and a shared prefix would let every higher rung answer
+  partly out of a cache the rung below it filled.
+
 ### Fixed
+
+- **The measured tier was SLO-gated, which erased the distinction between the
+  measured and sustainable tiers that chapter 5 §5.5 exists to draw.** Tier
+  selection in `ascep/bench/run.py` kept only rungs graded `COMPLETE`, and a rung
+  is graded `COMPLETE` only when every declared SLO gate held — so the "best
+  observed, SLO ignored" engine ceiling was in fact gated, and on any ladder
+  containing a failing rung the measured tier silently collapsed onto the
+  sustainable tier. A reader comparing the two headline numbers would see
+  identical figures and reasonably conclude the engine stops where the SLO stops.
+  Worse, on a ladder where no rung passed all its gates, the report published no
+  measured tier at all — "no rung completed its declared repetitions" — even
+  though the harness had plainly measured a ceiling. Chapter 5 §5.5 had the rule
+  right, and the conformance checker had it right too (C7 flags a sustainable
+  tier that equals measured despite a failing operating point at or below the
+  average context); the harness alone was the outlier among the three components.
+
+  The repository's own first self-measured example exposed it: a Qwen3-VL-4B
+  image-QA ladder on one H100, where rungs 1 through 64 passed and rung 128
+  failed its TTFT gate (9.598 s p95 against a declared 4.0 s gate). Under the
+  previous release both tiers would have read 64 streams / 2,564.8 tok/s. They
+  now read 128 streams / 2,668.1 tok/s measured, binding constraint `slo`,
+  against 64 streams / 2,564.8 tok/s sustainable — the engine ceiling versus
+  what users can rely on, which is the entire point of having two tiers.
+
+  The fix selects the measured tier from operating points — rungs graded
+  `COMPLETE` or `FAILED` — per chapter 7's outcome vocabulary, in which a failed
+  rung is a real negative boundary, while `INVALID` and `ABORTED` still claim no
+  operating point and stay out. It also adds `_observed_constraint`: the old
+  `_boundary_constraint` searched only *above* a given rung for the binding
+  floor, so on the top rung of a ladder that failed there the headline tier
+  carried a null constraint — a report saying "the ceiling is 128 streams"
+  while declining to say what stopped it. The new helper reads the floor
+  from the failed rung itself (`throughput` if it completed nothing, else `slo`)
+  and falls back to the above-only search otherwise.
+
+  This alters the numbers in already-conforming reports — every published ladder
+  with a failing rung will now show a higher measured tier and a populated
+  binding constraint — and per the project's versioning rule that is precisely
+  why this release is 0.4.0 rather than 0.3.1.
 
 - **`ASCEP_VERSION` stayed at 0.2.0 through the 0.3.0 release, so reports could
   not cite the protocol they were produced under.** 0.3.0 was cut precisely
@@ -87,6 +158,23 @@ cross-version comparisons valid.
   measured one context length and left `run.single_point` at its default, so C4
   asked the author to state a limit the harness could already see. Setting it
   does not raise the grade; it stops an unlabelled point from reading as a curve.
+
+### Known gaps
+
+- **`unmeasured_assumptions[].field` is specified as a dotted path, and the
+  harness does not always write one.** `ascep bench` emits readable designators
+  instead — a path with an explanatory parenthetical, a glob across the tiers, a
+  pair of sibling fields named together, and in one case a caveat about
+  percentiles that are *published* rather than null, which is not a field at
+  all. The example test that guards the register against listing a field the
+  report went on to measure can only resolve entries that are path-shaped, so it
+  now skips the rest and says so. That is the right trade for a check whose
+  purpose is catching an understated report — the alternative reading turns it
+  into pressure to delete honest caveats — but it does mean those entries are
+  unchecked. Either the harness should write bare paths and move the prose into
+  `impact_if_wrong`, or the schema should admit a second entry shape for a
+  caveat that backs no single field. Deciding which is a v0.5 question, and it
+  changes a report's bytes, so it is not being made quietly here.
 
 ## [0.3.0] — 2026-09-02
 

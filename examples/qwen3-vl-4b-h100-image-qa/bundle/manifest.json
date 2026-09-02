@@ -1,0 +1,13 @@
+{
+  "sha256": {
+    "records.jsonl": "579d4411f7e92517fe6459ca18cdd8e2fd1ecad59815bcd26bb69194fcc04b50",
+    "run_configs.json": "5093fd97de6ac630c4ae9749f24df7dcb24be66dbea547b4d20d22cdab61ea19",
+    "environment.json": "7972071c663159e83f5dcf79c4db14412cd512b2c5d8860eddae0017e2512af2",
+    "../vllm_server.out": "3380139a3fc70e3cdf8d1dc80650f2c0ed56725a4afc863e352a09599c866fd8",
+    "bench-config.json": "d5350240412e0c4b70d0af964e26b3e8a86128708aef2da93ab341cd25309160",
+    "declarations/hardware.json": "96e54b525fe6da8d893892a64326d02dc157fbe74efd3e698cfa538a3cb4336b",
+    "declarations/model.json": "704befed7485ed6e9ff5a6451a77f7c6de26abe1747ccd32e9bd5217d748b0cd",
+    "declarations/serving.json": "6ea04ca16115ae13bddab8250d414971f1c2ff172b25549501a67ca52a26003e",
+    "declarations/workload.json": "51d71ed2b85f06816a8161e78f162536bc3c4022942335b23cfeb8f65e855c21"
+  }
+}

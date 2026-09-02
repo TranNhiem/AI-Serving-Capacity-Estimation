@@ -1,0 +1,32 @@
+{
+  "ascep_version": "0.4.0",
+  "gpu_model": "NVIDIA H100 80GB HBM3",
+  "gpu_count": 1,
+  "nodes": 1,
+  "gpus_per_node": 8,
+  "vram_bytes_per_gpu": 85520809984,
+  "interconnect_intra_node": null,
+  "interconnect_intra_node_u_reason": "(U) TP=1 on a single GPU; there is no inter-GPU link in the serving path, so no intra-node interconnect was exercised and none is declared. Describing the node's NVLink here would describe hardware the run never touched.",
+  "interconnect_inter_node": null,
+  "interconnect_inter_node_u_reason": "(U) single-node campaign only; multi-node scaling not measured",
+  "node_exclusivity": null,
+  "node_exclusivity_u_reason": "(U) not captured; the node physically hosts 8 GPUs and this run used exactly 1, but whether the remaining devices were in use during the run was not recorded",
+  "driver_version": "535.161.08",
+  "compute_runtime_version": "CUDA 12.8 (torch 2.8.0+cu128)",
+  "hbm_bandwidth_bytes_s": null,
+  "hbm_bandwidth_bytes_s_u_reason": "(U) not captured at run time and the vendor figure was not consulted for this declaration; without it the theoretical tier cannot be computed and roofline_efficiency MUST be null",
+  "dense_bf16_flops_per_s": null,
+  "dense_bf16_flops_per_s_u_reason": "(U) not captured at run time and the vendor figure was not consulted for this declaration",
+  "cpu_model": "Intel Xeon Gold 6530",
+  "cpu_cores": 12,
+  "system_ram_bytes": null,
+  "system_ram_bytes_u_reason": "(U) not captured at run time",
+  "storage_class": null,
+  "storage_class_u_reason": "(U) not captured at run time",
+  "model_load_path": null,
+  "model_load_path_u_reason": "(U) not captured at run time",
+  "notes": {
+    "cpu_cores": "A scheduler allocation, not the machine: the node reports 112 logical cores in total and the cluster QoS grants 12 per GPU, which is what this single-GPU run received. Under this image workload the host decodes and patchifies every request, so the 12 is a capacity input; host sampling during calibration peaked at 11.53 of them.",
+    "gpus_per_node": "The node hosts 8 H100s; this run was allocated 1. The other 7 are declared for topology, not because they served traffic."
+  }
+}

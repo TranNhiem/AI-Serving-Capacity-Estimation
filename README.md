@@ -4,7 +4,7 @@
 serve this model, I want to build this application — how much capacity do I get, and how
 much infrastructure do I need?***
 
-[![Protocol](https://img.shields.io/badge/ASCEP-v0.3--draft-blue)](protocol/SPEC.md)
+[![Protocol](https://img.shields.io/badge/ASCEP-v0.4--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 ---
@@ -212,14 +212,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**v0.3, draft.** The spec and the formula set are stable enough to use and argue with. The
+**v0.4, draft.** The spec and the formula set are stable enough to use and argue with. The
 harness is generalized from a private benchmark campaign and now ships; expect churn in
 `ascep/` before v1.0. Breaking changes to anything that would alter a conforming report's
-numbers get a major version bump, and v0.3 is one: the harness was computing ITL percentiles
-from the gaps between streamed chunks, which are inter-token gaps only while the server sends
-one token per chunk. On a real H100 ladder it sent up to 6.65, and the mislabelled
-distribution moved sustainable capacity by 2.1x and named the wrong binding constraint. A
-report produced under the previous release does not validate unchanged. See
+numbers get a major version bump, and v0.4 is one: the harness built the measured tier from
+the highest rung that *passed* its SLO gates, while chapter 5.5 defines that tier as "best
+observed, SLO ignored" — the engine ceiling. The two tiers therefore came out identical on
+every ladder with a failing rung, erasing the one distinction they exist to draw, and on a
+ladder where no rung passed the harness published no measured tier at all despite having
+measured one. A report produced under the previous release does not validate unchanged. See
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
