@@ -17,7 +17,7 @@ Full hardware details MAY be coarsened to the schema (e.g. "8× 141 GB HBM GPUs,
 
 ### Review criteria
 
-Submitted reports are checked mechanically and by review against C1–C8:
+Submitted reports are checked mechanically and by review against C1–C11:
 
 | rule | what reviewers verify | typical rejection |
 |---|---|---|

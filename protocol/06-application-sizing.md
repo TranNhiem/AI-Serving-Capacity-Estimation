@@ -10,7 +10,7 @@ Sizing runs forward through the five layers and back again:
 Hardware → Model → Serving → Performance → Workload → Infrastructure
 ```
 
-Layers 1–3 are fixed by declaration. Layer 4 (measurement) produces the two per-GPU quantities this chapter consumes: KV tokens and aggregate `tokens/s`, each measured **at the target context length and the intended TP width** — per C3 and C4, both are topology- and context-bound. Layer 5 (workload) produces the demand. The answer is `min` of the KV and throughput floors, rounded up to whole replicas by `gpus_required`.
+Layers 1–3 are fixed by declaration. Layer 4 (measurement) produces the two per-GPU quantities this chapter consumes: KV tokens and aggregate `tokens/s`, each measured **at the target context length and the intended TP width** — per C3 and C4, both are topology- and context-bound. Layer 5 (workload) produces the demand. The answer is `min` of the KV and throughput floors — and of the prefill floor of §10.3 where a measured `prefill_tok_s` is available — rounded up to whole replicas by `gpus_required`.
 
 **Rule (MUST).** Both per-GPU inputs to `gpus_required` MUST come from measurement at the same TP width and the same context length as the target workload. *Failure prevented:* feeding short-context throughput into a document-length workload overstates capacity by 2–4×; feeding TP=1 per-GPU KV into a TP=4 plan ignores the replication penalty in `kv_heads_per_rank` and can halve real capacity.
 
@@ -102,7 +102,7 @@ Real applications are mixtures, and the mixture changes which floor binds per se
 | segment | example | typical context | binding floor |
 |---|---|---|---|
 | short-context | autocomplete, classification, chat turns | < 2k tokens | `throughput` |
-| mixed | RAG chat, support agents | 2k–16k | crossover — MUST be reported per the three-floors rule |
+| mixed | RAG chat, support agents | 2k–16k | crossover — MUST be reported per the crossover rule of §5.3 |
 | long-context | document QA, code analysis | > 16k | `kv` |
 
 **Head-of-line blocking.** On a shared engine, a long prefill is compute-heavy and occupies the scheduler; short requests queued behind it see their TTFT inflated by seconds. The aggregate-throughput number stays healthy — the open-loop graph looks fine — while the short-context SLO dies in the tail. This is why C7 requires gates fixed per segment before measurement, and why Measurement-layer percentiles MUST be segmented, not pooled.

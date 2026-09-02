@@ -84,7 +84,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_conformance(args: argparse.Namespace) -> int:
-    """Check a report against rules C1-C8, print findings by rule, and with --raise save
+    """Check a report against rules C1-C11, print findings by rule, and with --raise save
     the computed level into the file so the artifact carries its own grade."""
     try:
         report = _load_json(args.path)
@@ -295,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_validate.set_defaults(handler=_cmd_validate)
 
-    p_conf = sub.add_parser("conformance", help="check a report against rules C1-C8")
+    p_conf = sub.add_parser("conformance", help="check a report against rules C1-C11")
     p_conf.add_argument("path", help="path to the report JSON file")
     p_conf.add_argument(
         "--strict",

@@ -4,7 +4,7 @@
 serve this model, I want to build this application — how much capacity do I get, and how
 much infrastructure do I need?***
 
-[![Protocol](https://img.shields.io/badge/ASCEP-v0.4--draft-blue)](protocol/SPEC.md)
+[![Protocol](https://img.shields.io/badge/ASCEP-v0.5--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 ---
@@ -36,7 +36,7 @@ reference implementation.
 - **`schemas/`** — JSON Schema for the five layers: hardware, model, serving, run, workload.
 - **`ascep/`** — reference implementation. `capacity.py` is the transparent formula set and is
   **stdlib-only by design**, so it runs on an air-gapped cluster login node with no `pip install`;
-  `conformance.py` grades a report against C1–C8, `render.py` emits the Markdown form.
+  `conformance.py` grades a report against C1–C11, `render.py` emits the Markdown form.
 - **`templates/capacity-report.md`** — the standard report.
 - **`examples/`** — worked end-to-end reports you can diff your own against.
 
@@ -46,12 +46,13 @@ pair it with a task-appropriate quality evaluation.
 
 ## The core ideas
 
-**Capacity is the minimum of three floors, and which one binds changes with context length.**
+**Capacity is the minimum of four floors, and which one binds changes with context length and prompt shape.**
 
 | floor | formula | binds when |
 |---|---|---|
 | Weights | do weights + a usable KV pool fit? | always checked first; binary |
 | KV | `sessions = kv_tokens ÷ avg_context` | long context |
+| Prefill | `users = usable_prefill_tok_s ÷ per-user prompt demand` | prompts heavier than the run the throughput figure came from |
 | Throughput | `users = usable_tok_s ÷ per-user demand` | short context |
 
 A capacity number without its **binding constraint** is not actionable — it doesn't tell you
@@ -120,7 +121,7 @@ Then grade and publish the result:
 ```bash
 ascep init -o report.json           # a fillable skeleton of every field the schemas require
 ascep validate report.json          # structure and vocabulary, against the schemas
-ascep conformance report.json       # C1–C8, and whether the report overstates itself
+ascep conformance report.json       # C1–C11, and whether the report overstates itself
 ascep conformance report.json --raise   # ...and save that level into the file
 ascep render report.json -o report.md
 
@@ -212,16 +213,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**v0.4, draft.** The spec and the formula set are stable enough to use and argue with. The
+**v0.5, draft.** The spec and the formula set are stable enough to use and argue with. The
 harness is generalized from a private benchmark campaign and now ships; expect churn in
 `ascep/` before v1.0. Breaking changes to anything that would alter a conforming report's
-numbers get a major version bump, and v0.4 is one: the harness built the measured tier from
-the highest rung that *passed* its SLO gates, while chapter 5.5 defines that tier as "best
-observed, SLO ignored" — the engine ceiling. The two tiers therefore came out identical on
-every ladder with a failing rung, erasing the one distinction they exist to draw, and on a
-ladder where no rung passed the harness published no measured tier at all despite having
-measured one. A report produced under the previous release does not validate unchanged. See
-[CHANGELOG.md](CHANGELOG.md).
+numbers get a major version bump. The 0.4 release was one; this one is not. Everything v0.5 adds — workload
+archetypes, the prefill floor, the agent-loop declarations — is opt-in and number-preserving:
+omit the new fields and every formula returns exactly what it returned before, which is the
+property the compatibility promise is made of and which the test suite asserts directly.
+
+One consequence is worth stating plainly, because it is not a number change and so does not
+force a major bump, but it can still move a label. C11 grades a published capacity figure
+against the token mix of the benchmark rung it was read off, and a 0.4 report whose declared
+workload is substantially more input-heavy than its own measurements will now grade `partial`
+rather than `conforming`. Nothing about that report changed; the checker gained the ability to
+notice an overstatement it was previously blind to. Both published examples grade exactly as
+they did under 0.4. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

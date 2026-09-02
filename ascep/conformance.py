@@ -1,4 +1,4 @@
-"""Completeness and consistency grader for the ASCEP conformance rules C1-C8.
+"""Completeness and consistency grader for the ASCEP conformance rules C1-C11.
 
 The JSON Schemas (ascep.validation) validate structure and vocabulary; this module grades
 what a schema cannot express: that every null is justified, that every number carries a
@@ -133,7 +133,7 @@ class Verdict:
 
 
 def check(report: dict) -> Verdict:
-    """Grade ``report`` against C1-C8 and return the computed verdict."""
+    """Grade ``report`` against C1-C11 and return the computed verdict."""
     if not isinstance(report, dict):
         findings = (
             Finding(
@@ -153,6 +153,9 @@ def check(report: dict) -> Verdict:
     _check_c6(report, findings)
     _check_c7(report, findings)
     _check_c8(report, findings)
+    _check_c9(report, findings)
+    _check_c10(report, findings)
+    _check_c11(report, findings)
     ordered = tuple(sorted(findings, key=lambda f: (f.rule, f.path)))
     claimed = report.get("conformance")
     return Verdict(
@@ -514,7 +517,7 @@ def _warn_schema_skipped(findings: list[Finding]) -> None:
             path="report",
             message=(
                 "Install jsonschema and ship the schemas/ directory: structural "
-                "validation was skipped, so this verdict covers C1-C8 semantics only."
+                "validation was skipped, so this verdict covers C1-C11 semantics only."
             ),
         )
     )
@@ -877,7 +880,7 @@ def _check_c5(report: dict, findings: list[Finding]) -> None:
                     severity="error",
                     path=f"capacity_tiers.{name}.binding_constraint",
                     message=(
-                        "Name the floor that binds ('weights', 'kv', 'throughput' or "
+                        "Name the floor that binds ('weights', 'kv', 'prefill', 'throughput' or "
                         "'slo'); a capacity number without its constraint does not say "
                         "what to buy."
                     ),
@@ -1135,3 +1138,420 @@ def _check_digest(reproduction: dict, findings: list[Finding]) -> None:
             ),
         )
     )
+
+
+# --------------------------------------------------------------- C9 archetype terms
+
+
+#: The closed archetypes vocabulary, split by whether the archetype carries media. The enum
+#: lives in the Layer 5 schema, which this module must be able to grade without (see
+#: _check_schema), so it cannot be derived the way the provenance vocabulary is; the values
+#: are restated here and pinned by tests. The split decides which half of C9 fires: a media
+#: archetype with no media behind it, and media behind a non-media archetype, are the same
+#: lie in opposite directions -- present, non-null and self-contradictory, the one shape C1
+#: cannot see.
+_MEDIA_ARCHETYPES = ("image_grounded", "video_grounded")
+
+
+def _archetypes(report: dict) -> list:
+    """The workload layer's declared archetypes, normalised to a list.
+
+    C9 and C10 both gate on this one array, and two readers deriving it independently would
+    drift on exactly the malformed cases -- absent key, string instead of list -- that a
+    grader must survive without raising. Null or absent declares no archetype, and both
+    rules pass on that by construction.
+    """
+    archetypes = _get(_get(report, "workload"), "archetypes")
+    return archetypes if isinstance(archetypes, list) else []
+
+
+def _check_c9(report: dict, findings: list[Finding]) -> None:
+    """Grade the workload's numbers against the archetypes it declares.
+
+    Every check below fires on values that are present, non-null and self-contradictory: a
+    media archetype carrying no media, media counts sitting under a non-media archetype, a
+    'code_agent' archetype with no loop behind it. C1 can only ask that a null be justified,
+    so the report that says "video support desk" in prose while leaving the media terms
+    empty passes every null check and still publishes a KV floor missing the media prefix.
+    This rule exists for that report.
+    """
+    workload = _get(report, "workload")
+    if not isinstance(workload, dict):
+        return
+    archetypes = _archetypes(report)
+    if not archetypes:
+        return
+    images = workload.get("images_per_request")
+    videos = workload.get("videos_per_request")
+    media_tokens = workload.get("media_tokens_per_request")
+    if any(name in _MEDIA_ARCHETYPES for name in archetypes):
+        counts_path = (
+            "workload.images_per_request"
+            if "image_grounded" in archetypes
+            else "workload.videos_per_request"
+        )
+        if not ((_is_number(images) and images > 0) or (_is_number(videos) and videos > 0)):
+            findings.append(
+                Finding(
+                    rule="C9",
+                    severity="error",
+                    path=counts_path,
+                    message=(
+                        "Record how much media each request carries: the archetypes declare "
+                        "a media workload but every media count is zero or null, so the KV "
+                        "floor is priced without the media prefix. 0 (measured, no media) is "
+                        "not a value a media archetype can publish, and a null does not "
+                        "become true by sitting beside one -- the declaration and the terms "
+                        "contradict each other, and one of them must move."
+                    ),
+                )
+            )
+        # A measured avg_context_tokens already contains the media expansion, because the
+        # server's prompt-token total does not distinguish a media token from a text one.
+        # There the split is informational and its absence prices nothing wrongly, so the
+        # rule stays quiet: erroring would punish the report that discloses a limit of the
+        # interface -- most servers report one prompt total and no breakdown -- and reward
+        # the one that invents a plausible split instead.
+        # A null avg_context_tokens is likewise not this rule's business: the report is
+        # declining to publish a single forecast context, which is the right call when the
+        # per-rung measured means are the answer and a forecast would compete with them.
+        # There is no under-priced KV floor to warn about, because there is no declared
+        # context for a media term to be missing from.
+        context_measured = workload.get("avg_context_tokens_tag") == "M"
+        context_declared = _is_number(workload.get("avg_context_tokens"))
+        if media_tokens is None and context_declared and not context_measured:
+            findings.append(
+                Finding(
+                    rule="C9",
+                    severity="warning",
+                    path="workload.media_tokens_per_request",
+                    message=(
+                        "Record media_tokens_per_request, or measure avg_context_tokens and "
+                        "tag it (M): the archetypes declare a media workload whose context "
+                        "was inferred rather than measured, and with no media term in it the "
+                        "KV floor is almost certainly priced on the text prefix alone. A (U) "
+                        "reason satisfies C1 for the null, but nothing in this report shows "
+                        "the media expansion was counted anywhere."
+                    ),
+                )
+            )
+    else:
+        media_terms = [
+            name
+            for name, value in (
+                ("images_per_request", images),
+                ("videos_per_request", videos),
+                ("media_tokens_per_request", media_tokens),
+            )
+            if _is_number(value) and value > 0
+        ]
+        if media_terms:
+            findings.append(
+                Finding(
+                    rule="C9",
+                    severity="error",
+                    path="workload.archetypes",
+                    message=(
+                        "Reconcile the archetypes with the workload's media terms "
+                        f"({', '.join(media_terms)}): they are published as positive numbers "
+                        "while every declared archetype is non-media, so the KV floor was "
+                        "priced for a workload the report's own numbers deny. Name the media "
+                        "archetype the workload carries, or zero the terms; present, non-null "
+                        "and self-contradictory is a failure C1 cannot catch."
+                    ),
+                )
+            )
+    if "code_agent" in archetypes and workload.get("agent_loop") is None:
+        findings.append(
+            Finding(
+                rule="C9",
+                severity="error",
+                path="workload.agent_loop",
+                message=(
+                    "Record agent_loop, or drop the 'code_agent' archetype: the archetype "
+                    "asserts a tool-calling loop, and with no loop declared there is nothing "
+                    "to price its turns, its context growth or its KV residency against. A "
+                    "(U) reason satisfies C1 for the null; it does not pay for the archetype."
+                ),
+            )
+        )
+
+
+# ----------------------------------------------------------- C10 agent-loop estimators
+
+
+#: Field names an avg_context_tokens estimator must cite to count as accumulating across a
+#: loop's turns. A note naming neither can only be describing a single request -- the chat
+#: default -- no matter what it calls itself, and under 'code_agent' that estimator prices a
+#: cumulative context as if every turn were the first, understating the KV floor and
+#: overstating capacity in the direction nobody is warned about.
+_ACCUMULATING_ESTIMATOR_MARKERS = ("requests_per_session", "context_growth_tokens_per_turn")
+
+
+def _names_accumulating_estimator(note: Any) -> bool:
+    """Whether a workload note names an estimator that grows context with the loop's turns."""
+    return isinstance(note, str) and any(
+        marker in note for marker in _ACCUMULATING_ESTIMATOR_MARKERS
+    )
+
+
+def _check_c10(report: dict, findings: list[Finding]) -> None:
+    """Grade the estimators the 'code_agent' archetype is known to break.
+
+    Two pre-archetype defaults are correct for chat and wrong for a tool-calling loop: the
+    single-request mean context, and duty_cycle standing in for KV residency. The first is
+    an error, because a mis-priced KV floor overstates every capacity figure built on it.
+    The second stays a warning: a null kv_residency is also how every report written before
+    the field existed still computes, so the default must keep working -- and the warning,
+    not the default, is what keeps it from being silent.
+    """
+    workload = _get(report, "workload")
+    if not isinstance(workload, dict):
+        return
+    if "code_agent" not in _archetypes(report):
+        return
+    avg_context = workload.get("avg_context_tokens")
+    tag = workload.get("avg_context_tokens_tag")
+    # A null number is C1's justification walk; a number with no tag is C2's provenance
+    # error. Grading either again here would report one omission under two rules, so this
+    # rule only fires on a tagged number whose tag asserts the wrong estimator.
+    if _is_number(avg_context) and tag is not None:
+        notes = workload.get("notes")
+        note = notes.get("avg_context_tokens") if isinstance(notes, dict) else None
+        if tag == "I" and not _names_accumulating_estimator(note):
+            findings.append(
+                Finding(
+                    rule="C10",
+                    severity="error",
+                    path="workload.avg_context_tokens_tag",
+                    message=(
+                        "Re-derive workload.avg_context_tokens before publishing: under the "
+                        "'code_agent' archetype the context grows with every loop turn, and "
+                        "an (I) tag that cites no accumulating estimator is the chat default "
+                        "by another name -- a single-request mean applied to a cumulative "
+                        "context, which under-prices the KV floor and overstates capacity. "
+                        "Name the estimator in the workload notes (it must reference "
+                        "requests_per_session or context_growth_tokens_per_turn), or measure "
+                        "the mean context and tag it (M)."
+                    ),
+                )
+            )
+        elif tag not in ("M", "I"):
+            findings.append(
+                Finding(
+                    rule="C10",
+                    severity="error",
+                    path="workload.avg_context_tokens_tag",
+                    message=(
+                        "Tag workload.avg_context_tokens (M), or (I) with an accumulating "
+                        f"estimator: a ({tag}) tag under the 'code_agent' archetype certifies "
+                        "a mean context no agent workload has, because the context grows with "
+                        "every loop turn and the tag asserts it does not -- under-pricing the "
+                        "KV floor and overstating capacity."
+                    ),
+                )
+            )
+    duty_cycle = workload.get("duty_cycle")
+    if _is_number(duty_cycle) and duty_cycle < 1 and workload.get("kv_residency") is None:
+        scale = f"1/duty_cycle = {1.0 / duty_cycle:,.2f}" if duty_cycle > 0 else "1/duty_cycle"
+        findings.append(
+            Finding(
+                rule="C10",
+                severity="warning",
+                path="workload.kv_residency",
+                message=(
+                    f"Declare kv_residency alongside duty_cycle ({duty_cycle:,.2f}): the "
+                    f"default prices KV residency at the generation fraction ({scale}), "
+                    "crediting every non-generating session with having released its KV "
+                    "blocks. That is known-wrong for a tool-calling loop, where waiting on a "
+                    "tool call still holds the blocks, and it inflates the KV floor's user "
+                    "count by that factor. Set kv_residency to the true residency fraction, "
+                    "or set it equal to duty_cycle to keep the default on purpose."
+                ),
+            )
+        )
+
+
+# --------------------------------------------------------------- C11 unpriced prefill
+
+# How far the declared mix may exceed the measured one before the missing prefill floor is
+# worth a reader's attention. Set at 1.5 because the identity is exact -- capacity is
+# overstated by precisely this factor -- so the threshold is a judgment about what size of
+# error deserves a warning, not about how confident the arithmetic is.
+_C11_RATIO_THRESHOLD = 1.5
+
+
+def _result_rows(report: dict) -> Iterator[dict]:
+    """Every per-concurrency measurement row under run.results.
+
+    prefill_tok_s is a per-row figure, not a run-level one: the measured mix moves along the
+    ladder (2.40 at 128 streams against 3.25 at 1 on the published bundle, where a single
+    stream is TTFT-dominated), so a run-level singleton could not say which rung it
+    described. A reader looking only at the run object would find the field absent on every
+    conforming report and warn about all of them.
+    """
+    run = _get(report, "run")
+    results = _get(run, "results")
+    if isinstance(results, list):
+        for row in results:
+            if isinstance(row, dict):
+                yield row
+
+
+def _workload_input_output_ratio(workload: Any) -> float | None:
+    """The declared workload's input:output token ratio; None when undeclared.
+
+    Zero declared generation returns inf, not None and not a clamp: a reranker-shaped
+    workload -- input tokens, no output tokens -- is precisely the case this ratio exists
+    for, since its throughput floor prices no compute at all. Collapsing inf into None would
+    silence the C11 factor clause exactly where the overstatement is total, the one wrong
+    outcome the ratio was added to prevent.
+    """
+    inputs = [
+        _get(workload, "input_tokens_per_request"),
+        _get(workload, "media_tokens_per_request"),
+    ]
+    outputs = [
+        _get(workload, "output_tokens_per_request"),
+        _get(workload, "reasoning_tokens_per_request"),
+    ]
+    # Non-finite entries are excluded with the absent ones: they are C1 findings about the
+    # token counts themselves, not an input:output ratio this helper may launder.
+    in_terms = [float(value) for value in inputs if _is_number(value)]
+    out_terms = [float(value) for value in outputs if _is_number(value)]
+    if not in_terms or not out_terms:
+        return None
+    denominator = sum(out_terms)
+    if denominator == 0:
+        # 0/0 declares no tokens on either side, which prices nothing and is nobody's ratio.
+        return math.inf if sum(in_terms) > 0 else None
+    return sum(in_terms) / denominator
+
+
+def _rung_input_output_ratio(row: Any) -> float | None:
+    """A ladder rung's measured input:output ratio, or None when the rung does not say.
+
+    Prefers the explicit measured_input_output_ratio and falls back to the rung's own
+    input_tokens and output_tokens, which every run recorded long before that field existed.
+    Deriving the fallback is what lets C11 grade a report written against the pre-prefill
+    protocol on whether its numbers are actually overstated, instead of warning about every
+    such report on the technicality that it predates a field name.
+    """
+    declared = _get(row, "measured_input_output_ratio")
+    if _is_number(declared) and declared > 0:
+        return float(declared)
+    inputs = _get(row, "input_tokens")
+    outputs = _get(row, "output_tokens")
+    if not _is_number(inputs) or not _is_number(outputs):
+        return None
+    if outputs == 0:
+        # A rung that generated nothing prices no decode compute at all, so no finite ratio
+        # describes it and inf is the honest reading rather than a skip.
+        return math.inf if inputs > 0 else None
+    return float(inputs) / float(outputs)
+
+
+def _backing_rungs(report: dict) -> dict[int, list[str]]:
+    """Ladder rung index to the published tiers whose numbers were read off that rung.
+
+    A tier names its rung through context_tokens, so a ladder that also sweeps short prompts
+    is not charged for them -- only a rung some number was actually read off can overstate
+    that number. Charging the whole ladder would have penalised thorough ladders and let thin
+    ones pass, which is backwards. Theoretical tiers are excluded because a roofline figure
+    comes from the model and the hardware, not from a rung, so no measured mix applies to it.
+    """
+    rows = [
+        (index, row)
+        for index, row in enumerate(_result_rows(report))
+        if _is_number(_get(row, "context_tokens"))
+    ]
+    backing: dict[int, list[str]] = {}
+    if not rows:
+        return backing
+    for name, tier in _tier_rows(report):
+        if not _is_number(tier.get("max_concurrent_users")):
+            continue
+        if tier.get("provenance") not in ("M", "I"):
+            continue
+        context = tier.get("context_tokens")
+        if not _is_number(context):
+            continue
+        # Nearest rung rather than an exact match: a tier interpolated between two rungs still
+        # rests on the mix around it, and requiring an exact hit would let a report escape the
+        # check by publishing a context length the ladder never ran verbatim.
+        index, _ = min(
+            rows, key=lambda pair: abs(float(_get(pair[1], "context_tokens")) - float(context))
+        )
+        backing.setdefault(index, []).append(name)
+    return backing
+
+
+def _check_c11(report: dict, findings: list[Finding]) -> None:
+    """Warn when a published capacity number rests on a mix lighter than the declared one.
+
+    The throughput floor is denominated in generated tokens only, so a rung without
+    prefill_tok_s overstates the tiers resting on it by exactly the ratio between the declared
+    workload's input:output mix and the mix that rung was measured at. Below the threshold no
+    warning is owed, and that is not leniency: a rung measured at the declared mix was already
+    paying the declared prefill cost while it generated, so its output_tok_s embeds the
+    prefill load and the floor built on it is sound. The floor only becomes load-bearing when
+    a number is carried across a mix change, which is exactly what the threshold detects.
+
+    Stays a warning rather than an error: the report keeps the answer the pre-prefill protocol
+    computed, which the compatibility promise protects, and the partial grade the warning
+    carries is the price of keeping it.
+    """
+    ratio_w = _workload_input_output_ratio(_get(report, "workload"))
+    if ratio_w is None:
+        # Nothing is declared to compare against, so there is no overstatement to name. The
+        # missing token counts are C1's finding, and repeating them here would bill one defect
+        # to two rules.
+        return
+    rows = list(_result_rows(report))
+    # No measurement-derived capacity number is published -- an honest 'other' archetype lands
+    # here -- so the unpriced axis has nothing to overstate and a warning would be grading a
+    # refusal to claim.
+    for index, tiers in sorted(_backing_rungs(report).items()):
+        row = rows[index]
+        if row.get("prefill_tok_s") is not None:
+            continue
+        ordered = sorted(tiers)
+        parts = [", ".join(ordered[:-1]), ordered[-1]] if len(ordered) > 1 else ordered
+        named = " and ".join(parts)
+        subject = "tiers rest" if len(ordered) > 1 else "tier rests"
+        message = (
+            f"Measure run.results.{index}.prefill_tok_s from the same run, window and records "
+            f"as output_tok_s: the {named} {subject} on this rung while the prefill axis -- "
+            "input-token compute -- is unpriced. The throughput floor counts generated tokens "
+            "only, so a workload more input-heavy than the rung its number was read off "
+            "reports more users than the engine can serve."
+        )
+        if math.isinf(ratio_w):
+            message += (
+                " Here the declared workload carries input tokens but generates none at all: "
+                "the throughput floor prices zero compute for this service, the overstatement "
+                "is unbounded, and the prefill floor is the only token floor that exists."
+            )
+        else:
+            ratio_m = _rung_input_output_ratio(row)
+            if ratio_m is None:
+                # The rung records no mix at all, so the factor cannot be computed and naming
+                # one would be inventing it. The missing token counts are C4's finding.
+                continue
+            factor = math.inf if ratio_m == 0 else ratio_w / ratio_m
+            if factor <= _C11_RATIO_THRESHOLD:
+                continue
+            message += (
+                f" Here the declared ratio {ratio_w:,.2f} against this rung's measured "
+                f"{ratio_m:,.2f} is a factor of {factor:,.2f}, above the "
+                f"{_C11_RATIO_THRESHOLD} threshold, so every user count read off this rung "
+                f"overstates capacity by {factor:,.2f}x."
+            )
+        findings.append(
+            Finding(
+                rule="C11",
+                severity="warning",
+                path=f"run.results.{index}.prefill_tok_s",
+                message=message,
+            )
+        )

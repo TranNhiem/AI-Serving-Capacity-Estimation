@@ -1,0 +1,107 @@
+# 10. Workload archetypes and the prefill floor
+
+The first nine chapters of this protocol describe how to measure a serving deployment; this chapter describes how to declare the application that will use it. The declaration side has been the weaker half of the protocol, and the failures it shelters are silent in the same way the chapter 9 failures were: a workload declaration that says nothing about the shape of the traffic lets a reader apply a chat estimator to a 200-turn tool-calling loop, or price an image service as if it were text, and the capacity model has no way to object because every field is individually well-formed. What this chapter adds is a closed vocabulary of traffic shapes, a fourth capacity floor — the first added since chapter 5, and the one chapter 9 explicitly declined to add — and three conformance rules that cross-examine a workload's declared shape against its own numbers. Every measured number below was read off the v0.5.0 code or the published Qwen3-VL-4B image-QA bundle, and each is cited because it forced a rule. Where an illustration has no measurement behind it, it is marked as illustrative arithmetic, exactly as elsewhere in this protocol.
+
+## 10.1 Why an archetype is a load-bearing declaration, not a label
+
+Take the failure first, because it is the reason the field exists. A workload declares image_grounded and carries `images_per_request` null, `media_tokens_per_request` null, every media count at zero. Each field is valid on its own. The capacity model then prices the workload exactly as text: `avg_context_tokens` holds the text prefix alone, the KV floor admits more concurrent sessions than the pool will hold once real images arrive, and nothing anywhere else in the report can object, because every other rule compares a field against the schema or against another field carrying the same misunderstanding. The archetype is the only declaration placed to break that tie. `archetypes` is a claim about the shape of the traffic, made once, and the workload's own numbers must corroborate it. That is what makes it load-bearing rather than decorative: it is the only field that lets a checker cross-examine the others.
+
+The claim must also be falsifiable in both directions, or it is no claim at all. Positive media terms under a non-media archetype are as much a contradiction as absent media under a media archetype: either the shape was misdeclared or the requests were miscounted, and a report does not get to leave the reader guessing which. An open vocabulary could enforce neither direction, because no checker can say what a string it has never seen implies. The value of the field lies almost entirely in its closedness.
+
+## 10.2 The vocabulary
+
+Five values, a closed vocabulary, unique items, at least one entry:
+
+| archetype | the traffic shape it claims | what the workload's own numbers must show |
+|---|---|---|
+| chat_assistant | request–response turns; no loop, no media | media terms zero or null; `agent_loop` null |
+| image_grounded | requests carry images | at least one positive media count, via `images_per_request` or `media_tokens_per_request` |
+| video_grounded | requests carry clips | at least one positive media count, via `videos_per_request` or media terms |
+| code_agent | a multi-turn tool-calling loop over an accumulating transcript | a non-null `agent_loop` |
+| other | none of the above; nothing claimed | nothing — a checker cannot cross-examine a claim that was not made |
+
+The other value is not a loophole but an admission: a report that declines to describe its traffic shape keeps every freedom it had under v0.4.0 and forfeits the cross-examination. That symmetry is why `archetypes` is optional in v0.5.0. Making it required is a v1.0 candidate, not a v0.5.0 decision, and the grading consequence is symmetric with the optionality: an optional declaration must not be able to sink a report. C9, C10 and C11 therefore sit outside the C1–C5 tuple that forces non-conforming, and cap a report at partial (§10.7). A report that declares no archetypes computes exactly as it did before; a report that declares them buys a checker that reads its numbers against its claims.
+
+## 10.3 The prefill floor
+
+Chapter 9 stated flatly that it added no fourth floor. This chapter adds one, and the difference is not editorial. Every cost chapter 9 introduced landed inside an existing floor once it was declared properly; no declaration makes a prefill-heavy workload cost less prefill per second. `Constraint.PREFILL` joins WEIGHTS, KV, THROUGHPUT and SLO in `ascep.capacity`, and capacity_at takes a new trailing keyword `prefill_tok_s`. When it is supplied, a fourth floor enters the min.
+
+The failure the floor prevents is precise. Every rung of a throughput ladder embeds the prefill cost of the mix it was measured at: the engine was paying to ingest the prompt while it generated, and its `output_tok_s` records what it sustained while paying. Carry a tier off that rung to a workload with a higher input:output ratio and the carried number embeds too little prefill per generated token. The weights floor does not see traffic at all; the KV floor counts tokens resident, not tokens arriving per second; the SLO floor checks latency per admitted user. None of the three can see the shortfall, and the min of three floors that all say yes is a yes built on nothing.
+
+The demand-side function demand_prefill_tok_s is the mirror of demand_tok_s, returning the aggregate input tokens per second the workload requires at peak. It has two branches, and both ratios are declared by the workload, not assumed by the code. When `target_tok_s_per_user` is greater than zero, the result is the active session count times `target_tok_s_per_user` times prompt_tokens over generated, where prompt_tokens is `input_tokens_per_request` plus `media_tokens_per_request` and generated is `output_tokens_per_request` plus `reasoning_tokens_per_request`: pinning generation at r tokens per second implies r divided by generated requests per second, each carrying prompt_tokens. Otherwise the peak concurrent user count is multiplied by prompt_tokens and `requests_per_session` and divided by `avg_session_seconds`. The function raises ValueError at the boundary between the two — `target_tok_s_per_user` positive with generated at or below zero — where the tempting implementation returns 0. Returning 0 would delete the prefill floor for exactly the embedding and reranking services it was added to price, because a per-stream generation rate cannot describe a workload that generates nothing.
+
+Backward compatibility is exact, not approximate. When `prefill_tok_s` is None the function is byte-identical to v0.4.0: the detail dict still has exactly 7 keys and every published number is unchanged. A floor that silently regraded every report published before it existed would change numbers that are not wrong.
+
+### The identity that makes the floor predictable
+
+Let rho_w be the declared workload's input:output token ratio and rho_m the benchmark rung's measured one. Then, exactly:
+
+    users_prefill / users_throughput = rho_m / rho_w
+
+No approximation enters: both user counts are the same peak demand, one divided by a declared output rate, the other by a measured one, and the ratios of the two rates are the ratios of the two mixes. Verified in code to six decimal places across three values of rho_m. Two consequences follow, both exact rather than approximate. The prefill floor binds precisely when the declared workload is more input-heavy than the benchmark run that produced the throughput number. And when it binds and is ignored, capacity is overstated by exactly rho_w over rho_m — which is what makes the carry-over check of §10.7 a comparison rather than a heuristic.
+
+For that identity to grade real reports, the rung-side ratio must be a stable quantity. Measured evidence, read off the published Qwen3-VL-4B image-QA bundle in examples/qwen3-vl-4b-h100-image-qa/:
+
+| concurrent streams | measured input:output ratio |
+|---:|---:|
+| 16 | 2.40 |
+| 64 | 2.39 |
+| 128 | 2.40 |
+| 1 | 2.62 |
+
+The mix is a property of the corpus, and it does not drift with load once the engine is saturated. The single-stream line reads 2.62 because that rung is TTFT-dominated rather than throughput-bound — it is not the saturated mix, and §10.6 exists so that nobody mistakes it for one.
+
+The floor also forced one correction to a figure that predates it. The max-requests-per-second path previously derived requests per second from generated tokens alone, which reports 0 req/s for an embedding or reranking service — a service that serves requests at full rate and returns no tokens. Zero is not a conservative answer there; it is a false statement that the deployment serves nobody. When nothing is generated, capacity_at now divides by the prompt side instead. Verified: 30,000 prefill tok/s over 1,000 prompt tokens gives 30 req/s where the old path gave 0.
+
+## 10.4 Declaring an agent loop
+
+The code_agent archetype is the one value that claims something about session structure rather than request size: what the deployment hosts is not a bag of independent requests but a loop, and the declaration of that loop is `agent_loop` — a closed object with four required members, all nullable, the first three each carrying a `_u_reason` sibling: `turns_per_session`, `tool_calls_per_turn`, `compaction_resume_tokens`, `session_max_context_tokens`. Four numbers, and not by accident: how long the loop runs, how much it fans out per turn, what resuming after compaction costs, and the context ceiling the loop may not cross. Nullable because a publisher may honestly not know; closed so the loop cannot be half-described by fields no conformance checker will ever query — the same boundary §9.10 draws between a missing field and an invented note.
+
+The schema gate lives in the workload schema's allOf: declaring code_agent requires a non-null `agent_loop`, and declaring anything else requires `agent_loop` to be null. The gate pairs `"type": "array"` with the JSON Schema keyword contains, and the pairing is the point. On a non-array value, contains is vacuously true — it quantifies over zero items and finds nothing to object to — so without the type assertion, a null `archetypes` would trip the gate's second half and force a non-null `agent_loop` onto a workload that declared nothing at all. The wrong outcome that prevents is specific: with `archetypes` optional, a report exercising its option to stay silent would fail validation for omitting a loop it never claimed to run. Optionality that punishes silence is not optionality.
+
+## 10.5 The two estimators a tool-calling loop breaks
+
+Both estimators below are pre-archetype defaults that are correct for chat and wrong for a tool-calling loop. Nothing was mistyped. The workload simply inherited estimators nobody re-derived — which is the shape of every failure this chapter exists to catch, and the reason the fix is a declared field rather than a patched constant.
+
+**Accumulating context.** The chat estimator prices each request as if it re-read a fixed average context. A tool-calling loop re-reads the whole accumulating transcript, so turn N pays for everything turns 1 through N-1 produced. Pricing an accumulating transcript with the chat estimator drops that re-read term, which on a many-turn code agent exceeds the whole chat estimate. The declaration is `context_growth_tokens_per_turn`, default 0. When it is positive and `requests_per_session` is above 1, the context function adds g times (N - 1) over 2 — the mean of the arithmetic ramp the growing transcript follows — and when it is 0 the function returns the original expression verbatim, so every existing workload computes exactly as before. Illustrative arithmetic, marked as such: a workload whose chat estimate is 1,200 tokens rises to 20,700 once the growth term is declared. The illustrative case understates the rule's value; the term it adds is the one the chat estimate was missing entirely.
+
+**KV residency.** `duty_cycle` is the fraction of a session spent generating. Using it as the KV divisor — the v0.4.0 default — credits every non-generating session with having released its KV blocks, which no engine does for a session waiting on a tool call. A session blocked on a tool holds its whole context; the floor must price the holding, not the talking. `kv_residency`, a fraction in [0, 1] and null by default, carries the true fraction, and capacity_at divides sessions by `kv_residency` when it is declared and by `duty_cycle` when it is not, so existing reports compute exactly as before. Verified: a code-agent workload gives users_kv of 332.1 at a residency of 0.3 against 99.6 at 1.0 — a factor of exactly 3.3333. Read in the failure direction: pricing a stay-resident loop at its duty cycle admits 3.33 times the sessions the pool can hold, and the KV floor reports it with a straight face. The function also raises ValueError when `kv_residency` is below `duty_cycle`, because a residency below the generation fraction claims sessions hand back context they are still generating from.
+
+## 10.6 Measuring the prefill axis
+
+Two new optional per-rung fields in `run.results[]`, computed by the harness in `ascep/bench/metrics.py` over the same window, the same completed records and the same completion filter as `output_tok_s`: `prefill_tok_s`, the sum of `input_tokens` over completed in-window records divided by the window seconds; and `measured_input_output_ratio`, the sum of input tokens over the sum of output tokens for that window.
+
+The denominator is the window, deliberately, and not the summed TTFT. Summed TTFT gives the rate while prefilling; on any rung below saturation the engine spends most of the window doing something else, so the burst rate reads an order of magnitude high and is not comparable with `output_tok_s`, which is a sustained rate over the whole window. A floor built by comparing two rates taken on two different clocks is not a floor. The quantity the floor needs is the rate the engine sustained — the same construction as every other rate in the report, and the single-stream line of §10.3's table, where the mix reads 2.62 on a rung that is TTFT-dominated rather than throughput-bound, is the measured shape of what goes wrong when the clock is allowed to choose the answer.
+
+## 10.7 Conformance
+
+Three rules grade what this chapter declares:
+
+| rule | severity | what it prevents |
+|---|---|---|
+| C9 | error | media terms zero or null under a media archetype; positive media terms under a non-media archetype; code_agent with no `agent_loop` — a shape claim the workload's own numbers contradict |
+| C9 | warning | `avg_context_tokens` declared, not tagged (M), with no `media_tokens_per_request`, under a media archetype — KV priced on text while media arrives undeclared |
+| C10 | error | an (I) `avg_context_tokens_tag` under code_agent with no note naming an accumulating estimator, or a tag outside M and I — a chat-estimator context passed off as a loop's |
+| C10 | warning | `duty_cycle` below 1 with `kv_residency` null under code_agent — the 3.3333x misprice of §10.5 inherited by default |
+| C11 | warning | a measurement-derived tier carried off a rung whose mix differs from the declared workload's by more than 1.5 — capacity overstated by exactly the §10.3 factor |
+
+C9 is the cross-examination §10.1 promised. Its one warning carries two deliberate exemptions, and both were forced by the published Qwen3-VL report, which is honest on exactly those two points. The warning stays quiet when the context is measured, because the server's prompt-token total already contains the media expansion and does not split it, and quiet when the context is null, because a report declining to publish a single forecast context has no under-priced KV floor to warn about. A rule that fires on an honest report teaches its readers to ignore rules.
+
+C10 applies under code_agent and nowhere else — the estimators it guards are correct for chat, and a checker that cannot see a loop has no business demanding loop declarations. An (I) tag passes only when a workload note names an accumulating estimator, meaning it cites `requests_per_session` or `context_growth_tokens_per_turn`; an untagged or mistagged context under a loop is priced by an estimator nobody re-derived.
+
+C11 pairs each measurement-derived tier — `provenance` M or I — with the nearest ladder rung by `context_tokens`, and for each such rung lacking `prefill_tok_s` compares rho_w against the rung's measured ratio, warning at `run.results.{index}.prefill_tok_s` when the factor exceeds 1.5. Theoretical tiers are excluded, because a roofline figure comes from the model and the hardware rather than from a rung, and no mix is inherited across it. Below the threshold no warning is owed, and that is not leniency: a rung measured at the declared mix was already paying the declared prefill cost while it generated, so its `output_tok_s` embeds the prefill load and the floor built on it is sound. The prefill floor becomes load-bearing only when a number crosses a mix change — which is the boundary the warning marks. The rung's ratio is taken from `measured_input_output_ratio` when declared and otherwise derived from the rung's own `input_tokens` and `output_tokens`, which every run has always recorded. That fallback is what lets C11 grade a report written before the field existed on whether its numbers are actually overstated, instead of warning about every such report on a technicality.
+
+**Grading.** C9, C10 and C11 are outside the C1–C5 tuple that forces non-conforming; their findings cap a report at partial and never sink it. Promoting them is a v1.0 item tied to `archetypes` becoming required, for the §10.2 reason: an optional declaration must not be able to sink a report. Both published examples — moe-26b-h100-tp2 and qwen3-vl-4b-h100-image-qa — grade exactly as they did under v0.4.0, with no C9, C10 or C11 findings. That invariance is the test the new rules were built against: they were added to catch reports that are wrong, not to regrade reports that are not.
+
+## 10.8 What this chapter deliberately does not add
+
+The filter applied to everything proposed for v0.5.0 was one sentence: a field ships only if it changes a number that is currently wrong. Roughly forty fields were proposed; six shipped. The deferred list:
+
+- A host-preprocessing floor. The CPU-bound ceiling measured in §9.10 is real, and one unreplicated campaign is not enough evidence to add a fifth floor.
+- Batch and offline modes. The protocol is written for interactive serving; batch needs its own latency vocabulary, not a flag.
+- The RAG retrieval family. Retrieval cost is a property of a system outside the model server.
+- Video mixes analogous to `image_resolution_mix`. No measured campaign to calibrate against yet.
+- p95 tails on demand-side workload fields. The declaration side has no tail vocabulary at all, so a single field would be inconsistent with everything beside it.
+- Fan-out streams — one user driving several concurrent generations — and expected prefill-recompute terms for cache eviction: real costs, but no measured campaign stands behind either, and neither names a number that is currently computed wrong by an existing field.
+
+Each remains a candidate the day it can point at a reported number it would have corrected. That is the standard the six shipped fields met, and it is the only standard that keeps the declaration side from accumulating fields that describe nothing a reader can act on.

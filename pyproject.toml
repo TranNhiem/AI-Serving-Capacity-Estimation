@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ascep"
-version = "0.4.0"
+version = "0.5.0"
 description = "AI Serving Capacity Estimation Protocol — reproducible capacity estimation for LLM inference infrastructure"
 readme = "README.md"
 requires-python = ">=3.9"

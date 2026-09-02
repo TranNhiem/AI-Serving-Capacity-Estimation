@@ -130,6 +130,38 @@
           "video_seconds_per_request"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "archetypes": {
+            "type": "array",
+            "contains": {
+              "const": "code_agent"
+            }
+          }
+        },
+        "required": [
+          "archetypes"
+        ]
+      },
+      "then": {
+        "properties": {
+          "agent_loop": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "agent_loop"
+        ]
+      },
+      "else": {
+        "properties": {
+          "agent_loop": {
+            "type": "null"
+          }
+        }
+      }
     }
   ],
   "properties": {
@@ -513,6 +545,108 @@
     "max_output_tokens_u_reason": {
       "type": "string",
       "description": "(U) justification required when max_output_tokens is null (C1)."
+    },
+    "archetypes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "enum": [
+          "chat_assistant",
+          "image_grounded",
+          "video_grounded",
+          "code_agent",
+          "other"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "description": "Closed workload archetypes, dimensionless. Gates conformance rules C9 (archetype and term consistency) and C10 (archetype-correct estimators) and nothing else: unlike application_type it never enters a formula. 'other' is a declared refusal rather than a fit, so derived fields stay null and no capacity number is published. Mislabelling a video support desk as chat_assistant with the media terms left null is present, non-null and self-contradictory, which C1 cannot catch."
+    },
+    "agent_loop": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "turns_per_session",
+        "tool_calls_per_turn",
+        "compaction_resume_tokens",
+        "session_max_context_tokens"
+      ],
+      "$comment": "session_max_context_tokens carries no _u_reason sibling because its null means 'no declared cap', a property of the workload rather than a gap in it.",
+      "properties": {
+        "turns_per_session": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Mean LLM turns per agent session, dimensionless. With context_growth_tokens_per_turn it sets end-of-session context: the mean footprint is input plus context_growth_tokens_per_turn times (turns_per_session - 1)/2. requests_per_session alone cannot express this, because each turn is a fresh request over an ever-longer prompt."
+        },
+        "turns_per_session_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when turns_per_session is null (C1)."
+        },
+        "tool_calls_per_turn": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Mean blocking tool calls per turn, dimensionless. Measures why duty_cycle and kv_residency diverge on this workload: a turn blocked on a tool call is not generating but IS holding its KV blocks, so the denser the tool calls the larger the 1/duty_cycle overstatement of the KV floor when residency is left to the default."
+        },
+        "tool_calls_per_turn_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when tool_calls_per_turn is null (C1)."
+        },
+        "compaction_resume_tokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Tokens re-prefilled to resume after a context compaction, tokens. 0 means compaction was measured and is genuinely free; null means not assessed. Each compaction re-runs prefill over the surviving prefix, compute that appears in no input_tokens_per_request mean, so omitting it under-prices the prefill demand term."
+        },
+        "compaction_resume_tokens_u_reason": {
+          "type": "string",
+          "description": "(U) justification required when compaction_resume_tokens is null (C1)."
+        },
+        "session_max_context_tokens": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "description": "Hard context cap per agent session, tokens; null means unbounded. When set it clips the arithmetic growth of context_growth_tokens_per_turn, so turns_per_session times growth with no declared cap over-sizes the KV floor, while a session that compacts at a cap it does not declare reports context lengths that describe the cap rather than the workload."
+        }
+      },
+      "description": "Structure of an agentic session. Required non-null when archetypes contains code_agent (C9), declared null otherwise. It is the geometry the C10 estimator check reads: under code_agent an avg_context_tokens tagged (I) citing the chat default of input plus output/2 is an error, because a 40-turn session priced as a single request of that mean under-sizes the KV floor by the whole accumulated growth. context_growth_tokens_per_turn is deliberately absent here and lives at the top level where the capacity model reads it, so no second copy exists to disagree."
+    },
+    "kv_residency": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of a session's wall-clock life during which it holds its KV blocks, dimensionless in [0,1], and never below duty_cycle. ascep.capacity.capacity_at divides the KV sessions figure by this; null means it divides by duty_cycle instead. duty_cycle is the generating fraction, and an agent blocked on a tool call is not generating but IS resident, so reusing it credits idle sessions with releasing blocks and overstates the KV floor by 1/duty_cycle -- 3.33x at duty_cycle 0.3 on the code-agent shape. The C10 warning exists to keep that default non-silent."
+    },
+    "context_growth_tokens_per_turn": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "default": 0,
+      "description": "Mean context tokens accumulated per agent turn, tokens. Default 0 reproduces every v0.4.0 number exactly. ascep.capacity.Workload.avg_context_tokens uses it so the agent mean over N turns is input plus context_growth_tokens_per_turn times (N-1)/2 rather than input plus output_tokens_per_request/2: a 40-turn code agent priced at the chat default under-sizes the mean context, and the KV floor with it. 0 means measured and genuinely stationary; null means not assessed, and conflating them turns an unexamined agent into a chat workload."
+    },
+    "context_growth_tokens_per_turn_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when context_growth_tokens_per_turn is null (C1)."
     },
     "notes": {
       "type": "object",

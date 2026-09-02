@@ -430,6 +430,30 @@
             "type": "string",
             "description": "(U) justification required when output_tok_s is null (C1)."
           },
+          "prefill_tok_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Aggregate PROMPT tokens/s for the full window (M), computed from the same raw records, window and repetition selection that produced output_tok_s, at this shape, concurrency and topology only. Never topology- or context-independent (C3/C4). Units: tokens/s. Feeds ascep.capacity.capacity_at(prefill_tok_s=...). output_tok_s prices decode alone while the workload layer already charges prompt tokens to KV memory, so without this figure prefill compute is the one axis with no floor. Null while a capacity number is published triggers the C11 warning."
+          },
+          "prefill_tok_s_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when prefill_tok_s is null (C1). Hard to sustain: the raw records already carry per-request input token counts and timestamps, so a null asserts the records were discarded, not that the observable was unavailable to the harness."
+          },
+          "measured_input_output_ratio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "Prompt tokens per generated token over the same window as output_tok_s and prefill_tok_s: summed input tokens divided by summed output tokens across the usable records, so the window's whole token population speaks rather than a mean of per-request ratios. Unitless. This is the mix the throughput figures were measured at. The prefill floor binds exactly when the declared workload's input:output ratio exceeds it, and without this field the C11 overstatement factor is not computable, so a benchmark taken on a generation-heavy mix passes silently against an input-heavy deployment."
+          },
+          "measured_input_output_ratio_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when measured_input_output_ratio is null (C1). Common for legacy campaigns that logged context length but not the input/output split."
+          },
           "requests_per_s": {
             "type": [
               "number",

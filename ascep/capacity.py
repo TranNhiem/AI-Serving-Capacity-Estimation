@@ -75,6 +75,7 @@ class Constraint(str, Enum):
     WEIGHTS = "weights"  # the model does not fit at all
     KV = "kv"  # memory-bound: not enough KV pool for the concurrency
     THROUGHPUT = "throughput"  # compute-bound: not enough tokens/s for the demand
+    PREFILL = "prefill"  # compute-bound: not enough input tokens/s for the prompts
     SLO = "slo"  # fits and is fast enough on average, but misses a latency gate
 
 
@@ -712,6 +713,12 @@ class Workload:
     #: Fraction of a concurrent session that is actually generating tokens. A chat user
     #: reading a reply is idle: duty cycle is what separates "logged in" from "in flight".
     duty_cycle: float = 1.0
+    #: Fraction of a concurrent session whose KV blocks stay resident -- NOT the same
+    #: question as ``duty_cycle``. An agent paused on a tool call is not generating but IS
+    #: still holding its context, so reusing the duty cycle here divides the pool by a
+    #: fraction that describes decode, not memory. None means ``duty_cycle``, which keeps
+    #: every v0.4.0 artifact recomputing unchanged and is why C10 warns on the default.
+    kv_residency: float | None = None
     concurrent_users: float | None = None
     input_tokens_per_request: float = 0.0
     output_tokens_per_request: float = 0.0
@@ -725,6 +732,10 @@ class Workload:
     #: reasoning-to-visible ratio, which can be two orders of magnitude.
     reasoning_tokens_per_request: float = 0.0
     requests_per_session: float = 1.0
+    #: New context tokens each turn appends and every later turn must re-read. Tool traces
+    #: accumulate across an agent session in a way chat replies do not. Default 0 reproduces
+    #: the chat estimator bit-for-bit, so non-agent workloads need no change.
+    context_growth_tokens_per_turn: float = 0.0
     #: Per-stream generation speed the product requires (e.g. faster than reading speed, or
     #: fast enough to feed a TTS pipeline without underrun).
     target_tok_s_per_user: float = 0.0
@@ -758,7 +769,23 @@ class Workload:
         so it is halved together with ``output_tokens_per_request``. If you have real
         conversation-length data, override this - it is the highest-leverage single input
         in the whole protocol.
+
+        ``context_growth_tokens_per_turn`` corrects that estimate for a tool-calling loop:
+        every turn re-reads each earlier turn's context, so the mean over N turns is
+        ``input + media + g*(N-1)/2 + (reasoning + output)/2``. When the growth is 0 the
+        branch below is skipped and the chat expression is returned verbatim, so existing
+        artifacts recompute bit-identically.
         """
+        if self.context_growth_tokens_per_turn > 0 and self.requests_per_session > 1:
+            # Pricing an accumulating transcript with the chat estimator drops the
+            # g*(N-1)/2 re-read term, which on a many-turn code agent exceeds the whole
+            # chat estimate -- the KV floor would pass a workload the pool cannot hold.
+            return (
+                self.input_tokens_per_request
+                + self.media_tokens_per_request
+                + self.context_growth_tokens_per_turn * (self.requests_per_session - 1.0) / 2.0
+                + (self.reasoning_tokens_per_request + self.output_tokens_per_request) / 2.0
+            )
         return (
             self.input_tokens_per_request
             + self.media_tokens_per_request
@@ -779,6 +806,36 @@ class Workload:
         tokens_per_session = (
             self.output_tokens_per_request + self.reasoning_tokens_per_request
         ) * self.requests_per_session
+        return self.peak_concurrent_users() * tokens_per_session / self.avg_session_seconds
+
+    def demand_prefill_tok_s(self) -> float:
+        """Aggregate input tokens/s required at peak -- the mirror of :meth:`demand_tok_s`.
+
+        Prompt tokens cost GPU time to read, but ``demand_tok_s`` counts only generated
+        tokens, so the throughput floor prices a workload as if its prompts were free. The
+        two rates together are what make the benchmark's input:output mix comparable to the
+        declared one; a workload more input-heavy than the run it was sized against is
+        overstated by exactly the ratio of those two mixes.
+
+        The ``target_tok_s_per_user`` branch converts through the declared per-request
+        shape: pinning generation at ``r`` tokens/s implies ``r / generated`` requests/s,
+        each carrying ``input + media`` prompt tokens. That ratio is declared, not assumed.
+        """
+        prompt_tokens = self.input_tokens_per_request + self.media_tokens_per_request
+        if self.target_tok_s_per_user > 0:
+            generated = self.output_tokens_per_request + self.reasoning_tokens_per_request
+            if generated <= 0:
+                # A per-stream generation rate cannot describe a workload that generates
+                # nothing, and silently returning 0 here would delete the prefill floor for
+                # exactly the embedding and reranking services it was added to price.
+                raise ValueError(
+                    "target_tok_s_per_user needs output_tokens_per_request or "
+                    "reasoning_tokens_per_request to imply a request rate"
+                )
+            return self.active_sessions() * self.target_tok_s_per_user * prompt_tokens / generated
+        if self.avg_session_seconds <= 0:
+            raise ValueError("need target_tok_s_per_user or avg_session_seconds")
+        tokens_per_session = prompt_tokens * self.requests_per_session
         return self.peak_concurrent_users() * tokens_per_session / self.avg_session_seconds
 
 
@@ -826,14 +883,26 @@ def capacity_at(
     tier: Tier = Tier.MEASURED,
     headroom: float = 1.0,
     slo_pass: bool = True,
+    prefill_tok_s: float | None = None,
 ) -> Capacity:
-    """Concurrent users supportable on ``n_gpus``, as ``min`` of the KV and throughput floors.
+    """Concurrent users supportable on ``n_gpus``, as ``min`` of the available floors.
 
     ``throughput_tok_s`` must be the aggregate tokens/s measured *at this context length and
     this GPU count* — throughput falls steeply with input length, so a single headline number
     from a short-prompt benchmark will overstate capacity by 2-4x at document lengths.
 
     ``headroom`` divides the usable throughput and KV (use >1.0 for the RECOMMENDED tier).
+
+    ``prefill_tok_s`` is the input-token rate from the *same run and same window* as
+    ``throughput_tok_s``. Passing it adds a fourth floor: the benchmark's input:output mix
+    is rarely the declared workload's, and when the declared workload is the more
+    input-heavy one, the output-only floor overstates capacity by the ratio of the two
+    mixes. Left None, no fourth floor is added and this returns the v0.4.0 answer, which
+    C11 then flags as publishing on an unpriced axis.
+
+    ``Workload.kv_residency``, when set, replaces ``duty_cycle`` as the KV divisor. Sessions
+    that hold KV while not generating still consume the pool, and pricing them as if they
+    released it triples the claimed user count on a long-session agent workload.
     """
     if headroom < 1.0:
         raise ValueError("headroom must be >= 1.0")
@@ -842,7 +911,14 @@ def capacity_at(
         raise ValueError("workload context length must be > 0")
 
     sessions_kv = (kv_tokens / headroom) / ctx
-    users_kv = sessions_kv / workload.duty_cycle if workload.duty_cycle > 0 else math.inf
+
+    if workload.kv_residency is not None and workload.kv_residency < workload.duty_cycle:
+        # A residency below the generation fraction claims sessions hand back context they
+        # are still generating from. No engine does that, so the number can only be a mixup,
+        # and it would deflate the per-session footprint until the KV floor passes anything.
+        raise ValueError("kv_residency must be >= duty_cycle")
+    residency = workload.kv_residency if workload.kv_residency is not None else workload.duty_cycle
+    users_kv = sessions_kv / residency if residency > 0 else math.inf
 
     # Demand per *concurrent user*, not per active session: a user who is idle between turns
     # still occupies a seat but generates nothing. Deriving this from Workload.demand_tok_s()
@@ -852,28 +928,66 @@ def capacity_at(
     per_user = workload.demand_tok_s() / base_users if base_users > 0 else 0.0
     users_thr = (throughput_tok_s / headroom) / per_user if per_user > 0 else math.inf
 
-    users = min(users_kv, users_thr)
-    constraint = Constraint.KV if users_kv <= users_thr else Constraint.THROUGHPUT
+    # Listed KV first so min()'s first-wins tie rule reproduces the v0.4.0 "KV wins ties"
+    # pick and extends the same precedence to the new floor, rather than letting list order
+    # silently re-rank equal candidates.
+    floors: list[tuple[float, Constraint]] = [
+        (users_kv, Constraint.KV),
+        (users_thr, Constraint.THROUGHPUT),
+    ]
+    per_user_prefill = 0.0
+    users_prefill = math.inf
+    if prefill_tok_s is not None:
+        per_user_prefill = workload.demand_prefill_tok_s() / base_users if base_users > 0 else 0.0
+        users_prefill = (
+            (prefill_tok_s / headroom) / per_user_prefill if per_user_prefill > 0 else math.inf
+        )
+        # A reranker declares output_tokens_per_request = 0, so per_user is 0 and users_thr
+        # is infinite. Without this floor the min lands on KV and the report brands a service
+        # holding no persistent KV as memory-bound. Pricing prefill makes the axis that
+        # actually limits it bind instead.
+        floors.append((users_prefill, Constraint.PREFILL))
+
+    users, constraint = min(floors, key=lambda floor: floor[0])
     if not slo_pass:
         constraint = Constraint.SLO
 
     out_tokens = workload.output_tokens_per_request or 1.0
+    if per_user > 0:
+        requests_per_s = (users * per_user) / out_tokens
+    elif per_user_prefill > 0:
+        # Deriving requests/s from generated tokens reports 0 req/s for an embedding or
+        # reranking service, which serves requests at full rate and simply returns no
+        # tokens. When nothing is generated, the prompt side is the only honest denominator.
+        prompt_tokens = workload.input_tokens_per_request + workload.media_tokens_per_request
+        requests_per_s = (users * per_user_prefill) / prompt_tokens
+    else:
+        requests_per_s = 0.0
+
+    detail = {
+        "avg_context_tokens": ctx,
+        "users_kv_floor": users_kv,
+        "users_throughput_floor": users_thr,
+        "per_user_tok_s": per_user,
+        "headroom": headroom,
+        "kv_tokens": kv_tokens,
+        "throughput_tok_s": throughput_tok_s,
+    }
+    if prefill_tok_s is not None:
+        # The keys stay absent when no rate was measured, so a v0.4.0 report's detail
+        # serialises byte-identically. A present key holding a null would read as "we looked
+        # and found nothing" rather than "we did not look".
+        detail["users_prefill_floor"] = users_prefill
+        detail["per_user_prefill_tok_s"] = per_user_prefill
+        detail["prefill_tok_s"] = prefill_tok_s
     return Capacity(
         tier=tier,
         max_concurrent_users=users,
         max_tokens_per_s=min(throughput_tok_s / headroom, users * per_user),
-        max_requests_per_s=(users * per_user) / out_tokens,
+        max_requests_per_s=requests_per_s,
         binding_constraint=constraint,
         n_gpus=n_gpus,
-        detail={
-            "avg_context_tokens": ctx,
-            "users_kv_floor": users_kv,
-            "users_throughput_floor": users_thr,
-            "per_user_tok_s": per_user,
-            "headroom": headroom,
-            "kv_tokens": kv_tokens,
-            "throughput_tok_s": throughput_tok_s,
-        },
+        detail=detail,
     )
 
 

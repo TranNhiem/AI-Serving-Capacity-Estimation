@@ -94,7 +94,7 @@ number.
 
 ```bash
 ascep validate  runs/report.json     # schema-check the draft
-ascep conformance runs/report.json   # grade it against C1–C8
+ascep conformance runs/report.json   # grade it against C1–C11
 ascep render    runs/report.json -o report.md
 ```
 

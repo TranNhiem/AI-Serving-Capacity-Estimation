@@ -468,6 +468,7 @@ def build() -> dict:
                 "(U) no output cap was declared for this run; output length was governed by "
                 "the model's own stop condition"
             ),
+            "archetypes": ["chat_assistant"],
         },
         "capacity_tiers": {
             "theoretical": _row(Tier.THEORETICAL, None, NO_ROOFLINE),

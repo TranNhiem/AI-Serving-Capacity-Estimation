@@ -1,4 +1,4 @@
-"""The negative corpus: eight reports that are wrong in exactly one way each.
+"""The negative corpus: eleven reports that are wrong in exactly one way each.
 
 Every other test here asks whether a correct report passes. These ask the harder question --
 whether an incorrect one fails, and fails for the stated reason rather than by luck.
@@ -83,8 +83,12 @@ def test_the_baseline_says_in_its_own_note_that_it_is_a_fixture():
 # --- each case: one defect, one rule, at the field the README points at ---------------
 
 
-@pytest.mark.parametrize(("case_id", "rule", "edits"), [c[:3] for c in CASES], ids=CASE_IDS)
-def test_one_case_adds_findings_of_exactly_the_rule_it_claims(case_id, rule, edits):
+@pytest.mark.parametrize(
+    ("case_id", "rule", "edits", "names"),
+    [(c[0], c[1], c[2], c[4]) for c in CASES],
+    ids=CASE_IDS,
+)
+def test_one_case_adds_findings_of_exactly_the_rule_it_claims(case_id, rule, edits, names):
     report = _report(case_id)
 
     # Schema-valid, or the grader is not what caught this and the case is mislabelled.
@@ -95,20 +99,30 @@ def test_one_case_adds_findings_of_exactly_the_rule_it_claims(case_id, rule, edi
     assert {r for r, _, _ in added} == {rule}, sorted({r for r, _, _ in added})
 
     # The first edit is the defect; any others are the _u_reason that keeps the case honest.
-    path = edits[0][0]
+    # A cross-field rule states its own expected path, because the field it tells the author to
+    # add is not the field the mutation touched -- see the note above CASES.
+    path = names or edits[0][0]
     assert any(path in found_at for _, found_at, _ in added), sorted(f for _, f, _ in added)
 
 
-@pytest.mark.parametrize(("case_id", "rule", "edits"), [c[:3] for c in CASES], ids=CASE_IDS)
-def test_no_case_removes_a_finding_the_baseline_did_not_have(case_id, rule, edits):
+@pytest.mark.parametrize(
+    ("case_id", "rule", "edits", "names"),
+    [(c[0], c[1], c[2], c[4]) for c in CASES],
+    ids=CASE_IDS,
+)
+def test_no_case_removes_a_finding_the_baseline_did_not_have(case_id, rule, edits, names):
     """The failure mode that sank the first draft: one mutation deleted a stale justification
     and took a finding away with it, so the case was published as evidence of a rule firing
     while it was evidence of one going quiet."""
     assert not BASELINE_FINDINGS - _findings(_report(case_id))
 
 
-@pytest.mark.parametrize(("case_id", "rule", "edits"), [c[:3] for c in CASES], ids=CASE_IDS)
-def test_the_published_report_is_the_one_the_builder_produces(case_id, rule, edits):
+@pytest.mark.parametrize(
+    ("case_id", "rule", "edits", "names"),
+    [(c[0], c[1], c[2], c[4]) for c in CASES],
+    ids=CASE_IDS,
+)
+def test_the_published_report_is_the_one_the_builder_produces(case_id, rule, edits, names):
     """Committed artifacts drift from the script that made them, and a corpus that has drifted
     is documentation of a mutation nobody can regenerate."""
     expected = json.loads(json.dumps(BASELINE))
@@ -117,8 +131,12 @@ def test_the_published_report_is_the_one_the_builder_produces(case_id, rule, edi
     assert _report(case_id) == expected
 
 
-@pytest.mark.parametrize(("case_id", "rule", "edits"), [c[:3] for c in CASES], ids=CASE_IDS)
-def test_the_case_readme_names_the_rule_and_the_field(case_id, rule, edits):
+@pytest.mark.parametrize(
+    ("case_id", "rule", "edits", "names"),
+    [(c[0], c[1], c[2], c[4]) for c in CASES],
+    ids=CASE_IDS,
+)
+def test_the_case_readme_names_the_rule_and_the_field(case_id, rule, edits, names):
     """A reader arrives at the README, not at this file. If it names the wrong rule the corpus
     is teaching the wrong lesson, and nothing else here would notice."""
     readme = (CORPUS_ROOT / case_id / "README.md").read_text(encoding="utf-8")
@@ -127,8 +145,8 @@ def test_the_case_readme_names_the_rule_and_the_field(case_id, rule, edits):
     assert "TODO" not in readme, "the explanation was never written"
 
 
-def test_every_rule_from_c1_to_c8_has_a_case_or_a_stated_reason_it_cannot():
-    """The gap this catches is a corpus that quietly covers six rules and looks like eight.
+def test_every_rule_from_c1_to_c11_has_a_case_or_a_stated_reason_it_cannot():
+    """The gap this catches is a corpus that quietly covers eight rules and looks like eleven.
 
     A rule with no reachable schema-valid mutation is a real finding about where enforcement
     actually lives, and it belongs in the corpus README where a reader will see it -- not in a
@@ -136,7 +154,7 @@ def test_every_rule_from_c1_to_c8_has_a_case_or_a_stated_reason_it_cannot():
     """
     covered = {c[1] for c in CASES}
     index = (CORPUS_ROOT / "README.md").read_text(encoding="utf-8")
-    for n in range(1, 9):
+    for n in range(1, 12):
         rule = f"C{n}"
         assert rule in covered or rule in index, f"{rule} has neither a case nor an explanation"
 

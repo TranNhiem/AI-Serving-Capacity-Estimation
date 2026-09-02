@@ -95,7 +95,7 @@ ttft_lower_bound = 2 × active_params × prompt_tokens / (flops_per_s × mfu)
 
 Prefill is FLOP-bound at roughly 2 FLOPs per parameter per prompt token; `mfu` of 0.3–0.5 is typical for a well-tuned server. This bound excludes queueing, tokenization, scheduling and network, so measured TTFT under load is always larger, often by an order of magnitude. Presenting the roofline as expected TTFT is a category error; it exists to bound claims, not to set expectations.
 
-## 5.3 The three floors and the crossover
+## 5.3 The capacity floors and the crossover
 
 `capacity_at` computes supportable concurrent users as the **minimum** of independent floors — never the average, never the most convenient:
 
@@ -103,8 +103,11 @@ Prefill is FLOP-bound at roughly 2 FLOPs per parameter per prompt token; `mfu` o
 |---|---|---|
 | weights | `fits(...)` — binary | the model doesn't load with a usable pool |
 | kv | `users_kv = (kv_tokens / headroom) / avg_context_tokens / duty_cycle` | long context |
+| prefill | `users_pre = (prefill_tok_s / headroom) / demand_prefill_tok_s per user` | prompts heavier than the run the throughput figure came from |
 | throughput | `users_thr = (throughput_tok_s / headroom) / per_user_tok_s` | short context |
 | slo | overrides the constraint label when gates fail | fits, but misses a latency gate |
+
+The prefill floor is the newest of the four and is introduced in full in [chapter 10](10-workload-archetypes.md), because it exists to catch a failure of the *declaration* side rather than of the measurement side. It enters the minimum only when a measured `prefill_tok_s` is supplied; omit it and `capacity_at` computes exactly what it computed before the floor existed, which is what protects every report published against the earlier protocol. The short statement of why it is needed: the throughput floor is denominated in generated tokens only, so a capacity number carried from a benchmark rung to a workload whose prompts are heavier than that rung's overstates capacity by exactly the ratio between the two token mixes. §10.3 derives that identity.
 
 **Which floor binds changes with context length.** At short context, KV per session is small, the pool holds many sessions, and compute is the scarce resource — the throughput floor binds. As context grows, `avg_context_tokens` scales the per-session KV footprint while aggregate throughput simultaneously falls (both the roofline KV term and attention compute grow), so capacity crosses over to the KV floor. Reports MUST state the crossover context length, or state that it was not determined. A report covering only short prompts and projecting to a document workload will silently apply the wrong floor and overstate capacity by multiples.
 

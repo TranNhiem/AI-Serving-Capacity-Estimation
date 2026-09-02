@@ -155,8 +155,7 @@ def _window_records(records: list[RequestRecord], window: dict) -> list[RequestR
     return [
         record
         for record in records
-        if record.concurrency == policy["concurrency"]
-        and record.repetition == policy["repetition"]
+        if record.concurrency == policy["concurrency"] and record.repetition == policy["repetition"]
     ]
 
 
@@ -329,9 +328,7 @@ def test_a_rung_row_is_the_median_repetition_and_not_a_pool_of_all_three(bundle)
     _assert_recomputes(bundle)
 
 
-def test_the_recomputation_agrees_with_a_bundle_the_harness_has_just_written(
-    tmp_path, monkeypatch
-):
+def test_the_recomputation_agrees_with_a_bundle_the_harness_has_just_written(tmp_path, monkeypatch):
     """The recomputation above skips until an example ships a bundle. This one never skips.
 
     A checker that has never run against a bundle is not yet a checker. Worse, the two ways
@@ -442,9 +439,7 @@ def test_the_environment_capture_names_the_versions_that_produced_the_numbers(bu
     # Read the bundle's own artifact rather than resolving the report's path table entry
     # for it: that entry is the previous test's ground, and the environment capture is
     # pinned by the manifest under the bundle's own fixed name.
-    environment = json.loads(
-        (bundle.bundle_dir / "environment.json").read_text(encoding="utf-8")
-    )
+    environment = json.loads((bundle.bundle_dir / "environment.json").read_text(encoding="utf-8"))
     packages = environment.get("packages")
     assert isinstance(packages, dict) and packages, (
         "environment.json has no non-empty packages mapping, so nothing independent "

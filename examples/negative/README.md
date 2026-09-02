@@ -1,6 +1,6 @@
 # Negative corpus: reports that are wrong in exactly one way each
 
-Every other example in this repository shows a correct report passing the checker. This corpus shows the opposite: eight reports, each deliberately wrong in one way, each failing for the stated reason rather than by coincidence. If you implement your own checker against the ASCEP conformance rules, these are the artifacts you validate it against. A checker that passes c3, or that fails c1 with a C4 finding, has a bug -- and you only know that because the intended failure is pinned here.
+Every other example in this repository shows a correct report passing the checker. This corpus shows the opposite: eleven reports, each deliberately wrong in one way, each failing for the stated reason rather than by coincidence. If you implement your own checker against the ASCEP conformance rules, these are the artifacts you validate it against. A checker that passes c3, or that fails c1 with a C4 finding, has a bug -- and you only know that because the intended failure is pinned here.
 
 ## How it is built
 
@@ -20,6 +20,9 @@ This matters because the first draft of this corpus got it wrong. That version m
 | c6 | C6 | `capacity_tiers.measured.max_concurrent_users` set below the sustainable tier | partial |
 | c7 | C7 | `run.slo_gates.declared_before_run` set to false | partial |
 | c8 | C8 | `reproduction.raw_records_path` set to null | partial |
+| c9 | C9 | `workload.archetypes` set to `["image_grounded"]` on a workload declaring no media | partial |
+| c10 | C10 | `workload.archetypes` set to `["code_agent"]` with the chat context estimator left in place | partial |
+| c11 | C11 | `run.results.2` re-measured at a 1:1 token mix against a workload declaring 3.5:1 | partial |
 
 The mix of grades is deliberate. A case graded partial is publishable and honest despite the defect; a case graded non-conforming is not. The one grade the corpus never expects is conforming -- if a case grades conforming, the checker missed the edit.
 
@@ -33,6 +36,12 @@ Provenance is the one field the protocol does not let you declare unknown, and t
 
 Case c2 therefore uses `model.weight_bytes_tag` instead. It is a plain optional sibling field carrying the provenance tag for the model's byte count, and deleting it fires C2 alone, with no C1 entanglement.
 
+## Why three cases name a field they did not edit
+
+Cases c1 through c8 each edit one field and the finding names that same field. Cases c9, c10 and c11 do not, and the difference is a property of the rules rather than a looseness in the corpus. Each of those three grades a *relationship* between two declarations: an archetype against the media counts that should support it, an archetype against the context estimator that should have been re-derived for it, a workload's declared token mix against the mix of the benchmark rung its number was read off. For a relationship there is no single offending field. The mutation has to touch one side, and the finding has to name the side the author must act on, which is the other one.
+
+Making the finding name the edited field instead would have inverted the advice. A report declaring image_grounded with no media does not need to be told about `workload.archetypes`, which its author just wrote deliberately; it needs to be told to supply `workload.images_per_request`. So the builder records the expected path per case, and `tests/test_negative_corpus.py` asserts against that rather than against the edit. The attribution stays exact -- the case still adds findings of exactly one rule, and still names a path stated in advance -- without forcing three rules to report at the wrong end.
+
 ## What these cases do not test
 
 Two limits, stated plainly.
@@ -43,4 +52,4 @@ Second, C8 is a structural check, not an existence check. It asks whether the re
 
 ## Regenerating
 
-Run `python examples/negative/build_corpus.py` to rebuild all eight cases from `baseline.json`. `tests/test_negative_corpus.py` fails if a committed report has drifted from what the builder emits, so edit the builder or the baseline -- not the generated case files -- when the corpus needs to change.
+Run `python examples/negative/build_corpus.py` to rebuild all eleven cases from `baseline.json`. `tests/test_negative_corpus.py` fails if a committed report has drifted from what the builder emits, so edit the builder or the baseline -- not the generated case files -- when the corpus needs to change.

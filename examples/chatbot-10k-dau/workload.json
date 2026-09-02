@@ -1,5 +1,5 @@
 {
-  "ascep_version": "0.4.0",
+  "ascep_version": "0.5.0",
   "application_type": "conversational assistant (chat), short context, single timezone, human-in-the-loop turns",
   "daily_active_users": 10000,
   "daily_users_tag": "U",
@@ -35,5 +35,8 @@
   "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload",
   "reasoning_tokens_per_request": 0,
   "max_output_tokens": null,
-  "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition"
+  "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition",
+  "archetypes": [
+    "chat_assistant"
+  ]
 }

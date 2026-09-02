@@ -215,6 +215,13 @@ class WindowSummary:
     tokens_per_stream_chunk: float | None = None
     stream_chunk_gap_p50_s: float | None = None
     stream_chunk_gap_p95_s: float | None = None
+    # The prefill axis, priced on the same window and the same records as output_tok_s. Both
+    # default to None for the same reason as the three above, and both are published rather
+    # than left for a reader to reconstruct: the ratio decides whether a capacity number
+    # survives being carried to a workload whose prompts are heavier than this run's, and a
+    # number nobody recorded is a number nobody can check that against.
+    prefill_tok_s: float | None = None
+    measured_input_output_ratio: float | None = None
     low_confidence: frozenset[str] = field(default_factory=frozenset)
     reasons: Mapping[str, str] = field(default_factory=dict)
 
@@ -405,8 +412,7 @@ def reduce_window(
     # the opening timestamp.
     stamped = [record for record in usable if record.token_ts and record.output_tokens]
     n_chunks = sum(
-        len(record.token_ts) + (1 if record.first_token_ts is not None else 0)
-        for record in stamped
+        len(record.token_ts) + (1 if record.first_token_ts is not None else 0) for record in stamped
     )
     tokens_per_stream_chunk: float | None
     if n_chunks:
@@ -482,16 +488,38 @@ def reduce_window(
 
     requests_per_s: float | None
     output_tok_s: float | None
+    prefill_tok_s: float | None
+    measured_input_output_ratio: float | None
     if n_issued == 0 or window_s <= 0:
         # Zero figures here would be claims about traffic that was never observed.
         requests_per_s = None
         output_tok_s = None
+        prefill_tok_s = None
+        measured_input_output_ratio = None
     else:
         requests_per_s = n_completed / window_s
         counted = [r.output_tokens for r in finished_here if r.output_tokens is not None]
         output_tok_s = sum(counted) / window_s if counted else None
         if not counted:
             reasons["output_tok_s"] = "(U) no completed record reported output_tokens"
+        # Prompt tokens over the same window, from the same completed records. Dividing by the
+        # window rather than by summed TTFT is deliberate: the summed-TTFT figure is the rate
+        # while prefilling, which on an unsaturated rung reads an order of magnitude high and
+        # is not comparable with output_tok_s. The floor needs the rate the engine sustained.
+        prompts = [r.input_tokens for r in finished_here if r.input_tokens is not None]
+        prefill_tok_s = sum(prompts) / window_s if prompts else None
+        if not prompts:
+            reasons["prefill_tok_s"] = "(U) no completed record reported input_tokens"
+        if prompts and counted and sum(counted) > 0:
+            measured_input_output_ratio = sum(prompts) / sum(counted)
+        else:
+            measured_input_output_ratio = None
+            if prompts and counted:
+                # A rung that generated nothing has no finite mix, and publishing one would
+                # invent a denominator for the comparison the ratio exists to support.
+                reasons["measured_input_output_ratio"] = (
+                    "(U) the window generated no output tokens, so it has no input:output mix"
+                )
 
     if gates is None:
         slo_pass = None
@@ -537,6 +565,8 @@ def reduce_window(
         tokens_per_stream_chunk=tokens_per_stream_chunk,
         stream_chunk_gap_p50_s=stream_chunk_gap_p50_s,
         stream_chunk_gap_p95_s=stream_chunk_gap_p95_s,
+        prefill_tok_s=prefill_tok_s,
+        measured_input_output_ratio=measured_input_output_ratio,
         low_confidence=frozenset(low),
         reasons=reasons,
     )

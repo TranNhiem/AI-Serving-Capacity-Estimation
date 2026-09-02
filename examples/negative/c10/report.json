@@ -220,8 +220,14 @@
     "max_output_tokens": null,
     "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition",
     "archetypes": [
-      "chat_assistant"
-    ]
+      "code_agent"
+    ],
+    "agent_loop": {
+      "turns_per_session": 24.0,
+      "tool_calls_per_turn": 1.8,
+      "compaction_resume_tokens": 12000.0,
+      "session_max_context_tokens": 200000.0
+    }
   },
   "capacity_tiers": {
     "theoretical": {

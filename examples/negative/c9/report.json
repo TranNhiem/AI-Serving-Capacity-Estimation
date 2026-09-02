@@ -220,7 +220,7 @@
     "max_output_tokens": null,
     "max_output_tokens_u_reason": "(U) no output cap was declared for this run; output length was governed by the model's own stop condition",
     "archetypes": [
-      "chat_assistant"
+      "image_grounded"
     ]
   },
   "capacity_tiers": {

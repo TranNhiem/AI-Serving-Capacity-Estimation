@@ -1332,16 +1332,24 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "e2e_p95_s",
         "e2e_p99_s",
         "output_tok_s",
+        "prefill_tok_s",
+        "measured_input_output_ratio",
         "requests_per_s",
         "error_rate_pct",
     )
-    # Those three are optional in the schema, so `ascep init` does not emit them and neither
+    # These five are optional in the schema, so `ascep init` does not emit them and neither
     # does the row template. _unknown fills only a companion that already exists -- right for
-    # a hand-filled report, wrong here: a transport figure the reduction computed and found
-    # empty would vanish from the row, and an absent key reads as "this rung never looked"
-    # when the truth is "it looked and the stamps were not there". Seeded so the (U) has
-    # somewhere to land; _known pops the companion on every rung that measured a value.
-    for name in ("tokens_per_stream_chunk", "stream_chunk_gap_p50_s", "stream_chunk_gap_p95_s"):
+    # a hand-filled report, wrong here: a transport or prefill figure the reduction computed
+    # and found empty would vanish from the row, and an absent key reads as "this rung never
+    # looked" when the truth is "it looked and the stamps were not there". Seeded so the (U)
+    # has somewhere to land; _known pops the companion on every rung that measured a value.
+    for name in (
+        "tokens_per_stream_chunk",
+        "stream_chunk_gap_p50_s",
+        "stream_chunk_gap_p95_s",
+        "prefill_tok_s",
+        "measured_input_output_ratio",
+    ):
         row_template.setdefault(f"{name}_u_reason", init.TODO)
     thin = []
     for concurrency in rung_list:
@@ -1481,8 +1489,7 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         c
         for c in rung_list
         if result.rungs.get(c) is not None
-        and result.rungs[c].outcome
-        in (ladder.RungOutcome.COMPLETE, ladder.RungOutcome.FAILED)
+        and result.rungs[c].outcome in (ladder.RungOutcome.COMPLETE, ladder.RungOutcome.FAILED)
     ]
     if observed_rungs:
         top = max(observed_rungs)

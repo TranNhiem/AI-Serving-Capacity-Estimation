@@ -1,4 +1,4 @@
-"""Acceptance tests for `ascep.conformance`, the module that grades a report against C1-C8.
+"""Acceptance tests for `ascep.conformance`, the module that grades a report against C1-C11.
 
 Written against the specified contract before the implementation landed, so the tests are a
 statement of what the checker must do rather than a description of what it happens to do.
@@ -93,7 +93,7 @@ def test_findings_are_stable_and_partitioned(report):
 
 def test_every_finding_names_a_rule_a_path_and_an_action(report):
     for f in check(report).findings:
-        assert f.rule in {f"C{i}" for i in range(1, 9)}
+        assert f.rule in {f"C{i}" for i in range(1, 12)}
         assert f.severity in {"error", "warning"}
         assert f.path, f"{f.rule} finding with no path is not actionable"
         assert len(f.message.split()) >= 4, f"{f.rule}: message too terse to act on"

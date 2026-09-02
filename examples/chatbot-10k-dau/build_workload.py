@@ -115,6 +115,10 @@ def build() -> dict:
             "(U) no output cap was declared for this run; output length was governed by the "
             "model's own stop condition"
         ),
+        # Declared so the numbers above can be graded against the shape they claim: C9 checks
+        # that a text archetype carries no media terms, and C10 leaves the chat context
+        # estimator alone, which is the whole point of naming the shape rather than assuming it.
+        "archetypes": ["chat_assistant"],
     }
 
 

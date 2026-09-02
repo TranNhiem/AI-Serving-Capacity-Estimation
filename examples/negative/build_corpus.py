@@ -1,4 +1,4 @@
-"""Regenerate the negative corpus: eight reports, each wrong in exactly one way.
+"""Regenerate the negative corpus: eleven reports, each wrong in exactly one way.
 
 Every case is ``baseline.json`` plus one edit and nothing else, so the finding the checker
 reports can be attributed to that edit and to no other cause. Two properties make that
@@ -15,7 +15,7 @@ grader, so publishing it as a C-rule example teaches the wrong lesson about whic
 what. Where a rule cannot be reached that way the corpus README says so, rather than shipping a
 schema-invalid report that appears to prove otherwise.
 
-The eight edits below were not chosen by reading the checker. They came out of an exhaustive
+The edits below were not chosen by reading the checker. They came out of an exhaustive
 search over every single-field mutation of the baseline -- null, null-with-reason, deletion,
 boolean flip, an order of magnitude either way -- keeping only those that stay schema-valid and
 add findings of exactly one rule. Guessing which edit breaks C3 produces a corpus that passes
@@ -62,29 +62,48 @@ def edit(report: dict, path: str, value: Any) -> None:
         node[steps[-1]] = value
 
 
-# (case_id, rule, edits, headline). ``edits`` is a list because nulling a field honestly takes
-# two -- the value and its _u_reason sibling -- and a case that nulled the value alone would
-# trip C1 as well and stop demonstrating the rule it is named for. The first edit's path is
-# what the tests require the finding to name, so a mutation that trips the right rule in the
-# wrong place fails there rather than shipping as a demonstration of something it does not show.
-CASES: list[tuple[str, str, list[tuple[str, Any]], str]] = [
+#: The agent loop a ``code_agent`` archetype has to declare. The c10 case carries it so that
+#: C9 -- which requires exactly this object -- stays quiet and the case demonstrates the one
+#: rule it is named for.
+AGENT_LOOP = {
+    "turns_per_session": 24.0,
+    "tool_calls_per_turn": 1.8,
+    "compaction_resume_tokens": 12000.0,
+    "session_max_context_tokens": 200000.0,
+}
+
+# (case_id, rule, edits, headline, names). ``edits`` is a list because nulling a field honestly
+# takes two -- the value and its _u_reason sibling -- and a case that nulled the value alone
+# would trip C1 as well and stop demonstrating the rule it is named for.
+#
+# ``names`` is the path the finding must point at, and it is None for every case whose defect
+# and whose remedy sit in the same field, which is most of them. C9, C10 and C11 are the
+# exceptions on purpose: each grades a *relationship* between two fields, so the honest
+# mutation touches one field and the actionable finding names the other. Defaulting ``names``
+# to the first edit's path would have forced those three rules to report at the field the
+# author already wrote instead of the field they must add, which is the wrong end of the
+# advice. Stating the expected path per case keeps attribution exact without that distortion.
+CASES: list[tuple[str, str, list[tuple[str, Any]], str, str | None]] = [
     (
         "c1",
         "C1",
         [("hardware.node_exclusivity", None)],
         "A null with nothing to say for itself",
+        None,
     ),
     (
         "c2",
         "C2",
         [("model.weight_bytes_tag", DELETE)],
         "A number with no provenance",
+        None,
     ),
     (
         "c3",
         "C3",
         [("serving.gpu_count", 8)],
         "A topology that does not multiply out",
+        None,
     ),
     (
         "c4",
@@ -94,6 +113,7 @@ CASES: list[tuple[str, str, list[tuple[str, Any]], str]] = [
             ("scaling.2.context_tokens_u_reason", UNMEASURED),
         ],
         "A throughput figure with no context length",
+        None,
     ),
     (
         "c5",
@@ -103,18 +123,21 @@ CASES: list[tuple[str, str, list[tuple[str, Any]], str]] = [
             ("capacity_tiers.measured.binding_constraint_u_reason", UNMEASURED),
         ],
         "A capacity figure that does not say which floor bound it",
+        None,
     ),
     (
         "c6",
         "C6",
         [("capacity_tiers.measured.max_concurrent_users", 1.6384)],
         "A measured tier below the sustainable tier derived from it",
+        None,
     ),
     (
         "c7",
         "C7",
         [("run.slo_gates.declared_before_run", False)],
         "SLO gates chosen after the results were in",
+        None,
     ),
     (
         "c8",
@@ -124,6 +147,34 @@ CASES: list[tuple[str, str, list[tuple[str, Any]], str]] = [
             ("reproduction.raw_records_path_u_reason", UNMEASURED),
         ],
         "A report whose per-request records were never published",
+        None,
+    ),
+    (
+        "c9",
+        "C9",
+        [("workload.archetypes", ["image_grounded"])],
+        "An archetype whose media the workload never declares",
+        "workload.images_per_request",
+    ),
+    (
+        "c10",
+        "C10",
+        [
+            ("workload.archetypes", ["code_agent"]),
+            ("workload.agent_loop", AGENT_LOOP),
+        ],
+        "A chat context estimator applied to a tool-calling loop",
+        "workload.avg_context_tokens_tag",
+    ),
+    (
+        "c11",
+        "C11",
+        [
+            ("run.results.2.input_tokens", 2048),
+            ("run.results.2.output_tokens", 2048),
+        ],
+        "A capacity number carried across a change of token mix",
+        "run.results.2.prefill_tok_s",
     ),
 ]
 
@@ -168,7 +219,7 @@ def _describe(edits: list[tuple[str, Any]]) -> str:
 
 def main() -> None:
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
-    for case_id, rule, edits, headline in CASES:
+    for case_id, rule, edits, headline, _names in CASES:
         report = copy.deepcopy(baseline)
         for path, value in edits:
             edit(report, path, value)

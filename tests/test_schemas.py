@@ -533,6 +533,22 @@ _JUSTIFIED_ONLY_IN_SECTION_7 = {
     "capacity-report.schema.json /properties/scaling/items: provenance",
     "capacity-report.schema.json /properties/sizing_result: provenance",
     "run.schema.json /properties/results/items: provenance",
+    # Null on the archetype selector is a declared position, not a gap: it says the report
+    # claims no vertical block, which is what every pre-v0.5.0 artifact says by omission and
+    # what C9 reads as "pass". A _u_reason would demand an excuse for the default answer.
+    "workload.schema.json /: archetypes",
+    # agent_loop's null is set by the archetypes gate, not by the author: the allOf pins it
+    # to null for every non-agent workload. Asking that machine-forced null to justify
+    # itself would put a (U) reason on nine reports out of ten for saying nothing at all.
+    "workload.schema.json /: agent_loop",
+    # Null residency means "divide by duty_cycle", the documented v0.4.0 behaviour, so the
+    # null carries a value rather than hiding one. C10 warns on it under code_agent, which
+    # is the case where the default is known-wrong -- that warning, not a (U) reason, is
+    # what keeps the default from being silent.
+    "workload.schema.json /: kv_residency",
+    # Null means the session has no declared context cap. That is a real property of a
+    # workload, not an unmeasured one, and the sibling would be justifying unboundedness.
+    "workload.schema.json /properties/agent_loop: session_max_context_tokens",
 }
 
 

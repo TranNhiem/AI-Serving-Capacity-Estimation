@@ -1287,9 +1287,7 @@ def test_a_failure_that_delivered_nothing_labels_the_constraint_throughput():
     delivering at all."""
     result = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
-        ladder.RungResult(
-            concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True
-        ),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
     assert bench_run._boundary_constraint(result, 4) == "throughput"
 
@@ -1301,9 +1299,7 @@ def test_the_lowest_failing_rung_above_the_tier_is_the_boundary_that_labels_it()
     result = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
-        ladder.RungResult(
-            concurrency=16, outcome=ladder.RungOutcome.FAILED, zero_completions=True
-        ),
+        ladder.RungResult(concurrency=16, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
     assert bench_run._boundary_constraint(result, 4) == "slo"
 
@@ -1366,9 +1362,7 @@ def test_the_emitted_draft_carries_no_null_it_cannot_justify(tmp_path, monkeypat
     operator who ran it. This is the regression test for the whole class."""
     verdict = conformance.check(_offline_report(tmp_path, monkeypatch))
     c1 = [
-        f"{finding.path}: {finding.message}"
-        for finding in verdict.findings
-        if finding.rule == "C1"
+        f"{finding.path}: {finding.message}" for finding in verdict.findings if finding.rule == "C1"
     ]
     assert not c1, "bench emitted a null C1 cannot accept:\n  " + "\n  ".join(c1)
 
@@ -1475,9 +1469,7 @@ def test_the_ceiling_on_a_failed_top_rung_names_what_stopped_it(tmp_path, monkey
     )
 
 
-def test_the_two_tiers_do_not_agree_across_a_failure_inside_the_envelope(
-    tmp_path, monkeypatch
-):
+def test_the_two_tiers_do_not_agree_across_a_failure_inside_the_envelope(tmp_path, monkeypatch):
     """C7 is the checker's name for the erasure, and it must not fire on the harness's own draft.
 
     A rung inside this workload's context envelope failed its gate, so the engine ceiling and
@@ -1503,9 +1495,7 @@ def test_a_ladder_with_no_passing_rung_still_publishes_the_ceiling_it_measured(
     nothing was measured when the harness had measured exactly where the SLO stops. It is the
     sustainable tier that has nothing to say here, and it must justify saying it.
     """
-    report = _offline_report_with(
-        tmp_path, monkeypatch, **{"slo_gates.ttft_p95_max_s": 0.0005}
-    )
+    report = _offline_report_with(tmp_path, monkeypatch, **{"slo_gates.ttft_p95_max_s": 0.0005})
     measured = report["capacity_tiers"]["measured"]
     assert measured["max_concurrent_users"] is not None
     assert measured["binding_constraint"] == "slo"
@@ -1527,9 +1517,7 @@ def test_a_failed_top_rung_names_the_floor_it_observed():
     assert bench_run._observed_constraint(missed_gate, 8) == "slo"
     collapsed = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
-        ladder.RungResult(
-            concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True
-        ),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
     assert bench_run._observed_constraint(collapsed, 8) == "throughput"
 

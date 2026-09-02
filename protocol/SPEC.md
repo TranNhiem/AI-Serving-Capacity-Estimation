@@ -127,15 +127,19 @@ servers land well below 1.0. A value at or above 1.0 indicates a measurement err
 often a mis-declared active-parameter count or an untracked cache hit — and MUST be
 investigated rather than published.
 
-## The three floors
+## The capacity floors
 
-Capacity is the **minimum** of three independent floors, never the average and never the
+Capacity is the **minimum** of independent floors, never the average and never the
 most convenient:
 
 1. **Weights floor.** Do the weights plus a usable KV pool fit? Binary. A configuration that
    loads but leaves near-zero KV is not viable — it serializes to batch-size-1.
 2. **KV floor.** `sessions = kv_tokens ÷ avg_context_tokens`. Binds at long context.
-3. **Throughput floor.** `users = usable_tokens_per_s ÷ per-user demand`. Binds at short
+3. **Prefill floor.** `users = usable_prefill_tokens_per_s ÷ per-user prompt demand`. Binds
+   when the declared workload's prompts are heavier than those of the run the throughput
+   figure came from. Optional: supply a measured `prefill_tok_s` and it enters the minimum;
+   omit it and capacity is computed exactly as it was before the floor existed.
+4. **Throughput floor.** `users = usable_tokens_per_s ÷ per-user demand`. Binds at short
    context, where KV is abundant and compute is not.
 
 Which floor binds **changes with context length**. Reports MUST state the crossover, or state
@@ -172,6 +176,7 @@ the two before projecting to other context lengths.
 | 7 | [Benchmark procedure](07-benchmark-procedure.md) | warm-up, duration, repeats, outliers, failures |
 | 8 | [Reporting](08-reporting.md) | the standard report, conformance checking |
 | 9 | [Multimodal and reasoning](09-multimodal-and-reasoning.md) | image and video token cost, thinking mode, calibration |
+| 10 | [Workload archetypes](10-workload-archetypes.md) | declaring traffic shape, the prefill floor, agent loops |
 
 ## Versioning
 

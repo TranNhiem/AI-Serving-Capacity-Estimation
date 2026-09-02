@@ -310,10 +310,11 @@
             "weights",
             "kv",
             "throughput",
+            "prefill",
             "slo",
             null
           ],
-          "description": "Which floor binds (C5). Without it the GPU count does not say what to buy more of: 'kv' means buy memory/kv pool, 'throughput' means buy compute, 'slo' means the hardware fits but misses a latency gate."
+          "description": "Which floor binds (C5). Without it the GPU count does not say what to buy more of: 'kv' means buy memory/kv pool, 'throughput' means buy compute for generation, 'prefill' means buy compute for prompt reading, 'slo' means the hardware fits but misses a latency gate."
         },
         "headroom_factor": {
           "type": [
@@ -581,10 +582,11 @@
             "weights",
             "kv",
             "throughput",
+            "prefill",
             "slo",
             null
           ],
-          "description": "Binding floor per ascep.capacity.Constraint (C5): weights = does not fit usefully; kv = memory-bound at this context; throughput = compute-bound; slo = fits on average but misses a declared gate."
+          "description": "Binding floor per ascep.capacity.Constraint (C5): weights = does not fit usefully; kv = memory-bound at this context; throughput = compute-bound on generated tokens; prefill = compute-bound on prompt tokens, which binds when the declared input:output ratio exceeds the measured one; slo = fits on average but misses a declared gate."
         },
         "n_gpus": {
           "type": "integer",

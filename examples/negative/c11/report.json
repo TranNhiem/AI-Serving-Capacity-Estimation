@@ -158,8 +158,8 @@
       },
       {
         "context_tokens": 4096,
-        "input_tokens": 3584,
-        "output_tokens": 1024,
+        "input_tokens": 2048,
+        "output_tokens": 2048,
         "concurrency": 8,
         "output_tok_s": 245.76,
         "requests_per_s": 0.24,

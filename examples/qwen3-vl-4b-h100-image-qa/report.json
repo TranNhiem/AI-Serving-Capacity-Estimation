@@ -460,7 +460,10 @@
     "max_output_tokens": 512,
     "notes": {
       "input_tokens_per_request": "722 is one observed datapoint, not a distribution: a single smoke request (a 960x720 PNG plus its question) against the live server returned prompt_tokens 722. The run's per-rung context means supersede it and are the figures to read; it is declared here because a workload layer carrying no input length at all cannot be composed with per-GPU figures measured anywhere else."
-    }
+    },
+    "archetypes": [
+      "image_grounded"
+    ]
   },
   "capacity_tiers": {
     "theoretical": {

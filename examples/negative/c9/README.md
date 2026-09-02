@@ -1,0 +1,24 @@
+# An archetype whose media the workload never declares
+
+**Rule broken:** C9
+**The one edit:** `workload.archetypes` is set to `["image_grounded"]`
+
+An archetype is a claim about the shape of the traffic, not a label. Declaring image_grounded while `workload.images_per_request`, `workload.videos_per_request` and `workload.media_tokens_per_request` are all zero means one of two things: the archetype is decoration, or the media tokens were never counted. C9 exists to force the author to reconcile the claim with the numbers before a downstream reader trusts either.
+
+The numerical hazard is capacity inflation. Media tokens enter `avg_context_tokens`; that value sets the per-session KV footprint, which sets the KV floor. An image-grounded service priced with zero media is priced exactly as text, so the KV floor reports more concurrent sessions than the pool can hold and the published capacity is too high.
+
+The finding names `workload.images_per_request`, not `workload.archetypes`, because the checker takes the archetype at its word and points at the field the author must fill. It grades partial: C9 is an error, but only C1 through C5 errors force non-conforming.
+
+## Reproduce
+
+```bash
+ascep conformance examples/negative/c9/report.json
+```
+
+Every other byte of this report is identical to `examples/negative/baseline.json`, which grades
+`conforming` with no findings. Diff the two to see the edit on its own:
+
+```bash
+diff <(jq -S . examples/negative/baseline.json) \
+     <(jq -S . examples/negative/c9/report.json)
+```
