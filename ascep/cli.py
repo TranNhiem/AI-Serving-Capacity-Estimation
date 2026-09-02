@@ -256,6 +256,209 @@ def _cmd_bench(args: argparse.Namespace) -> int:
     return bench_run.bench(args.config, dry_run=args.dry_run, adapter_factory=_bench_adapter)
 
 
+#: Fields whose spread across sessions is worth a warning. A mean is only a workload if the
+#: sessions behind it were alike; three sessions of 4, 40 and 400 turns average to a number no
+#: session resembled, and a capacity estimate built on it is precise about a fiction.
+_SPREAD_WATCH = (
+    "turns_per_session",
+    "requests_per_session",
+    "input_tokens_per_request",
+    "kv_residency",
+)
+#: Ratio of max to min above which the spread is called out. Two is deliberately loose: the
+#: point is to catch sessions that are different *kinds* of work, not to police normal variance.
+_SPREAD_FACTOR = 2.0
+
+#: Workload fields the schema stores but the model can also derive. Overlaying a measurement
+#: onto input_tokens_per_request or requests_per_session moves all four, and a declaration
+#: whose stored derived values no longer follow from its stored inputs is the exact artifact
+#: this protocol exists to stop -- it validates, it renders, and its GPU count is wrong.
+_DERIVED_WORKLOAD_FIELDS = (
+    "peak_concurrent_users",
+    "active_sessions",
+    "avg_context_tokens",
+    "demand_tok_s",
+)
+
+
+def _merge_agent_workload(base: dict, fragment: dict) -> tuple[dict, list[str]]:
+    """Overlay a measured agent block onto a workload declaration.
+
+    Returns the merged declaration and the human-readable notes describing every change, so
+    the caller can print them: a merge that edits a published declaration silently is worse
+    than no merge at all.
+    """
+    merged = dict(base)
+    notes: list[str] = []
+    for key, value in fragment.items():
+        if key == "_provenance":
+            # Not a schema property. The workload layer sets additionalProperties false, so
+            # carrying the provenance map into the declaration would make it fail validation.
+            continue
+        if key == "agent_loop" and isinstance(value, dict):
+            existing = base.get("agent_loop") or {}
+            value = dict(value)
+            if value.get("session_max_context_tokens") is None:
+                # The transcript cannot reveal the context limit, so a run of this command
+                # without --session-max-context-tokens must not erase one the publisher
+                # already declared: that would silently remove the compaction ceiling.
+                inherited = existing.get("session_max_context_tokens")
+                if inherited is not None:
+                    value["session_max_context_tokens"] = inherited
+                    notes.append("kept: agent_loop.session_max_context_tokens from the base file")
+        if base.get(key) != value:
+            notes.append(f"set: {key}: {json.dumps(base.get(key))} -> {json.dumps(value)}")
+        merged[key] = value
+        reason_key = f"{key}_u_reason"
+        if reason_key in merged:
+            # The field is measured now. Leaving the note that explains why it was not
+            # measured makes the report claim a gap it has just closed, which costs the
+            # publisher conformance level for work they actually did.
+            merged.pop(reason_key)
+            notes.append(f"dropped: {reason_key} — the field is measured now")
+    return merged, notes
+
+
+def _recompute_derived(merged: dict) -> tuple[dict, list[str]]:
+    """Re-derive the stored derived fields from the merged inputs.
+
+    Raises ValueError when a derived field is tagged as measured: replacing a measurement
+    with an estimate is the one edit this command must never make quietly.
+    """
+    if merged.get("avg_context_tokens_tag") == "M":
+        raise ValueError(
+            "workload.avg_context_tokens is tagged (M): it was measured directly, and merging "
+            "would overwrite that measurement with the estimator. Reconcile it by hand."
+        )
+    kwargs = {k: merged[k] for k in _WORKLOAD_KEYS if k in merged and merged[k] is not None}
+    model = capacity.Workload(**kwargs)
+    notes: list[str] = []
+    out = dict(merged)
+    for name in _DERIVED_WORKLOAD_FIELDS:
+        if name not in out:
+            continue
+        value = getattr(model, name)()
+        if out[name] != value:
+            notes.append(f"recomputed: {name}: {json.dumps(out[name])} -> {_fmt(value)}")
+        out[name] = value
+    return out, notes
+
+
+def _cmd_agent_profile(args: argparse.Namespace) -> int:
+    """Turn agent session transcripts into a measured ``code_agent`` workload block.
+
+    The agent-loop numbers can otherwise only be declared -- provenance (U) or (I) -- and a
+    declared turns_per_session is a guess that multiplies straight through to demand.
+    """
+    from ascep import agent_profile
+
+    profiles = []
+    for path in args.exports:
+        try:
+            profiles.append(agent_profile.parse_session(_load_json(path)))
+        except (OSError, ValueError) as exc:
+            # Name the file. A campaign profiles a directory of exports at once, and
+            # "expected a session export" without a path sends the operator hunting.
+            _eprint(f"error: {path}: {exc}")
+            return 1
+
+    if args.shapes:
+        path = pathlib.Path(args.shapes)
+        if path.exists() and not args.force:
+            _eprint(f"error: {args.shapes} exists; pass --force to overwrite it")
+            return 2
+        try:
+            shapes = agent_profile.to_replay_shapes(
+                profiles, shared_prefix_tokens=args.shared_prefix_tokens
+            )
+        except ValueError as exc:
+            _eprint(f"error: {exc}")
+            return 1
+        path.write_text(json.dumps(shapes, indent=2) + "\n", encoding="utf-8")
+        summary = shapes["_summary"]
+        _eprint(
+            f"wrote {args.shapes}: {summary['sessions']} session(s), {summary['steps']} step(s), "
+            f"{summary['prefix_resets']} prefix reset(s)"
+        )
+        if args.shared_prefix_tokens == 0:
+            # Zero is the conservative default, not a measurement. Every real agent sends the
+            # same system prompt and tool schemas on every request, and a replay that shares
+            # nothing makes each session's first turn a cold prefill the deployment would not
+            # pay -- understating capacity rather than overstating it, but still wrong.
+            _eprint(
+                "shared_prefix_tokens is 0: the replay will share no system prompt or tool "
+                "schema across sessions, which under-counts prefix-cache hits"
+            )
+
+    stats = agent_profile.aggregate(profiles)
+    try:
+        workload = agent_profile.to_ascep_workload(
+            profiles, session_max_context_tokens=args.session_max_context_tokens
+        )
+    except ValueError as exc:
+        _eprint(f"error: {exc}")
+        return 1
+
+    document = workload
+    if args.into:
+        try:
+            base = _load_json(args.into)
+        except (OSError, ValueError) as exc:
+            _eprint(f"error: {args.into}: {exc}")
+            return 1
+        if not isinstance(base, dict):
+            _eprint(f"error: {args.into}: a workload declaration must be a JSON object")
+            return 1
+        document, notes = _merge_agent_workload(base, workload)
+        try:
+            document, derived_notes = _recompute_derived(document)
+        except (TypeError, ValueError) as exc:
+            _eprint(f"error: {exc}")
+            return 1
+        for note in notes + derived_notes:
+            _eprint(note)
+
+    text = json.dumps(document, indent=2) + "\n"
+    if args.out:
+        path = pathlib.Path(args.out)
+        if path.exists() and not args.force:
+            _eprint(f"error: {args.out} exists; pass --force to overwrite it")
+            return 2
+        path.write_text(text, encoding="utf-8")
+        _eprint(f"wrote {args.out}")
+    else:
+        sys.stdout.write(text)
+
+    # Everything below is advisory and goes to stderr, so stdout stays one JSON document.
+    # Without --into that document is a fragment and will NOT validate on its own: the
+    # workload layer sets additionalProperties false and requires two dozen fields a
+    # transcript cannot supply.
+    counted = len(profiles) - stats["skipped_sessions"]
+    _eprint(f"profiled {counted} session(s); skipped {stats['skipped_sessions']} with no turns")
+    for name in _SPREAD_WATCH:
+        entry = stats.get(name)
+        if not entry or entry["n"] < 2 or entry["min"] <= 0:
+            continue
+        if entry["max"] / entry["min"] >= _SPREAD_FACTOR:
+            _eprint(
+                f"spread: {name} ranges {_fmt(entry['min'])}..{_fmt(entry['max'])} across "
+                f"{entry['n']} sessions — the mean this reports describes no single session"
+            )
+    if stats.get("compaction_resume_tokens") is None:
+        # Null is honest, but a reader can mistake it for zero, which would price the KV
+        # floor as though every session resumed from an empty prompt.
+        _eprint(
+            "compaction_resume_tokens is null: no session in this sample compacted, so the "
+            "figure is not measured rather than zero"
+        )
+    if args.session_max_context_tokens is None:
+        _eprint(
+            "session_max_context_tokens is null: it is a serving choice, not a property of "
+            "the transcript — pass --session-max-context-tokens to record the limit you ran at"
+        )
+    return 0
+
+
 def _cmd_version(_args: argparse.Namespace) -> int:
     """Print the package and protocol version."""
     print(f"ascep {__version__} (protocol {ASCEP_VERSION})")
@@ -354,6 +557,53 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("config", help="path to the bench config JSON")
     p_bench.add_argument("--dry-run", action="store_true", help="print the plan and exit")
     p_bench.set_defaults(handler=_cmd_bench)
+
+    p_agent = sub.add_parser(
+        "agent-profile",
+        help="measure a code_agent workload from agent session transcripts",
+    )
+    p_agent.add_argument(
+        "exports",
+        nargs="+",
+        metavar="EXPORT",
+        help="session export JSON, as written by `opencode export <sessionID>`; pass several "
+        "to average across sessions",
+    )
+    p_agent.add_argument("-o", "--out", help="write the workload block here instead of stdout")
+    p_agent.add_argument(
+        "--into",
+        metavar="WORKLOAD",
+        help="merge the measured block into this existing workload declaration and emit the "
+        "whole document, re-deriving avg_context_tokens and demand_tok_s from the new inputs; "
+        "without it the output is a fragment for you to merge by hand",
+    )
+    p_agent.add_argument(
+        "--force", action="store_true", help="overwrite --out or --shapes if they exist"
+    )
+    p_agent.add_argument(
+        "--shapes",
+        metavar="FILE",
+        help="also write the per-session, per-step shape file the closed-loop replay driver "
+        "consumes; the workload block is a set of means and a mean cannot be replayed",
+    )
+    p_agent.add_argument(
+        "--shared-prefix-tokens",
+        type=int,
+        default=0,
+        metavar="N",
+        help="tokens of system prompt and tool schema every session sends identically, for "
+        "--shapes. The transcript records only the prompt total and cannot decompose it, so "
+        "this is declared; 0 means the replay assumes no shared prefix (default: 0)",
+    )
+    p_agent.add_argument(
+        "--session-max-context-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="the context limit the agent ran against; it governs when the loop compacts and "
+        "is a serving choice the transcript cannot reveal, so it must be supplied by hand",
+    )
+    p_agent.set_defaults(handler=_cmd_agent_profile)
 
     p_version = sub.add_parser("version", help="print the protocol and package version")
     p_version.set_defaults(handler=_cmd_version)

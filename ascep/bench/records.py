@@ -93,6 +93,23 @@ class RequestRecord:
     #: in one file and still be reduced per rung.
     concurrency: int | None = None
     repetition: int | None = None
+
+    #: Which agent session this request belongs to, and which turn within it. ``None`` for
+    #: the single-shot workloads the protocol started with, which have neither.
+    #:
+    #: Without these two, a file of records from an agent run is indistinguishable from a
+    #: file of independent requests: the reduction cannot tell that five of them shared a
+    #: KV prefix and that the gaps between them were tool calls, so it charges the run a
+    #: cold prefill every time and reports a duty cycle of 1.0 for a loop that was idle
+    #: most of the wall clock. Both floors -- KV and prefill -- come out wrong in the
+    #: optimistic direction, which is the direction that gets an operator into trouble.
+    #:
+    #: ``turn_index`` counts application turns, not requests: a tool-calling turn issues
+    #: several requests that all carry the same index. Step order within a turn is
+    #: recovered from ``issued_ts``, which is strictly increasing within a session because
+    #: the loop is closed.
+    session_id: str | None = None
+    turn_index: int | None = None
     #: False for warm-up traffic. Warm-up records are retained, not deleted: an excluded
     #: record that is still on disk can be re-examined when a result looks wrong.
     in_window: bool = True

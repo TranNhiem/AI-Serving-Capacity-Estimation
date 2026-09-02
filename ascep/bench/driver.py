@@ -15,12 +15,21 @@ reduction over the resulting records can tell that it happened.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ascep.bench.adapters.base import Adapter, RequestSpec
 from ascep.bench.records import Outcome, RequestRecord
+
+if TYPE_CHECKING:
+    # Imported for the annotation only. The driver uses a session plan through the two
+    # methods below and nothing else, so it must not acquire a load-time dependency on the
+    # module that happens to define them today -- a driver that imports the replay module
+    # cannot be used by a future plan type that imports the driver.
+    from ascep.bench.sessions import SessionPlan
 
 
 @dataclass(frozen=True)
@@ -186,6 +195,17 @@ class WindowRun:
     warmup_count: int
     warmup_s_actual: float
     boundary: Boundary
+    #: Sessions begun, and sessions that reached their last step before the window closed.
+    #: Both stay zero for a request-at-a-time run, which has no sessions to count.
+    #:
+    #: The difference is the one bias a session run has that a request run does not. A
+    #: session interrupted at close contributes only its early steps, and early steps carry
+    #: the short prompts, so a window shorter than a few session lengths reports a mean
+    #: context smaller than the capture and a prefill floor that is correspondingly too
+    #: kind. Nothing in the records reveals that on its own -- a truncated session looks
+    #: exactly like a short one -- so the counts are reported instead of inferred.
+    sessions_started: int = 0
+    sessions_completed: int = 0
 
     @property
     def offered(self) -> int:
@@ -205,13 +225,23 @@ class WindowRun:
 
 async def run_window(
     adapter: Adapter,
-    next_spec: Callable[[int], RequestSpec],
+    next_spec: Callable[[int], RequestSpec] | None = None,
     *,
     policy: WindowPolicy,
     reset: Callable[[], Awaitable[None]],
     clock: Callable[[], float] = time.perf_counter,
+    session_plan: SessionPlan | None = None,
 ) -> WindowRun:
     """Run one repetition: reset, warm up, measure a closed loop, drain, rule the edges.
+
+    Exactly one source of work is supplied. ``next_spec`` is the original one: each
+    virtual user asks for the next independent request and issues it. ``session_plan`` is
+    for agent workloads, where the unit of work is a multi-step session rather than a
+    request -- the user issues that session's steps in order, waiting the captured gap
+    between them, and only then starts another session. Everything else is identical:
+    same clock, same closed loop, same drain deadline, same boundary rules. The two
+    differ in what a virtual user does between requests, which is the only thing an agent
+    loop actually changes about offered load.
 
     ``records`` includes the warm-up traffic, marked out of window -- section 7.3
     discards warm-up from the statistics, not from the evidence. Filter on
@@ -226,9 +256,48 @@ async def run_window(
     declared offered-load window by an amount no report states, and an undeclared window
     is worse than a boundary effect a reader can bound from the record count.
     """
+    if (next_spec is None) == (session_plan is None):
+        raise ValueError(
+            "run_window takes exactly one source of work: next_spec for independent "
+            "requests, or session_plan for replayed agent sessions. Neither measures "
+            "nothing, and both would leave the driver to pick the workload the report "
+            "then names -- a choice belonging to the run config, not to an argument order"
+        )
+    if session_plan is not None and policy.think_time_s:
+        raise ValueError(
+            "a session plan already carries the measured gap after each step, so a "
+            f"think_time_s of {policy.think_time_s} would add a second idle period on "
+            "top of every one of them. The two sum: each session's wall clock stretches "
+            "by the extra delay times its step count, fewer sessions fit the window, and "
+            "the run reports a lighter load than either declaration describes. Declare "
+            "think_time_s = 0.0 when the gaps come from a capture"
+        )
+
     records: list[RequestRecord] = []
     sunk: list[RequestRecord] = []
     next_index = 0
+    next_session = 0
+    sessions_completed = 0
+    # request_id -> (session label, turn index), filled before each step is issued rather
+    # than stamped on the returned record. A record the adapter hands to the sink at
+    # cancellation never comes back through the call site, and an unstamped record is one
+    # the reduction reads as an independent request: it charges that step a cold prefill
+    # and drops it from its session's duty cycle. Recording the identity at issue time is
+    # the only point where it is known for certain.
+    session_tags: dict[str, tuple[str, int]] = {}
+
+    # Two windows of the same ladder must not replay the same prompts. Session index feeds
+    # the plan's text derivation, so restarting it at zero for every rung would hand rung
+    # eight the exact strings rung one already left in the engine's prefix cache -- the
+    # flattering failure, where measured capacity climbs with concurrency because the
+    # later rungs stopped doing prefill. Offsetting by a digest of the operating point
+    # keeps every rung's text distinct and still perfectly reproducible from the config.
+    session_base = int.from_bytes(
+        hashlib.blake2b(
+            f"{policy.concurrency}:{policy.repetition}".encode(), digest_size=8
+        ).digest(),
+        "big",
+    )
 
     def sink(record: RequestRecord) -> None:
         sunk.append(record)
@@ -238,6 +307,43 @@ async def run_window(
         index = next_index
         next_index += 1
         return index
+
+    def take_session_ordinal() -> int:
+        nonlocal next_session
+        ordinal = next_session
+        next_session += 1
+        return ordinal
+
+    async def run_one_session(should_stop: Callable[[], bool]) -> None:
+        """Issue one whole captured session: its steps in order, its gaps between them."""
+        nonlocal sessions_completed
+        assert session_plan is not None  # guaranteed by the exactly-one check above
+        ordinal = take_session_ordinal()
+        session_index = session_base + ordinal
+        shape = session_plan.shape(session_index)
+        # The label is the ordinal, not the salted index: the salt exists to vary the
+        # prompt text across rungs, and putting a sixteen-digit hash in every record would
+        # buy nothing a reader can use. Concurrency and repetition keep it unique.
+        label = f"c{policy.concurrency}-r{policy.repetition}-s{ordinal}"
+        for step_index, step in enumerate(shape.steps):
+            # Checked before each step, not only before the session: a session begun just
+            # inside the close would otherwise run its whole remaining length past the
+            # deadline, and the drain would cancel it mid-flight anyway.
+            if should_stop():
+                return
+            request_id = f"{label}-i{take_index()}"
+            session_tags[request_id] = (label, step.turn_index)
+            spec = session_plan.spec(
+                session_index=session_index, step_index=step_index, request_id=request_id
+            )
+            # No retry here either, and for the same reason as the request loop below.
+            records.append(await adapter.issue(spec, clock=clock, sink=sink))
+            # The gap is served even when it runs past the close. Cutting it short would
+            # turn a thinking user into a busy one at exactly the moment the window is
+            # being measured, which raises offered load above the declaration.
+            if step.gap_s:
+                await asyncio.sleep(step.gap_s)
+        sessions_completed += 1
 
     # Reset runs before anything else: warming up first and resetting after throws the
     # warm-up away, so the measured window would run cold while the report says it did
@@ -261,9 +367,21 @@ async def run_window(
             if policy.think_time_s:
                 await asyncio.sleep(policy.think_time_s)
 
-    await asyncio.gather(*(warm_user() for _ in range(policy.concurrency)))
+    async def warm_session_user() -> None:
+        while not warmup_done():
+            await run_one_session(warmup_done)
+
+    warm = warm_session_user if session_plan is not None else warm_user
+    await asyncio.gather(*(warm() for _ in range(policy.concurrency)))
     warmup_count = next_index - warmup_index_base
     warmup_s_actual = clock() - warmup_started
+    # The session counters cover the measured window only, matching boundary.offered.
+    # Warm-up ends the moment its request quota is met, which is almost always mid-session,
+    # so counting those sessions would report a truncation rate the window never had. The
+    # ordinal itself keeps climbing -- it has to, or a measured session would reuse a
+    # warm-up session's label and its already-cached prompts.
+    warmup_sessions = next_session
+    sessions_completed = 0
 
     t0 = clock()
     t1 = t0 + policy.window_s
@@ -283,7 +401,14 @@ async def run_window(
             if policy.think_time_s:
                 await asyncio.sleep(policy.think_time_s)
 
-    tasks = [asyncio.create_task(user()) for _ in range(policy.concurrency)]
+    async def session_user() -> None:
+        # Same rule as above, one level up: a user starts another session while the clock
+        # reads before close, and the step loop stops issuing at the same instant.
+        while clock() < t1:
+            await run_one_session(lambda: clock() >= t1)
+
+    body = session_user if session_plan is not None else user
+    tasks = [asyncio.create_task(body()) for _ in range(policy.concurrency)]
     # Poll on clock() rather than asyncio.wait(timeout=...): the deadline is measured on
     # the injected clock, while wait()'s timeout is measured on the event loop's, and a
     # test that injects a fake clock must move the deadline with it.
@@ -316,6 +441,10 @@ async def run_window(
     for record in records:
         record.concurrency = policy.concurrency
         record.repetition = policy.repetition
+        # Empty for a request-at-a-time run, so this restamps nothing there.
+        tag = session_tags.get(record.request_id)
+        if tag is not None:
+            record.session_id, record.turn_index = tag
 
     boundary = apply_boundary_rules(
         records, t0=t0, window_s=policy.window_s, drain_deadline_s=policy.drain_deadline_s
@@ -329,4 +458,6 @@ async def run_window(
         warmup_count=warmup_count,
         warmup_s_actual=warmup_s_actual,
         boundary=boundary,
+        sessions_started=next_session - warmup_sessions,
+        sessions_completed=sessions_completed,
     )

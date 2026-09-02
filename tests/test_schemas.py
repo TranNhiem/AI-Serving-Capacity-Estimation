@@ -175,6 +175,7 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     import ascep.bench.ladder as ladder
     import ascep.bench.metrics as metrics
     import ascep.bench.records as records
+    import ascep.bench.sessions as sessions
     import ascep.bench.workloads as workloads
     import ascep.capacity as capacity
 
@@ -182,7 +183,7 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     # vocabulary too: prose that says `apply_boundary_rules` is naming a function a reader
     # can call, not inventing a declaration field, and a check that could not tell the
     # difference would push writers to stop backticking real API names.
-    modules = (capacity, records, metrics, ladder, driver, workloads)
+    modules = (capacity, records, metrics, ladder, driver, workloads, sessions)
 
     declared = set()
     for path in sorted((ROOT / "schemas").glob("*.schema.json")):
@@ -252,6 +253,22 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
             path=_mm_path, media_root=_mm_root, transport="base64"
         ).media_shape()
     )
+    # A manifest key is published vocabulary in exactly the way a schema field is -- the
+    # bundle carries it and a reader greps for it -- but it is neither a config key nor a
+    # dataclass field, so nothing above finds `output_basis`. Take them off a real manifest
+    # for the same reason the media keys come off a real corpus.
+    ours |= set(
+        workloads.Workload(
+            source=workloads.SyntheticCorpus(
+                input_tokens=8, tokenizer=lambda text: len(text.split())
+            ),
+            output_plan=workloads.ModelDecidedOutput(),
+            cache_policy="disabled",
+            seed=1,
+            think_time_s=0.0,
+            run_label="vocab",
+        ).manifest()
+    )
     ours |= {
         # Intermediate names the chapters use when walking through a derivation by hand; they
         # are prose variables, so no signature will ever contain them.
@@ -313,6 +330,13 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
         # the arbiter over any predicted figure
         "prompt_tokens",
         "completion_tokens",
+        # Intermediate quantities of ascep.agent_profile.SessionProfile. They are not workload
+        # fields and must never become any: they are the two terms kv_residency is built from,
+        # and the changelog has to name them because the union-versus-sum decision behind
+        # tool_blocked_seconds is the one that keeps residency below 1.0. A reader who cannot
+        # grep the identifier cannot check the arithmetic.
+        "generating_seconds",
+        "tool_blocked_seconds",
     }
     allowed = ours | foreign
 

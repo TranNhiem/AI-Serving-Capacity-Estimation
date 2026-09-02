@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ascep import conformance, init, validation
-from ascep.bench import driver, ladder, metrics, persist, workloads
+from ascep.bench import driver, ladder, metrics, persist, sessions, workloads
 
 __all__ = ["ConfigError", "load_config", "load_declarations", "plan_lines", "bench"]
 
@@ -140,6 +140,14 @@ _OPTIONAL_KEY_CITATIONS = {
         "media_max_records": "section 9",
         # Where the prompt text lives in each record; default "conversations".
         "prompt_field": "section 9",
+        # True when 'corpus' is a shapes file written by `ascep agent-profile --shapes`
+        # rather than a prompt corpus: the ladder then replays whole captured sessions,
+        # each step carrying the prompt growth, the generated length and the gap the
+        # capture recorded. It is an explicit switch rather than something inferred from
+        # the file's contents because the two modes measure different things, and a
+        # config that fell into the wrong one would publish agent numbers for
+        # independent-request traffic, or the reverse, with nothing in the report saying so.
+        "replay_sessions": "section 10",
     },
 }
 
@@ -173,6 +181,7 @@ _TYPES = {
     ("workload", "media_url_prefix"): (str, type(None)),
     ("workload", "media_max_records"): (int, type(None)),
     ("workload", "prompt_field"): (str,),
+    ("workload", "replay_sessions"): (bool,),
     ("window", "window_s"): (int, float),
     ("window", "drain_deadline_s"): (int, float),
     ("window", "warmup_requests"): (int,),
@@ -313,6 +322,20 @@ def _check_values(config):
             "'concurrency' must be strictly increasing: section 7 climbs the ladder, and "
             f"got {rungs}. A repeated rung pools independent repetitions into one "
             "operating point; a descending one disables the collapse test"
+        )
+    if len(rungs) < 3:
+        # run.schema.json puts minItems 3 on run.results, and there is one row per rung, so
+        # a two-rung ladder cannot produce a report that validates. Caught here rather than
+        # at the end because the alternative is what a two-rung smoke run actually did:
+        # spend the windows, print the rung summaries, and then fail draft validation with
+        # "is too short" and "this is a defect in bench" -- which sends the operator looking
+        # for a bug in the writer rather than at the ladder they declared. run.single_point
+        # is not an escape hatch for this: it labels a campaign at one *context length*,
+        # which is a different axis and is set automatically.
+        raise ConfigError(
+            f"'concurrency' must declare at least 3 rungs; got {rungs}. Two points cannot "
+            "show where throughput stops scaling, so the report they produce would not "
+            "validate and the GPU hours would be spent before anything said so (section 7)"
         )
     # On anything but the synthetic corpus this number is consumed nowhere: the corpus's
     # own records fix the prompt length, so a declared value is validated and then used
@@ -529,12 +552,17 @@ def _engine_log_problem(path, report_dir, declared):
     return None
 
 
-def plan_lines(config):
+def plan_lines(config, workload_obj=None):
     """Render the dry-run plan: what will be measured and the minimum wall clock it costs.
 
     The wall-clock figure is a floor, not an estimate of the mean: warm-up, request bodies,
     and the final drain all add to it, and the run that gets killed at a Slurm wall clock is
     the one that had the highest concurrency rung still in it.
+
+    ``workload_obj`` is optional so that anything holding a config alone still gets a plan.
+    Passing it adds the lines that need the corpus rather than the declaration, which for a
+    session replay is the comparison an operator most needs before spending the hours: a
+    window shorter than the sessions being replayed completes none of them.
     """
     endpoint = config["endpoint"]
     window = config["window"]
@@ -547,7 +575,34 @@ def plan_lines(config):
     # boundary to confirm -- so the count is a range and the wall clock takes the high end.
     windows = graded + 1
     wall_s = windows * (window["window_s"] + window["drain_deadline_s"])
-    return [
+    lines = []
+    if isinstance(workload_obj, _SessionWorkload):
+        plan = workload_obj.source
+        shapes = plan.shapes
+        clocks = sorted(shape.wall_clock_s for shape in shapes)
+        steps = [len(shape.steps) for shape in shapes]
+        longest = clocks[-1]
+        median = clocks[len(clocks) // 2]
+        lines += [
+            f"replaying {plan.size} captured sessions "
+            f"({min(steps)} to {max(steps)} steps each, {sum(steps)} steps in total), "
+            f"drawn {plan.sampler_rule}",
+            f"captured session wall clock: median {median:.1f} s, longest {longest:.1f} s, "
+            f"against a window_s of {window['window_s']} s",
+        ]
+        if longest > window["window_s"]:
+            # Not a refusal: a short window is a legitimate smoke run, and the operator may
+            # know it. But it is the one thing about a replay that a report cannot recover
+            # from silently -- the truncated sessions contribute only their opening turns,
+            # which carry the short prompts, so the measured context and the prefill floor
+            # both come out below the capture and in the flattering direction.
+            lines.append(
+                "at least one captured session is longer than the window, so some sessions "
+                "will be cut off mid-conversation and contribute only their early, shorter "
+                "turns; sessions_started and sessions_completed in the bundle are what to "
+                "read that against"
+            )
+    return lines + [
         f"endpoint: {endpoint['base_url']} (model: {endpoint['model']})",
         f"concurrency rungs: {', '.join(str(r) for r in rungs)}",
         f"repetitions per rung: {repetitions}",
@@ -575,6 +630,120 @@ class _MediaShapeWorkload(workloads.Workload):
 
     def manifest(self):
         return {**super().manifest(), "media_shape": self.source.media_shape()}
+
+
+class _SessionWorkload(workloads.Workload):
+    """A Workload whose traffic is a captured agent session rather than independent requests.
+
+    ``source`` holds a sessions.SessionPlan instead of a PromptSource. The two are not
+    interchangeable -- a plan renders a step of a named session, a source renders one
+    standalone prompt -- so this class overrides the two places where the difference shows
+    and leaves everything else alone. Sharing the field rather than adding one keeps a
+    single answer to "what produced these prompts" in the dataclass and in the bundle.
+
+    for_repetition raises: the request-at-a-time generator would silently drop the session
+    structure, and a run that lost it would look like an ordinary text ladder with unusual
+    prompt lengths. The driver refuses the pairing too, but a workload that can hand out a
+    next_spec is a workload someone will eventually hand to one.
+    """
+
+    def for_repetition(self, repetition, *, concurrency=None):
+        raise TypeError(
+            "a session workload has no request-at-a-time generator: its prompts are steps "
+            "of a named session and only mean anything in order. Pass session_plan= to "
+            "run_window instead of a next_spec"
+        )
+
+    def manifest(self):
+        # Not super().manifest() plus a key. Most of that dict describes a PromptSource
+        # (field_path, media_placeholders_stripped, absorbs_prefix) or a single declared
+        # output length, and none of those exist here: the lengths come from the capture,
+        # one per step. Publishing the base manifest with those fields filled in from
+        # defaults would state things about this run that are not true, which is worse
+        # than the fields being absent.
+        plan = self.source
+        return {
+            "run_label": self.run_label,
+            "seed": self.seed,
+            "cache_policy": self.cache_policy,
+            # Zero by construction: the capture already carries the measured gap after
+            # every step, so this run added no idle time of its own. The key stays present
+            # because a reader comparing an agent run against a text run needs to see that
+            # the think time went somewhere, not that it was forgotten.
+            "think_time_s": self.think_time_s,
+            # A fourth value beside fixed/capped/model-decided, for the same reason the
+            # third was added: how the output length was decided is the axis this key
+            # names, and "the capture decided it, per step" is a distinct answer. A replay
+            # that reported "fixed" would invite a reader to look for the number.
+            "output_basis": "captured-per-step",
+            "ignore_eos": True,
+            "temperature": self.temperature,
+            "session_plan": plan.manifest(),
+        }
+
+
+def _build_session_plan(wl, corpus_path, config_dir):
+    """Load the captured shapes and refuse every declaration the replay would ignore.
+
+    A key that has no effect is a key the operator misread, and here each one of them is a
+    claim the published config makes about traffic the capture actually decides. All of it
+    is checked before the first request, because an eight-hour ladder that turns out to
+    have replayed the wrong thing has already spent the GPU hours.
+    """
+    if wl.get("media_root") is not None:
+        raise ConfigError(
+            "'replay_sessions' is true and 'media_root' is set (section 10): the captured "
+            "shapes carry token counts and timings, not images, so this run would send no "
+            "media at all while publishing a media label"
+        )
+    # No input_tokens rule here, deliberately. A shapes file is a corpus file, so
+    # _check_values has already refused a non-null input_tokens against it by the time this
+    # runs, and a second check would be unreachable -- a rule that cannot fire is one a
+    # reader will eventually trust and a maintainer will eventually break without noticing.
+    # Only the length is tested, not `or wl["ignore_eos"]`, and for the same reason as
+    # input_tokens above: _check_values already refuses ignore_eos true with a null length,
+    # so the only way to arrive here with ignore_eos set is to have declared a length too,
+    # which the test below catches. The disjunct would read as the rule that stops a bare
+    # ignore_eos and would never once have run.
+    if wl["output_tokens"] is not None:
+        raise ConfigError(
+            "'replay_sessions' is true but an output length is declared (section 10): the "
+            "captured step carries its own generated length and the replay forces it with "
+            "ignore_eos. A single declared length would flatten the output side of the "
+            "shape, which is half of what a session costs. Declare output_tokens null and "
+            "ignore_eos false"
+        )
+    if float(wl["think_time_s"]) != 0.0:
+        raise ConfigError(
+            f"'replay_sessions' is true but 'think_time_s' is {wl['think_time_s']} "
+            "(section 10): the capture already carries the measured gap after every step, "
+            "so this would add a second idle period on top of the one being replayed and "
+            "stretch every session past what was observed. Declare 0"
+        )
+    if wl["cache_policy"] == "unique-prefix":
+        raise ConfigError(
+            "'replay_sessions' is true but 'cache_policy' is 'unique-prefix' (section 10): "
+            "a replayed session shares prefixes on purpose -- turn k's prompt begins with "
+            "turn k-1's, which is the reuse an agent deployment actually gets -- so the "
+            "declaration would deny in the config exactly what the run measures. "
+            "'declared-workload' is the policy that says the reuse is the workload's own"
+        )
+    try:
+        shapes, shared_prefix_tokens = sessions.load_shapes(corpus_path)
+    except ValueError as exc:
+        raise ConfigError(f"the captured shapes '{corpus_path}' cannot be replayed: {exc}") from exc
+    return sessions.ReplaySessionPlan(
+        shapes=shapes,
+        seed=int(wl["seed"]),
+        # Whitespace again, and for the same reason SyntheticCorpus uses it: the plan
+        # refuses to publish a prompt that misses its target token count, so an oracle
+        # that moves in jumps makes the shapes unreplayable rather than approximate.
+        # What it costs is the same thing -- the counts are word counts, and the results
+        # table publishes the server's own numbers instead.
+        tokenizer=lambda text: len(text.split()),
+        shared_prefix_tokens=shared_prefix_tokens,
+        label=Path(corpus_path).stem,
+    )
 
 
 def _build_multimodal_corpus(wl, corpus_path, media_root, config_dir):
@@ -635,6 +804,13 @@ def _build_workload(config, config_dir):
             "media, so this config asks for a media run and would silently measure a "
             "text one (section 9)"
         )
+    replay_sessions = bool(wl.get("replay_sessions", False))
+    if replay_sessions and corpus == "synthetic":
+        raise ConfigError(
+            "'replay_sessions' is true but 'corpus' is 'synthetic' (section 10): there is "
+            "nothing to replay. Point 'corpus' at the shapes file written by "
+            "`ascep agent-profile --shapes`"
+        )
     if corpus == "synthetic":
         # Whitespace, not characters-per-token. SyntheticCorpus pads one filler word at a
         # time and refuses to publish a prompt that misses the target exactly, so an oracle
@@ -643,6 +819,12 @@ def _build_workload(config, config_dir):
         # lands on the target by construction; what it costs is that the declared
         # input_tokens is a word count, which is why run.tokenizer stays null with a reason
         # and the results table publishes the server's own count instead.
+        #
+        # A word count is only a usable stand-in because SyntheticCorpus pads with common
+        # English words. Measured against Gemma 4 on a GB200, the random-hex filler this
+        # used to emit cost 7.98 tokens per word, so a config asking for 1,500 sent about
+        # 12,000 and every context and KV figure downstream described a workload nobody
+        # declared. The same 256 words of _FILLER_WORDS came to exactly 256 tokens.
         source = workloads.SyntheticCorpus(
             input_tokens=int(wl["input_tokens"]), tokenizer=lambda text: len(text.split())
         )
@@ -654,6 +836,22 @@ def _build_workload(config, config_dir):
             raise ConfigError(
                 f"workload corpus file not found: '{corpus}' (section 7). Refusing to "
                 "spend GPU hours against a corpus that cannot be replayed"
+            )
+        if replay_sessions:
+            # Returns here rather than falling through to the output-plan block below,
+            # because there is no single output length to plan: the capture carries one
+            # per step. _build_session_plan has already refused every declaration that
+            # would have fed that block.
+            return _SessionWorkload(
+                source=_build_session_plan(wl, corpus_path, config_dir),
+                # Unused -- _SessionWorkload.spec takes each step's length from the
+                # capture -- but the base dataclass requires one of the three plans, and
+                # this is the one that claims the least: no length was declared here.
+                output_plan=workloads.ModelDecidedOutput(),
+                cache_policy=wl["cache_policy"],
+                seed=int(wl["seed"]),
+                think_time_s=0.0,
+                run_label=wl["run_label"],
             )
         if media_root is None:
             source = workloads.JsonlCorpus(corpus_path, field="messages")
@@ -702,12 +900,21 @@ async def _one_window(adapter, workload_obj, config, gates, *, concurrency, repe
         # dispersion across repetitions is the whole point of section 7.5.
         repetition=repetition,
     )
-    run = await driver.run_window(
-        adapter,
-        workload_obj.for_repetition(repetition, concurrency=concurrency),
-        policy=policy,
-        reset=driver.no_reset,
-    )
+    if isinstance(workload_obj, _SessionWorkload):
+        # The plan itself, not a generator bound to this window. One instance serves the
+        # whole ladder: every render is a pure function of the session and step indices,
+        # and the driver spaces those indices apart per operating point, so nothing here
+        # needs rebinding and nothing can carry state from one rung into the next.
+        run = await driver.run_window(
+            adapter, policy=policy, reset=driver.no_reset, session_plan=workload_obj.source
+        )
+    else:
+        run = await driver.run_window(
+            adapter,
+            workload_obj.for_repetition(repetition, concurrency=concurrency),
+            policy=policy,
+            reset=driver.no_reset,
+        )
     summary = metrics.reduce_window(
         run.records,
         window_s=run.window_s,
@@ -862,7 +1069,7 @@ def _bench(config_path, *, dry_run, adapter_factory, out, err):
         return 2
 
     if dry_run:
-        for line in plan_lines(config):
+        for line in plan_lines(config, workload_obj):
             print(line, file=out)
         return 0
 

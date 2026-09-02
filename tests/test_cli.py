@@ -555,3 +555,222 @@ def test_the_readme_cli_transcript_is_what_the_cli_actually_prints():
     done = _child("from ascep.cli import main; import sys; sys.exit(main(sys.argv[1:]))", *argv[1:])
     assert done.returncode == 0, done.stderr
     assert _key_values(done.stdout) == expected
+
+
+# --- agent-profile: measured agent-loop numbers, and the merge that must stay consistent --
+
+
+def _agent_step(message_id: str, inp: int, out: int) -> dict:
+    return {
+        "type": "step-finish",
+        "messageID": message_id,
+        "tokens": {"input": inp, "output": out, "reasoning": 0, "cache": {"read": 0, "write": 0}},
+    }
+
+
+def _agent_tool(message_id: str, start: int, end: int) -> dict:
+    return {
+        "type": "tool",
+        "messageID": message_id,
+        "tool": "read",
+        "callID": f"c{start}",
+        "state": {"status": "completed", "input": {}, "time": {"start": start, "end": end}},
+    }
+
+
+def _agent_export(tmp_path: pathlib.Path, name: str, *, growth: int) -> pathlib.Path:
+    """A three-turn tool-calling session whose prompt grows by `growth` tokens per turn.
+
+    Two steps per turn, so a command that counted messages instead of steps would report
+    three requests where there were six.
+    """
+    messages, clock, prompt = [], 0, 4_000
+    for turn in range(3):
+        mid = f"{name}-m{turn}"
+        messages.append(
+            {
+                "info": {
+                    "id": mid,
+                    "sessionID": name,
+                    "role": "assistant",
+                    "time": {"created": clock, "completed": clock + 9_000},
+                    "modelID": "m",
+                    "providerID": "p",
+                },
+                "parts": [
+                    _agent_step(mid, prompt, 300),
+                    _agent_tool(mid, clock + 2_000, clock + 5_000),
+                    _agent_step(mid, prompt + growth, 200),
+                ],
+            }
+        )
+        clock += 12_000
+        prompt += growth
+    return _write(tmp_path, f"{name}.json", {"info": {"id": name}, "messages": messages})
+
+
+def test_agent_profile_counts_requests_as_api_calls_not_as_turns(tmp_path, capsys):
+    """A tool-calling turn is several requests, and requests_per_session must say so.
+
+    Counting assistant messages would report 3 where 6 API calls were made, halving demand
+    and reporting an agent loop as costing what a chat turn costs.
+    """
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    assert main(["agent-profile", str(export)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["requests_per_session"] == 6
+    assert out["agent_loop"]["turns_per_session"] == 3
+    assert out["archetypes"] == ["code_agent"]
+
+
+def test_agent_profile_keeps_diagnostics_off_stdout(tmp_path, capsys):
+    """stdout must stay one parseable JSON document even when there is plenty to warn about.
+
+    The command is meant to be piped; a warning printed to stdout corrupts the document and
+    the failure shows up as a JSON parse error somewhere else entirely.
+    """
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    assert main(["agent-profile", str(export)]) == 0
+    captured = capsys.readouterr()
+    json.loads(captured.out)
+    assert "session_max_context_tokens is null" in captured.err
+    assert "compaction_resume_tokens is null" in captured.err
+
+
+def test_agent_profile_says_which_export_it_could_not_read(tmp_path, capsys):
+    """A campaign profiles a directory at once, so the diagnostic has to name the file."""
+    good = _agent_export(tmp_path, "s1", growth=1_000)
+    bad = _write(tmp_path, "bad.json", {"nope": 1})
+    assert main(["agent-profile", str(good), str(bad)]) == 1
+    assert "bad.json" in capsys.readouterr().err
+
+
+def test_agent_profile_flags_sessions_too_unalike_to_average(tmp_path, capsys):
+    """A mean over sessions of different kinds of work describes no session that ran.
+
+    Averaging a 4,000-token session with a 40,000-token one yields a workload nobody
+    exercised, and the resulting capacity number is precise about a fiction.
+    """
+    small = _agent_export(tmp_path, "small", growth=200)
+    large = _agent_export(tmp_path, "large", growth=20_000)
+    assert main(["agent-profile", str(small), str(large)]) == 0
+    assert "spread: input_tokens_per_request" in capsys.readouterr().err
+
+
+def test_agent_profile_fragment_alone_is_not_a_workload_declaration(tmp_path, capsys):
+    """Without --into the output is a fragment, and the help text must not overpromise.
+
+    The workload layer sets additionalProperties false and requires two dozen fields no
+    transcript can supply, so a user who pipes the fragment into `validate` should be told
+    by this test's existence, not by a confusing schema error.
+    """
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    assert main(["agent-profile", str(export)]) == 0
+    fragment = json.loads(capsys.readouterr().out)
+    assert "_provenance" in fragment
+    assert "ascep_version" not in fragment
+
+
+def test_agent_profile_merge_produces_a_declaration_that_still_validates(tmp_path, capsys):
+    """--into must emit a complete, schema-valid workload, not a spliced-together dict.
+
+    `_provenance` is not a schema property and the layer forbids extras, so carrying it
+    through the merge would turn a working declaration into an invalid one.
+    """
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    out = tmp_path / "merged.json"
+    assert (
+        main(
+            [
+                "agent-profile",
+                str(export),
+                "--into",
+                str(WORKLOAD),
+                "--session-max-context-tokens",
+                "131072",
+                "-o",
+                str(out),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    merged = json.loads(out.read_text(encoding="utf-8"))
+    assert "_provenance" not in merged
+
+    from ascep import validation
+
+    assert validation.validate("workload", merged) == []
+    assert merged["agent_loop"]["session_max_context_tokens"] == 131_072
+
+
+def test_agent_profile_merge_re_derives_the_stored_derived_fields(tmp_path, capsys):
+    """Overlaying measured inputs and leaving avg_context_tokens alone is the quiet failure.
+
+    The merged declaration would validate and render while its KV footprint still described
+    the chat workload it replaced -- here roughly an order of magnitude too small, which is
+    exactly the direction that makes an agent workload look affordable.
+    """
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    out = tmp_path / "merged.json"
+    assert main(["agent-profile", str(export), "--into", str(WORKLOAD), "-o", str(out)]) == 0
+    err = capsys.readouterr().err
+    assert "recomputed: avg_context_tokens" in err
+
+    base = json.loads(WORKLOAD.read_text(encoding="utf-8"))
+    merged = json.loads(out.read_text(encoding="utf-8"))
+    model = capacity.Workload(
+        **{k: merged[k] for k in _WORKLOAD_KEYS if k in merged and merged[k] is not None}
+    )
+    assert merged["avg_context_tokens"] == model.avg_context_tokens()
+    assert merged["demand_tok_s"] == model.demand_tok_s()
+    assert merged["avg_context_tokens"] > base["avg_context_tokens"]
+
+
+def test_agent_profile_merge_refuses_to_overwrite_a_measured_context_length(tmp_path, capsys):
+    """Replacing a measurement with the estimator is the one edit that must never be quiet.
+
+    A publisher who measured avg_context_tokens directly has better evidence than the
+    estimator does; silently recomputing it would downgrade their report without saying so.
+    """
+    base = json.loads(WORKLOAD.read_text(encoding="utf-8"))
+    base["avg_context_tokens_tag"] = "M"
+    target = _write(tmp_path, "measured.json", base)
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    assert main(["agent-profile", str(export), "--into", str(target)]) == 1
+    assert "tagged (M)" in capsys.readouterr().err
+
+
+def test_agent_profile_merge_keeps_a_context_limit_the_transcript_cannot_know(tmp_path, capsys):
+    """Re-running without --session-max-context-tokens must not erase a declared ceiling.
+
+    The limit governs when the loop compacts and is a serving choice; wiping it to null on
+    a routine re-profile would silently remove the constraint from the declaration.
+    """
+    base = json.loads(WORKLOAD.read_text(encoding="utf-8"))
+    base["agent_loop"] = {
+        "turns_per_session": 4,
+        "tool_calls_per_turn": 2.0,
+        "compaction_resume_tokens": None,
+        "session_max_context_tokens": 200_000,
+    }
+    target = _write(tmp_path, "declared.json", base)
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    out = tmp_path / "merged.json"
+    assert main(["agent-profile", str(export), "--into", str(target), "-o", str(out)]) == 0
+    capsys.readouterr()
+    merged = json.loads(out.read_text(encoding="utf-8"))
+    assert merged["agent_loop"]["session_max_context_tokens"] == 200_000
+    assert merged["agent_loop"]["turns_per_session"] == 3
+
+
+def test_agent_profile_refuses_to_clobber_an_existing_file_without_force(tmp_path, capsys):
+    """The file this would overwrite may be a hand-annotated declaration."""
+    export = _agent_export(tmp_path, "s1", growth=1_000)
+    out = tmp_path / "workload.json"
+    out.write_text("{}", encoding="utf-8")
+    assert main(["agent-profile", str(export), "-o", str(out)]) == 2
+    assert out.read_text(encoding="utf-8") == "{}"
+    assert main(["agent-profile", str(export), "-o", str(out), "--force"]) == 0
+    capsys.readouterr()
+    assert json.loads(out.read_text(encoding="utf-8"))["archetypes"] == ["code_agent"]

@@ -18,6 +18,7 @@ import pytest
 
 from ascep.bench.adapters.base import RequestSpec
 from ascep.bench.workloads import (
+    _FILLER_WORDS,
     CACHE_POLICIES,
     CappedOutput,
     FixedOutput,
@@ -154,6 +155,41 @@ def test_a_synthetic_prompt_tokenizes_to_exactly_the_declared_length():
 def test_a_non_positive_token_target_is_refused():
     with pytest.raises(ValueError, match="token"):
         _synthetic(input_tokens=0)
+
+
+def test_synthetic_filler_is_drawn_from_the_common_word_vocabulary():
+    """`ascep bench` counts words, so one word must cost the served model about one token.
+
+    That is a property of the words, not of the counting. Measured on Gemma 4, the random
+    hex filler this generator used to emit cost 7.98 tokens per word, so a config asking for
+    input_tokens 1,500 sent roughly 12,000 and the avg_context_tokens, KV-floor and TTFT
+    figures downstream all described a workload nobody declared. Nothing else in the suite
+    would notice: the word count still lands on the target exactly, which is the number
+    every other synthetic test asserts on.
+    """
+    prompt = _synthetic(input_tokens=200).render(seed_material=11, prefix=None)
+    vocabulary = set(_FILLER_WORDS)
+    assert set(prompt.split()) <= vocabulary
+    assert len(vocabulary) >= 100, "too small a vocabulary and prompts share cacheable prefixes"
+
+
+def test_two_synthetic_prompts_share_no_cacheable_prefix():
+    """A vLLM prefix-cache block is sixteen tokens; a shared head that long would let rung
+    two answer out of the cache rung one filled, and the throughput floor would be a
+    measurement of the cache.
+
+    Drawing filler from a closed vocabulary made this possible in a way unique hex strings
+    never were, so it is pinned rather than argued.
+    """
+    corpus = _synthetic(input_tokens=200)
+    first = corpus.render(seed_material=1, prefix=None).split()
+    second = corpus.render(seed_material=2, prefix=None).split()
+    shared = 0
+    for left, right in zip(first, second):
+        if left != right:
+            break
+        shared += 1
+    assert shared < 16
 
 
 def test_a_synthetic_corpus_refuses_a_target_it_cannot_hit_exactly():

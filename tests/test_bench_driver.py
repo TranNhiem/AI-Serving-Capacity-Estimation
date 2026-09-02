@@ -451,3 +451,218 @@ def test_the_workload_is_asked_for_a_distinct_request_every_time():
 
     assert len(seen) == len(set(seen)), "the same index was handed out twice"
     assert seen == sorted(seen), "indices are monotonic so a replay can be reconstructed"
+
+
+# --- session replay -------------------------------------------------------------------
+#
+# The driver reaches a session plan through exactly two methods, so these tests supply a
+# fake rather than the shipped ReplaySessionPlan. That is deliberate: what is under test
+# here is that the driver walks a session correctly and stamps identity onto every record
+# it produces, and a failure should name the driver rather than the prompt builder.
+
+
+class _FakeStep:
+    def __init__(self, turn_index, gap_s=0.0):
+        self.turn_index = turn_index
+        self.gap_s = gap_s
+
+
+class _FakeShape:
+    def __init__(self, steps):
+        self.steps = steps
+
+
+class _FakePlan:
+    """Alternates a three-step session and a one-step session, recording what it was asked."""
+
+    def __init__(self, shapes=None):
+        self.shapes = shapes or [
+            _FakeShape([_FakeStep(0), _FakeStep(0), _FakeStep(1)]),
+            _FakeShape([_FakeStep(0)]),
+        ]
+        self.asked = []
+        self.specced = []
+
+    def shape(self, session_index):
+        self.asked.append(session_index)
+        return self.shapes[session_index % len(self.shapes)]
+
+    def spec(self, *, session_index, step_index, request_id):
+        self.specced.append((session_index, step_index))
+        return RequestSpec(request_id=request_id, messages=[{"role": "user", "content": "x"}])
+
+
+def test_a_window_with_no_source_of_work_at_all_is_refused():
+    """Defaulting next_spec to None makes it possible to forget both, so both are checked.
+
+    A window that issues nothing still returns records, a boundary and a duration, and
+    reduce_window would divide by it: the run reports zero throughput at full concurrency
+    as though the server had stalled, rather than as the empty run it was.
+    """
+    with pytest.raises(ValueError, match="exactly one source of work"):
+        asyncio.run(run_window(_FakeAdapter(), policy=_policy(), reset=no_reset))
+
+
+def test_a_window_given_both_a_spec_source_and_a_session_plan_is_refused():
+    """Two workloads, one report. The driver must not be the one choosing between them.
+
+    Silently preferring either would let a config declare an agent workload and measure
+    single-shot requests, and the records would carry the agent declaration's name.
+    """
+    with pytest.raises(ValueError, match="exactly one source of work"):
+        asyncio.run(
+            run_window(
+                _FakeAdapter(),
+                _specs(),
+                policy=_policy(),
+                reset=no_reset,
+                session_plan=_FakePlan(),
+            )
+        )
+
+
+def test_a_session_run_refuses_a_think_time_on_top_of_its_captured_gaps():
+    """The gaps are already in the capture, so a think time would be added to each of them.
+
+    Left through, a 0.05 s think time on a six-step session adds 0.3 s of undeclared idle
+    per session: fewer sessions fit the window, offered load falls, and the run reports a
+    server that is less loaded than the declaration says it was.
+    """
+    with pytest.raises(ValueError, match="think_time_s = 0.0"):
+        asyncio.run(
+            run_window(
+                _FakeAdapter(),
+                policy=_policy(think_time_s=0.05),
+                reset=no_reset,
+                session_plan=_FakePlan(),
+            )
+        )
+
+
+def test_every_request_of_a_session_run_carries_its_session_and_turn():
+    """Without both, the reduction cannot tell a session's steps from independent requests.
+
+    It would charge each step a cold prefill and compute a duty cycle over the wall clock
+    of a loop that spent most of it waiting on tools -- the KV and prefill floors both
+    come out too kind, which is the direction that oversells the hardware.
+    """
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.002),
+            policy=_policy(concurrency=2, warmup_requests=2),
+            reset=no_reset,
+            session_plan=_FakePlan(),
+        )
+    )
+
+    assert run.records, "the run issued nothing"
+    for record in run.records:
+        assert record.session_id is not None, f"{record.request_id} lost its session"
+        assert record.turn_index is not None, f"{record.request_id} lost its turn"
+
+
+def test_the_steps_of_one_session_are_issued_in_order_and_carry_the_captured_turns():
+    """A session is a sequence, and replaying it out of order replays a different workload.
+
+    The three-step shape has turns 0, 0, 1: two requests in one tool-calling turn, then a
+    second turn. Shuffled, the record file says three separate turns, and the profiler's
+    tool_calls_per_turn -- the whole reason the agent fields exist -- reads 1.0.
+    """
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.002),
+            policy=_policy(concurrency=1, window_s=0.30, warmup_requests=1),
+            reset=no_reset,
+            session_plan=_FakePlan(),
+        )
+    )
+
+    by_session = {}
+    for record in sorted(run.records, key=lambda r: r.issued_ts):
+        by_session.setdefault(record.session_id, []).append(record.turn_index)
+    three_step = [turns for turns in by_session.values() if len(turns) == 3]
+    assert three_step, "no session ran all three of its steps"
+    for turns in three_step:
+        assert turns == [0, 0, 1], f"steps were issued out of order: {turns}"
+
+
+def test_two_rungs_of_the_same_ladder_draw_different_session_indices():
+    """Otherwise rung eight replays the prompts rung one already left in the prefix cache.
+
+    That is the flattering failure: measured capacity rises with concurrency because the
+    later rungs stopped doing prefill, and the report reads as a scaling result.
+    """
+    first, second = _FakePlan(), _FakePlan()
+    for plan, concurrency in ((first, 2), (second, 8)):
+        asyncio.run(
+            run_window(
+                _FakeAdapter(service_s=0.002),
+                policy=_policy(concurrency=concurrency, warmup_requests=2),
+                reset=no_reset,
+                session_plan=plan,
+            )
+        )
+
+    assert first.asked and second.asked
+    assert not set(first.asked) & set(second.asked), "two rungs drew the same session index"
+
+
+def test_a_session_the_window_cut_short_is_counted_as_started_but_not_completed():
+    """A truncated session contributes only its early -- and therefore shortest -- prompts.
+
+    Nothing in the records distinguishes it from a genuinely short session, so a window
+    shorter than a few session lengths silently reports a mean context below the capture
+    and a prefill floor to match. The two counts are what lets a reader notice.
+    """
+    stalls = _FakePlan(shapes=[_FakeShape([_FakeStep(0), _FakeStep(0, gap_s=30.0), _FakeStep(1)])])
+
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.002),
+            policy=_policy(concurrency=1, window_s=0.10, drain_deadline_s=0.05, warmup_requests=1),
+            reset=no_reset,
+            session_plan=stalls,
+        )
+    )
+
+    assert run.sessions_started >= 1
+    assert run.sessions_completed == 0, "a session parked in a 30 s gap cannot have finished"
+
+
+def test_a_request_run_reports_no_sessions_rather_than_one_per_request():
+    """The counts default to zero, and a workload without sessions must leave them there.
+
+    Reporting one session per request would make every request run look like a perfectly
+    truncation-free agent run, which is a claim about a workload it never measured.
+    """
+    run = asyncio.run(
+        run_window(_FakeAdapter(service_s=0.002), _specs(), policy=_policy(), reset=no_reset)
+    )
+
+    assert run.sessions_started == 0
+    assert run.sessions_completed == 0
+    assert all(r.session_id is None for r in run.records)
+
+
+def test_a_step_cancelled_at_the_deadline_still_names_the_session_it_belonged_to():
+    """The adapter hands that record to the sink, not back to the driver's call site.
+
+    Stamped from the returned record alone it would arrive with a null session, and the
+    reduction would read the run's one abandoned request as an independent single-shot --
+    dropping it from the session whose duty cycle it is evidence for.
+    """
+    stalls = _FakePlan(shapes=[_FakeShape([_FakeStep(0), _FakeStep(1)])])
+
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.002, slow_after=2, slow_s=30.0),
+            policy=_policy(concurrency=1, window_s=0.10, drain_deadline_s=0.05, warmup_requests=1),
+            reset=no_reset,
+            session_plan=stalls,
+        )
+    )
+
+    cancelled = [r for r in run.records if r.outcome is Outcome.CANCELLED]
+    assert cancelled, "the 30 s step should have been cancelled at the deadline"
+    for record in cancelled:
+        assert record.session_id is not None, "a sunk record lost its session identity"

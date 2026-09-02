@@ -114,6 +114,8 @@ def test_records_round_trip_through_jsonl_without_losing_a_field():
         in_window=True,
         finish_reason="stop",
         http_status=200,
+        session_id="s-7",
+        turn_index=3,
     )
     buf = io.StringIO()
     assert write_records([original], buf) == 1
@@ -141,6 +143,52 @@ def test_a_corrupt_line_raises_instead_of_being_skipped():
 def test_blank_lines_are_tolerated():
     buf = io.StringIO('\n{"request_id":"r1","issued_ts":1.0}\n\n')
     assert len(read_records(buf)) == 1
+
+
+# --- agent sessions: which requests shared a prefix, and which gaps were tool calls ----
+
+
+def test_a_single_shot_request_carries_no_session_identity_at_all():
+    """The agent fields must default to absent, not to a fabricated session of one.
+
+    Every workload the protocol measured before agents existed would otherwise acquire a
+    session id, and a reduction that groups by session would start charging warm-prefix
+    economics to runs whose requests genuinely shared nothing.
+    """
+    r = _rec()
+    assert r.session_id is None
+    assert r.turn_index is None
+
+
+def test_a_record_file_written_before_the_agent_fields_existed_still_loads():
+    """Older bundles must stay readable, or every published record file becomes waste.
+
+    Chapter 7 §8 requires raw records in the reproduction bundle; a schema addition that
+    orphans the bundles already cited in the report defeats the point of keeping them.
+    """
+    buf = io.StringIO('{"request_id":"r1","issued_ts":1.0,"outcome":"ok","concurrency":8}\n')
+    (back,) = read_records(buf)
+    assert back.concurrency == 8
+    assert back.session_id is None
+    assert back.turn_index is None
+
+
+def test_several_requests_in_one_turn_share_a_turn_index_and_order_by_issue_time():
+    """A tool-calling turn is several requests, and the record must say so.
+
+    Counting turns by counting records would report this two-step turn as two turns, which
+    halves tool_calls_per_turn and doubles turns_per_session -- both in the direction that
+    makes an agent loop look cheaper than it is.
+    """
+    turn = [
+        _rec(request_id="a", issued_ts=10.0, session_id="s1", turn_index=0),
+        _rec(request_id="b", issued_ts=14.0, session_id="s1", turn_index=0),
+        _rec(request_id="c", issued_ts=20.0, session_id="s1", turn_index=1),
+    ]
+    assert len({r.turn_index for r in turn}) == 2
+    assert len(turn) == 3
+    by_turn_zero = sorted((r for r in turn if r.turn_index == 0), key=lambda r: r.issued_ts)
+    assert [r.request_id for r in by_turn_zero] == ["a", "b"]
 
 
 def test_missing_server_usage_stays_none_rather_than_becoming_a_chunk_count():

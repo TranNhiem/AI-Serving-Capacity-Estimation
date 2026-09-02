@@ -290,8 +290,16 @@ def write_bundle(
     with records_file.open("w") as fp:
         write_records(all_records, fp)
 
+    workload_manifest = workload.manifest()
+    # Present only on a session replay, and taken from the manifest rather than from the
+    # workload's type so a third-party plan gets the same treatment. The two counts below
+    # would be a truthful 0/0 on a text run, but "no sessions" and "sessions, none of them
+    # finished" are different facts and a reader scanning a bundle should not have to know
+    # which one a zero means.
+    replayed_sessions = "session_plan" in workload_manifest
+
     config = {
-        "workload": workload.manifest(),
+        "workload": workload_manifest,
         "windows": [
             {
                 "t0": run.t0,
@@ -315,6 +323,20 @@ def write_bundle(
                 # The boundary ships as data, not as a dataclass dump: asdict would
                 # recurse silently into anything the dataclass later grows.
                 "boundary": asdict(run.boundary),
+                # A window ends on the clock, so the sessions still running are cut off
+                # mid-conversation and their later, longer turns never happen. Started
+                # minus completed is the size of that truncation, and it is the number a
+                # reader needs to judge whether the window was long enough for the
+                # sessions being replayed: a window that completes none of them measured
+                # only the cheap first turns of every one.
+                **(
+                    {
+                        "sessions_started": run.sessions_started,
+                        "sessions_completed": run.sessions_completed,
+                    }
+                    if replayed_sessions
+                    else {}
+                ),
             }
             for run in runs
         ],

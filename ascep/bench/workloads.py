@@ -27,6 +27,35 @@ from ascep.bench.adapters.base import RequestSpec
 #: a policy the protocol cannot interpret, so it is refused rather than coerced.
 CACHE_POLICIES = frozenset({"disabled", "cleared", "unique-prefix", "declared-workload", "unknown"})
 
+#: The filler vocabulary SyntheticCorpus pads with. Common English words, because a
+#: subword tokenizer spends one token on each of them and eight on a random string: measured
+#: on Gemma 4's tokenizer, 256 words of `w1a2b3c4d` filler came to 2,044 tokens and 256 words
+#: drawn from this list came to exactly 256. A declared input_tokens of 1,500 therefore buys
+#: about 1,500 tokens of prefill rather than about 12,000, and every context, KV and TTFT
+#: figure derived from it describes the workload the config asked for.
+#:
+#: Short and closed on purpose. It is a padding vocabulary, not a corpus: the prompts are
+#: filler either way, and a longer list would not make them mean anything. Two prompts must
+#: share sixteen consecutive words before a vLLM prefix-cache block can hit, which at this
+#: size is a probability with fifty zeros after the decimal point -- and under
+#: 'unique-prefix' the unique head already rules it out.
+_FILLER_WORDS = (
+    "about above after again against all also although always among and another any are "
+    "around because been before being below best better between both bring came can come "
+    "could day did does done down during each early even ever every few find first found "
+    "from give given going good great group had hand has have here high hold home house "
+    "however important into just keep kind knew know large last later least left less life "
+    "like little long look made make many may means might more most move much must name "
+    "near need never new next night not now number often old once only open order other "
+    "our over own part people perhaps place point possible present problem public put "
+    "rather really right room said same saw say school second see seem seen set several "
+    "shall she short should show side since small some something soon sound state still "
+    "such take tell than that the their them then there these they thing think this those "
+    "though thought three through time today together too took toward turn two under until "
+    "upon use used using very want water way week well went were what when where whether "
+    "which while who whole why will with within without word work world would year yet young"
+).split()
+
 #: The markers a multimodal corpus leaves in the text where the image or clip belongs. They
 #: survive every type check because the value really is a string, and sending one to a text
 #: endpoint turns a fifteen-hundred-token prompt into a five-token one -- so input_tokens,
@@ -149,7 +178,12 @@ class PromptSource(abc.ABC):
 class SyntheticCorpus(PromptSource):
     """Prompts built by appending filler words until the supplied tokenizer reports exactly
     input_tokens. The tokenizer is mandatory: a generator sized by words or characters
-    produces a token count no two tokenizers agree on (section 7.2)."""
+    produces a token count no two tokenizers agree on (section 7.2).
+
+    The filler is drawn from _FILLER_WORDS rather than generated, because a caller that
+    passes a word-count oracle -- as ``ascep bench`` does -- is relying on one word costing
+    the served model about one token, and that is a property of the words, not of the
+    counting."""
 
     input_tokens: int
     tokenizer: Callable[[str], int]
@@ -199,7 +233,7 @@ class SyntheticCorpus(PromptSource):
         while n < self.input_tokens:
             grown = n
             for _ in range(step):
-                filler.append(f"w{rng.getrandbits(32):08x}")
+                filler.append(rng.choice(_FILLER_WORDS))
             n = count(filler)
             if n == grown:
                 # Appending words stopped moving the count, so the target is unreachable.

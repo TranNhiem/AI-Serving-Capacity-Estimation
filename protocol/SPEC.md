@@ -176,7 +176,7 @@ the two before projecting to other context lengths.
 | 7 | [Benchmark procedure](07-benchmark-procedure.md) | warm-up, duration, repeats, outliers, failures |
 | 8 | [Reporting](08-reporting.md) | the standard report, conformance checking |
 | 9 | [Multimodal and reasoning](09-multimodal-and-reasoning.md) | image and video token cost, thinking mode, calibration |
-| 10 | [Workload archetypes](10-workload-archetypes.md) | declaring traffic shape, the prefill floor, agent loops |
+| 10 | [Workload archetypes](10-workload-archetypes.md) | declaring traffic shape, the prefill floor, agent loops, capturing and replaying a session |
 
 ## Versioning
 
