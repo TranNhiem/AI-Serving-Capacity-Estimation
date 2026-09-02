@@ -778,6 +778,7 @@ def _run_offline(
     interrupt_after_s: float | None = None,
     reported_input_tokens: int = 512,
     token_gap_s: float = 0.0005,
+    ttft_by_rung: dict[int, float] | None = None,
 ):
     """Replace the adapter with one that answers instantly, so the suite needs no server.
 
@@ -792,13 +793,31 @@ def _run_offline(
     ``token_gap_s`` widens the simulated inter-token gap so a test can cross a declared ITL
     gate; it moves timestamps only, never the order or the outcome of a request, so the
     default keeps every existing run exactly as green as it was.
+
+    ``ttft_by_rung`` maps a rung's concurrency to the first-token delay every request in that
+    rung pays. Without it the fake answers every rung at exactly the same speed, so no
+    declared latency gate can fail one rung and pass another, and a test about which graded
+    rungs the measured tier is drawn from would have no mixed ladder to draw from. The rung
+    is read back out of ``request_id``, which the workload builds as
+    ``{run_label}-c{concurrency}-r{repetition}-i{index}``; a single-window run carries no
+    rung and falls through to the default, as does any rung the mapping omits.
     """
+    import re
     import time
 
     import ascep.cli as cli
     from ascep.bench.records import Outcome, RequestRecord
 
     started = time.monotonic()
+    rung_of = re.compile(r"-c(\d+)-r\d+-i\d+$")
+
+    def _ttft(request_id: str) -> float:
+        if not ttft_by_rung:
+            return 0.001
+        found = rung_of.search(request_id)
+        if found is None:
+            return 0.001
+        return ttft_by_rung.get(int(found.group(1)), 0.001)
 
     class _Fake:
         name = "fake"
@@ -813,13 +832,14 @@ def _run_offline(
             if interrupt_after_s is not None and time.monotonic() - started > interrupt_after_s:
                 raise KeyboardInterrupt
             t = clock()
+            ttft = _ttft(spec.request_id)
             return RequestRecord(
                 request_id=spec.request_id,
                 issued_ts=t,
                 outcome=Outcome.OK,
-                first_token_ts=t + 0.001,
-                token_ts=[t + 0.001 + token_gap_s * i for i in range(8)],
-                end_ts=t + 0.005 + token_gap_s * 7,
+                first_token_ts=t + ttft,
+                token_ts=[t + ttft + token_gap_s * i for i in range(8)],
+                end_ts=t + ttft + 0.004 + token_gap_s * 7,
                 output_tokens=spec.max_tokens or 128,
                 input_tokens=reported_input_tokens,
             )
@@ -1393,3 +1413,141 @@ def test_a_bench_draft_can_be_graded_up_by_the_command_its_note_names(tmp_path, 
     raised = json.loads(report_path.read_text(encoding="utf-8"))
     assert raised["conformance"] == "partial"
     assert raised["conformance_note"].startswith(conformance.GRADED_NOTE)
+
+
+# --- the measured tier is the engine ceiling, gates ignored (chapter 5 §5.5) ----------
+
+
+def _offline_report_with(tmp_path: pathlib.Path, monkeypatch, *, offline=None, **overrides):
+    """Run the offline ladder under an altered config and return the draft it wrote."""
+    path = _write(tmp_path, _config(tmp_path, **overrides))
+    _run_offline(monkeypatch, **(offline or {}))
+    assert main(["bench", path]) == 0, "the offline ladder did not complete"
+    return _report(tmp_path)
+
+
+def _only_the_top_rung_fails(tmp_path, monkeypatch):
+    """A report from the [1, 2, 4] ladder whose rungs 1 and 2 pass and whose rung 4 misses TTFT.
+
+    The failure is driven through a declared gate rather than by patching the grader, because
+    a test that fakes the grading cannot catch a bug that lives in which graded rungs the
+    tier is selected from. The latencies stay far inside the window: a rung slow enough to
+    outlast ``window_s`` would leave no in-window records and grade INVALID, which claims no
+    operating point and would exercise a different branch than the one under test.
+    """
+    return _offline_report_with(
+        tmp_path,
+        monkeypatch,
+        offline={"ttft_by_rung": {4: 0.05}},
+        **{"slo_gates.ttft_p95_max_s": 0.01},
+    )
+
+
+def test_a_rung_that_failed_its_gates_still_sets_the_engine_ceiling(tmp_path, monkeypatch):
+    """Selecting on COMPLETE alone published the highest *passing* rung as the ceiling.
+
+    That collapses measured onto sustainable and tells the reader the engine stops where the
+    SLO stops, erasing the one distinction the two tiers exist to draw: here the report would
+    claim 2 streams when the engine plainly carried 4.
+    """
+    tiers = _only_the_top_rung_fails(tmp_path, monkeypatch)["capacity_tiers"]
+    assert tiers["measured"]["max_concurrent_users"] == 4
+    assert tiers["sustainable"]["max_concurrent_users"] == 2
+    assert tiers["measured"]["provenance"] == "M"
+
+
+def test_the_ceiling_on_a_failed_top_rung_names_what_stopped_it(tmp_path, monkeypatch):
+    """`_boundary_constraint` searches only *above* a rung for the floor that bound it.
+
+    On a ladder that failed at its top rung there is nothing above, so the headline tier came
+    out saying "the engine stops at 4 streams" while declining to say what stopped it -- the
+    one fact a reader sizes against. The rung missed a latency gate, so the floor is slo.
+    """
+    measured = _only_the_top_rung_fails(tmp_path, monkeypatch)["capacity_tiers"]["measured"]
+    # Anchored to the failed rung on purpose: the old selection put this tier on rung 2,
+    # which does have a failing rung above it, so the label came out right while the figure
+    # it labelled was the wrong one.
+    assert measured["max_concurrent_users"] == 4
+    assert measured["binding_constraint"] == "slo"
+    assert measured.get("binding_constraint_u_reason") is None, (
+        "a stale (U) beside a named constraint tells a reviewer to discount a figure the "
+        "run actually pinned down"
+    )
+
+
+def test_the_two_tiers_do_not_agree_across_a_failure_inside_the_envelope(
+    tmp_path, monkeypatch
+):
+    """C7 is the checker's name for the erasure, and it must not fire on the harness's own draft.
+
+    A rung inside this workload's context envelope failed its gate, so the engine ceiling and
+    what users can rely on are different numbers by definition. The harness publishing them as
+    equal is precisely "a results row at or below the workload's average context failed its
+    SLO gate, yet the sustainable tier still equals the measured tier".
+    """
+    report = _only_the_top_rung_fails(tmp_path, monkeypatch)
+    c7 = [
+        f"{finding.path}: {finding.message}"
+        for finding in conformance.check(report).findings
+        if finding.rule == "C7"
+    ]
+    assert not c7, "bench emitted the C7 it is meant to avoid:\n  " + "\n  ".join(c7)
+
+
+def test_a_ladder_with_no_passing_rung_still_publishes_the_ceiling_it_measured(
+    tmp_path, monkeypatch
+):
+    """A gate nothing can meet used to produce an all-null measured tier.
+
+    The draft then said "no rung completed its declared repetitions", telling the reader
+    nothing was measured when the harness had measured exactly where the SLO stops. It is the
+    sustainable tier that has nothing to say here, and it must justify saying it.
+    """
+    report = _offline_report_with(
+        tmp_path, monkeypatch, **{"slo_gates.ttft_p95_max_s": 0.0005}
+    )
+    measured = report["capacity_tiers"]["measured"]
+    assert measured["max_concurrent_users"] is not None
+    assert measured["binding_constraint"] == "slo"
+    sustainable = report["capacity_tiers"]["sustainable"]
+    assert sustainable["max_concurrent_users"] is None
+    assert sustainable["max_concurrent_users_u_reason"].startswith("(U)")
+
+
+def test_a_failed_top_rung_names_the_floor_it_observed():
+    """A rung that missed a gate and one that completed nothing are different floors.
+
+    Conflating them would tell an operator to buy throughput when the deployment actually
+    breached a latency promise it could otherwise have met, or the reverse.
+    """
+    missed_gate = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
+    )
+    assert bench_run._observed_constraint(missed_gate, 8) == "slo"
+    collapsed = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(
+            concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True
+        ),
+    )
+    assert bench_run._observed_constraint(collapsed, 8) == "throughput"
+
+
+def test_reading_the_floor_off_a_rung_does_not_shadow_the_search_above_it():
+    """The rung-level read is a fallback for the top rung, not a replacement for the old rule.
+
+    A tier sitting on a COMPLETE rung is still labelled by the lowest failing rung above it,
+    and a ladder exhausted without failure still names nothing -- printing a constraint beside
+    an "at least this much" figure would read as a maximum the run never established.
+    """
+    failure_above = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
+    )
+    assert bench_run._observed_constraint(failure_above, 4) == "slo"
+    exhausted = _hand_built_ladder(
+        ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
+        ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.COMPLETE),
+    )
+    assert bench_run._observed_constraint(exhausted, 4) is None

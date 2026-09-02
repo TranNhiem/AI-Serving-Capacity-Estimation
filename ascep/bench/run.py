@@ -1192,6 +1192,21 @@ def _boundary_constraint(result, concurrency):
     return "throughput" if boundary.zero_completions else "slo"
 
 
+def _observed_constraint(result, concurrency):
+    """Name the floor observed AT ``concurrency``, falling back to the one above it.
+
+    The measured tier can now sit on a failed rung, because chapter 5.5 ignores the gates
+    when naming the engine ceiling. That rung has already shown which floor binds, so
+    looking only above it would leave the tier's constraint null on the top rung of a
+    ladder that failed there -- a report claiming "the ceiling is 128 streams" while
+    declining to say what stopped it, which is the one thing a reader needs to size against.
+    """
+    rung = result.rungs.get(concurrency)
+    if rung is not None and rung.outcome is ladder.RungOutcome.FAILED:
+        return "throughput" if rung.zero_completions else "slo"
+    return _boundary_constraint(result, concurrency)
+
+
 def _fill_tier(tier, concurrency, rung, median):
     """Fill one capacity tier from a graded rung and its median repetition."""
     _known(tier, "max_concurrent_users", concurrency)
@@ -1455,14 +1470,22 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
     tiers["theoretical"]["provenance"] = "U"
     tiers["recommended"]["provenance"] = "U"
 
-    complete_rungs = [
+    # Chapter 5.5 defines the measured tier as "best observed, SLO ignored" -- the engine
+    # ceiling. FAILED is a real operating point in the section 7 vocabulary ("a real negative
+    # boundary"), so a rung that carried its load and missed a latency gate belongs here;
+    # INVALID and ABORTED claim no operating point and stay out. Selecting on COMPLETE alone
+    # published the highest PASSING rung as the ceiling, which collapses measured onto
+    # sustainable and tells the reader the engine stops where the SLO stops -- erasing the one
+    # distinction the two tiers exist to draw, and tripping C7 for saying it.
+    observed_rungs = [
         c
         for c in rung_list
         if result.rungs.get(c) is not None
-        and result.rungs[c].outcome is ladder.RungOutcome.COMPLETE
+        and result.rungs[c].outcome
+        in (ladder.RungOutcome.COMPLETE, ladder.RungOutcome.FAILED)
     ]
-    if complete_rungs:
-        top = max(complete_rungs)
+    if observed_rungs:
+        top = max(observed_rungs)
         _fill_tier(
             tiers["measured"],
             top,
@@ -1472,11 +1495,11 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         # A ladder that stopped on a failed rung observed which floor binds, and chapter 5
         # settles the label there. Leaving the constraint null beside this number is a C5
         # error the run itself could have answered.
-        constraint = _boundary_constraint(result, top)
+        constraint = _observed_constraint(result, top)
         if constraint is not None:
             _known(tiers["measured"], "binding_constraint", constraint)
     else:
-        why = "no rung completed its declared repetitions"
+        why = "no rung produced an operating point"
         if censor:
             why += f"; the ladder was censored ({censor})"
         for field in _TIER_FIELDS:
