@@ -1,0 +1,13 @@
+{
+  "sha256": {
+    "records.jsonl": "5d96e2bece28c160370f90c0b38767a35b54c449ba8059564a1bba37b01ffd35",
+    "run_configs.json": "e52c717605012bc248182b1c7c5d076a82fee01385511fc0b188c7545b475f83",
+    "environment.json": "f4250222894abb6eb9b738d8ae457c5173353cced6f71d047d18c066d3fb86cf",
+    "../engine.log": "f0402de905bf79824838d23424ac6bd3a8aee460e5ab788cdc2f1c23d48d970e",
+    "bench-config.json": "810a04c27ecee6bd6d902330b9ef49e223f015169737d7716b6b052381671cb2",
+    "declarations/hardware.json": "40bbb58681ec1121d5e37e50685e063545f4eb25cb165f3901321f3f491775a5",
+    "declarations/model.json": "9365d62f3a276d81fc132fad4e133b44ce874979be6a8661e423b2bd69646e39",
+    "declarations/serving.json": "57e608cd27c81be5548d0d0ff9982abc88033c29f0a8b468d29657bcc90552cb",
+    "declarations/workload.json": "2f1100a96ec6d75f6ba2f3e06c058ad3e3e8a7a810c655833c51940daebd0980"
+  }
+}

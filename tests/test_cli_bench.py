@@ -1359,6 +1359,25 @@ def test_a_campaign_at_one_context_length_declares_single_point(tmp_path, monkey
     assert _offline_report(tmp_path, monkeypatch)["run"]["single_point"] is True
 
 
+def test_rung_means_that_differ_only_by_sampling_noise_are_one_context_length():
+    """The six figures below are the per-rung context means a real GB200 ladder measured at a
+    single declared 1,500-token shape. Counted as a set they are six context lengths, and the
+    draft published single_point false: a context curve nobody measured, with C4's finding
+    silenced for exactly the campaign it was written for. Since context_tokens is always a
+    mean, that made the flag unreachable for every real run of bench.
+    """
+    noise = [
+        {"context_tokens": length}
+        for length in (2043.65, 2043.94, 2045.28, 2045.46, 2045.48, 2046.50)
+    ]
+    assert bench_run._distinct_context_lengths(noise) == 1
+
+    # And the tolerance must not swallow a curve: these are three shapes a report could
+    # legitimately interpolate over, and collapsing them would suppress the opposite error.
+    curve = [{"context_tokens": length} for length in (1500.0, 4000.0, 16000.0)]
+    assert bench_run._distinct_context_lengths(curve) == 3
+
+
 def test_the_emitted_draft_carries_no_null_it_cannot_justify(tmp_path, monkeypatch):
     """Every C1 finding a draft carries is the harness's doing, not the run's: bench chooses
     what to null and what to say about it, so an unjustified null here is unfixable by the

@@ -1,0 +1,45 @@
+{
+  "ascep_version": "0.1.0",
+  "model_id": "gemma-4-31b-it",
+  "revision": null,
+  "revision_u_reason": "(U) served from a local checkpoint directory with no upstream commit recorded. Consequence: the architecture fields below are read from the checkpoint's own config.json and are exact for the bytes that were served, but a reader cannot pin the same bytes from a hub revision.",
+  "total_params": 31273088876,
+  "active_params": 31273088876,
+  "architecture": "dense",
+  "moe_experts": null,
+  "moe_experts_u_reason": "(U) not applicable: the model is dense, so there is no expert layout to declare",
+  "moe_top_k": null,
+  "moe_top_k_u_reason": "(U) not applicable: the model is dense",
+  "weight_precision": "bf16",
+  "kv_precision": "bf16",
+  "n_layers": 60,
+  "n_kv_heads": 16,
+  "head_dim": 256,
+  "attention_type": "hybrid",
+  "global_layer_frac": 0.16666666666666666,
+  "sliding_window_tokens": 1024,
+  "native_max_context_tokens": 262144,
+  "weight_bytes_on_disk": 62546177752,
+  "weight_bytes_tag": "M",
+  "licence": "Gemma Terms of Use",
+  "input_modalities": [
+    "text",
+    "image",
+    "audio"
+  ],
+  "reasoning_modes": [
+    "non-thinking"
+  ],
+  "image_token_policy": "fixed-grid",
+  "image_tokens_fixed": 280,
+  "video_frame_policy": "n-a",
+  "vision_encoder_params": 569550384,
+  "vision_encoder_replicated_per_rank": null,
+  "vision_encoder_replicated_per_rank_u_reason": "(U) the campaign ran at tensor_parallel 1, where there is only one rank and replication is therefore unobservable. Consequence: the weights floor measured here must not be extrapolated to TP>1 without re-measuring, because a replicated 570 M-parameter tower costs 1.1 GiB on every added rank.",
+  "notes": {
+    "attention_layout": "Hybrid, 5:1 local:global. 50 of the 60 layers are sliding_attention with a 1,024-token window; 10 are full_attention, so global_layer_frac is 10/60.",
+    "kv_engine_prices_the_sliding_layers_at_full_length": "The engine's KV token count is the all-layers-full closed form, not the hybrid one, and the arithmetic settles it. 2 * 2 bytes * 16 kv heads * 256 head_dim * 60 layers is 983,040 bytes per token; times the engine's 114,544 tokens is 104.868 GiB, against the 104.88 GiB it reports as 'Available KV cache memory' -- ascep.capacity.kv_bytes_per_token reproduces the engine to 0.011 percent. The hybrid form, which charges only the 10 global layers, gives 163,840 bytes per token and would put the same pool at about 687,000 tokens. So vLLM 0.18 allocated a UNIFORM cache here: the 50 sliding-window layers hold full-length pages even though they only ever attend over 1,024 tokens. The engine's own next log line disagrees with its token count -- 'maximum concurrency 10.99x for 32,768 tokens per request', where 114,544/32,768 is 3.50x -- so the scheduler admits roughly three times what the reported pool would suggest. Consequence for this report: engine_reported_kv_cache_tokens is a LOWER bound on what the deployment will hold, the KV floor derived from it is conservative, and the headroom is a property of this engine build rather than of the model.",
+    "parameter_split": "language_model 30,697,345,340; vision_tower 569,550,384; embed_vision projector 6,193,152. Summed from the safetensors headers, not from the model card.",
+    "multimodal_not_exercised": "The checkpoint accepts text, image and audio, but this campaign sent text only. The image and audio fields are declared so a reader can see what was left unmeasured, not because media capacity was measured."
+  }
+}

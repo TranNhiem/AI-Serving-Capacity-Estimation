@@ -1,0 +1,24 @@
+{
+  "ascep_version": "0.1.0",
+  "framework": "vllm",
+  "framework_version": "0.18.2rc1.dev73+gdb7a17ecc",
+  "container_digest": null,
+  "container_digest_u_reason": "(U) the engine ran from an enroot container created out of a local squashfs image, which carries no registry digest. Consequence: the framework_version string above is the only handle on the engine build, and a release-candidate development build is not a stable one.",
+  "tensor_parallel": 1,
+  "pipeline_parallel": 1,
+  "gpu_count": 1,
+  "max_model_len": 32768,
+  "memory_utilization": 0.9,
+  "batching_mode": "continuous",
+  "prefix_caching": "on",
+  "kv_cache_offload": "off",
+  "kv_cache_quantized": "off",
+  "chunked_prefill": "on",
+  "speculative_decoding": "off",
+  "engine_reported_kv_cache_tokens": 114544,
+  "cold_start_to_ready_s": 140.3,
+  "image_input_transport": "n-a",
+  "notes": {
+    "cold_start_measurement": "Wall clock from the launch command to the first HTTP 200 on /v1/models, polled every 5 s, so the ready instant is bracketed to within 5 s and the figure is an upper bound by up to that much. It covers the whole path a restart actually pays: weight load of 62.5 GB from the shared parallel filesystem, then the 72.3 s the engine log attributes to init (profile, KV allocation, warmup). Two things it is not. It is not a cold cache: this checkpoint had been served from the same filesystem minutes earlier, so the WekaFS client and page cache were warm, and a genuinely cold read would be slower. And it is not a scheduler-managed start: nothing here queued for an allocation, so a Slurm deployment must add its own queueing time on top."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "ascep_version": "0.1.0",
+  "gpu_model": "NVIDIA GB200",
+  "gpu_count": 1,
+  "nodes": 1,
+  "gpus_per_node": 4,
+  "vram_bytes_per_gpu": 198674743296,
+  "interconnect_intra_node": "NVLink 5",
+  "interconnect_inter_node": null,
+  "interconnect_inter_node_u_reason": "(U) single-GPU campaign on one tray; no inter-node path was exercised, so nothing about multi-node scaling is claimed here",
+  "node_exclusivity": "exclusive",
+  "driver_version": "580.126.09",
+  "compute_runtime_version": "CUDA 13.0",
+  "hbm_bandwidth_bytes_s": 8000000000000,
+  "dense_bf16_flops_per_s": 2500000000000000,
+  "cpu_model": "NVIDIA Grace (Arm Neoverse-V2)",
+  "cpu_cores": 144,
+  "system_ram_bytes": 1026841051136,
+  "storage_class": "WekaFS parallel filesystem, shared",
+  "model_load_path": "shared parallel filesystem, not node-local NVMe",
+  "notes": {
+    "cpu_cores": "144 is the machine's physical core count -- lscpu reports 2 sockets of 72 Neoverse-V2 cores -- not an allocation, and not what this deployment had to itself. Three qualifications a reader sizing a CPU-bound path needs. The tray carries four GB200 GPUs against those two sockets, and this campaign used one GPU, so a fully loaded tray divides the same cores four ways. The serving process was not pinned or cgroup-limited: cpu.max is unset, and nproc inside the session reports 128, so 16 of the 144 are outside the default affinity mask. And this campaign sent text only, so no image decode or patchify work ever reached the host -- the CPU figure is declared because the checkpoint accepts image and audio input and a media workload would make it a capacity input, not because it constrained anything measured here."
+  }
+}

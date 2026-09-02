@@ -1228,6 +1228,39 @@ def _known(node, key, value):
     node.pop(f"{key}_u_reason", None)
 
 
+#: How far apart two per-rung context means must be before they count as different shapes.
+#: Two orders of magnitude above the sampling spread one declared shape shows -- a GB200
+#: ladder at a single 1,500-token shape spread its six rung means over 0.14 percent -- and far
+#: below the separation a curve worth interpolating over needs. Shapes closer together than
+#: this do not make an interpolable curve either, so collapsing them is the honest reading
+#: rather than a lost distinction.
+_CONTEXT_LENGTH_TOLERANCE = 0.05
+
+
+def _distinct_context_lengths(rows) -> int:
+    """How many genuinely different context lengths the rows cover.
+
+    Counted with a tolerance rather than as a set, because ``context_tokens`` is a per-rung
+    MEAN of measured lengths: six rungs of one declared shape land on six distinct floats,
+    and ``len(set(...)) < 3`` is then false for every real campaign. That made
+    ``run.single_point`` unreachable -- present, documented, and never once taken -- so a
+    single-shape ladder published itself as a context curve and silenced the one C4 finding
+    written for exactly that campaign.
+    """
+    distinct = 0
+    group_floor = None
+    for length in sorted(
+        row["context_tokens"]
+        for row in rows
+        if isinstance(row.get("context_tokens"), (int, float))
+        and not isinstance(row["context_tokens"], bool)
+    ):
+        if group_floor is None or length > group_floor * (1 + _CONTEXT_LENGTH_TOLERANCE):
+            distinct += 1
+            group_floor = length
+    return distinct
+
+
 def _unknown(node, key, reason):
     """Mark ``node[key]`` unknown, only where the skeleton already emitted a companion.
 
@@ -1645,13 +1678,16 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
     # unlabelled single point reads as a curve to whoever builds on the draft. single_point is
     # a plain boolean with no _u_reason companion, so it is set directly, after the sweep
     # above so nothing clobbers it.
-    context_lengths = {
-        row["context_tokens"]
-        for row in rows
-        if isinstance(row.get("context_tokens"), (int, float))
-        and not isinstance(row["context_tokens"], bool)
-    }
-    run_block["single_point"] = len(context_lengths) < 3
+    #
+    # Counted with a tolerance, and that is the whole of it. context_tokens is a per-rung MEAN
+    # of measured lengths, so six rungs of one declared shape land on six distinct floats and
+    # a set of them always has more than three members. A GB200 ladder at a single declared
+    # 1,500-token shape measured 2043.65, 2043.94, 2045.28, 2045.46, 2045.48 and 2046.50 and
+    # published single_point false -- claiming a context curve nobody measured, and silencing
+    # the one C4 finding written for exactly that campaign. The flag was therefore unreachable
+    # for every real bench run, which is the worst kind of escape hatch: present, documented,
+    # and never once taken.
+    run_block["single_point"] = _distinct_context_lengths(rows) < 3
 
     tiers = report["capacity_tiers"]
     # n_gpus is the topology the run was bound to in all four tiers, not a per-tier finding.

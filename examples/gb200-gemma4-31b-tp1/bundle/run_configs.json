@@ -1,0 +1,553 @@
+{
+  "workload": {
+    "run_label": "gemma4-31b-gb200x1-tp1-chat",
+    "seed": 20260902,
+    "sampler": "deterministic-generated",
+    "cache_policy": "unique-prefix",
+    "think_time_s": 1.5,
+    "output_basis": "fixed",
+    "ignore_eos": true,
+    "corpus_name": "synthetic:1500",
+    "corpus_digest": "cbad4c68e6af19d1ab2a80d993e256ec8aa5fbec210b4016fbb26373afdb7971",
+    "corpus_size": null,
+    "corpus_field": null,
+    "media_placeholders_stripped": false,
+    "prefix_adds_tokens": false,
+    "temperature": null,
+    "output_tokens": 500
+  },
+  "windows": [
+    {
+      "t0": 231463.652292975,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 49.09686268799123,
+      "policy": {
+        "concurrency": 4,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 231463.652292975,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 231643.652292975,
+        "offered": 52,
+        "warmup": 20,
+        "completed_in_window": 48,
+        "straddlers": 4,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 231635.184910959,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 47.662777055986226,
+      "policy": {
+        "concurrency": 4,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 231635.184910959,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 231815.184910959,
+        "offered": 52,
+        "warmup": 20,
+        "completed_in_window": 48,
+        "straddlers": 4,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 231806.774614447,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 47.67799382400699,
+      "policy": {
+        "concurrency": 4,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 231806.774614447,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 231986.774614447,
+        "offered": 52,
+        "warmup": 20,
+        "completed_in_window": 48,
+        "straddlers": 4,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 231966.272164687,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 35.60883897598251,
+      "policy": {
+        "concurrency": 8,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 231966.272164687,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232146.272164687,
+        "offered": 96,
+        "warmup": 20,
+        "completed_in_window": 88,
+        "straddlers": 8,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232120.186338031,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 30.156846559984842,
+      "policy": {
+        "concurrency": 8,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 232120.186338031,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232300.186338031,
+        "offered": 96,
+        "warmup": 20,
+        "completed_in_window": 88,
+        "straddlers": 8,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232274.111834319,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 30.179389824013924,
+      "policy": {
+        "concurrency": 8,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 232274.111834319,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232454.111834319,
+        "offered": 96,
+        "warmup": 20,
+        "completed_in_window": 88,
+        "straddlers": 8,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232420.225048239,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 22.337259071995504,
+      "policy": {
+        "concurrency": 16,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 232420.225048239,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232600.225048239,
+        "offered": 160,
+        "warmup": 20,
+        "completed_in_window": 144,
+        "straddlers": 16,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232570.119178447,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 22.328923327993834,
+      "policy": {
+        "concurrency": 16,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 232570.119178447,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232750.119178447,
+        "offered": 160,
+        "warmup": 20,
+        "completed_in_window": 144,
+        "straddlers": 16,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232720.101569711,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 22.330364831985207,
+      "policy": {
+        "concurrency": 16,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 232720.101569711,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 232900.101569711,
+        "offered": 160,
+        "warmup": 20,
+        "completed_in_window": 144,
+        "straddlers": 16,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 232863.086044335,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.390732575993752,
+      "policy": {
+        "concurrency": 32,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 232863.086044335,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233043.086044335,
+        "offered": 256,
+        "warmup": 20,
+        "completed_in_window": 224,
+        "straddlers": 32,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233012.710701647,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.376726432004943,
+      "policy": {
+        "concurrency": 32,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 233012.710701647,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233192.710701647,
+        "offered": 256,
+        "warmup": 20,
+        "completed_in_window": 224,
+        "straddlers": 32,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233162.284732751,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.379073856020113,
+      "policy": {
+        "concurrency": 32,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 233162.284732751,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233342.284732751,
+        "offered": 256,
+        "warmup": 20,
+        "completed_in_window": 224,
+        "straddlers": 32,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233311.889251311,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.385528671991779,
+      "policy": {
+        "concurrency": 64,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 233311.889251311,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233491.889251311,
+        "offered": 320,
+        "warmup": 20,
+        "completed_in_window": 256,
+        "straddlers": 64,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233450.087306671,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.37652499199612,
+      "policy": {
+        "concurrency": 64,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 233450.087306671,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233630.087306671,
+        "offered": 320,
+        "warmup": 20,
+        "completed_in_window": 256,
+        "straddlers": 64,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233588.297626543,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.378847391984891,
+      "policy": {
+        "concurrency": 64,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 233588.297626543,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233768.297626543,
+        "offered": 320,
+        "warmup": 20,
+        "completed_in_window": 256,
+        "straddlers": 64,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233726.468630735,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.38042841598508,
+      "policy": {
+        "concurrency": 128,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 0
+      },
+      "boundary": {
+        "t0": 233726.468630735,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 233906.468630735,
+        "offered": 428,
+        "warmup": 20,
+        "completed_in_window": 300,
+        "straddlers": 128,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 233887.421570703,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.380278847995214,
+      "policy": {
+        "concurrency": 128,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 1
+      },
+      "boundary": {
+        "t0": 233887.421570703,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 234067.421570703,
+        "offered": 428,
+        "warmup": 20,
+        "completed_in_window": 300,
+        "straddlers": 128,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 234048.335469807,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 15.387926463998156,
+      "policy": {
+        "concurrency": 128,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 2
+      },
+      "boundary": {
+        "t0": 234048.335469807,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 234228.335469807,
+        "offered": 428,
+        "warmup": 20,
+        "completed_in_window": 300,
+        "straddlers": 128,
+        "abandoned": 0
+      }
+    },
+    {
+      "t0": 234216.380987439,
+      "window_s": 120.0,
+      "drain_deadline_s": 60.0,
+      "warmup_count": 20,
+      "warmup_s_actual": 22.352374431997305,
+      "policy": {
+        "concurrency": 16,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "think_time_s": 1.5,
+        "warmup_requests": 20,
+        "warmup_s": 0.0,
+        "loop": "closed",
+        "repetition": 3
+      },
+      "boundary": {
+        "t0": 234216.380987439,
+        "window_s": 120.0,
+        "drain_deadline_s": 60.0,
+        "deadline": 234396.380987439,
+        "offered": 160,
+        "warmup": 20,
+        "completed_in_window": 144,
+        "straddlers": 16,
+        "abandoned": 0
+      }
+    }
+  ]
+}
