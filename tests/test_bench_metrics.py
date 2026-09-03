@@ -11,6 +11,7 @@ from ascep.bench import Outcome, RequestRecord
 from ascep.bench.metrics import (
     SloGates,
     bootstrap_ci,
+    peak_in_flight,
     percentile,
     reduce_window,
     slice_window,
@@ -617,3 +618,96 @@ def test_a_window_with_no_token_stamps_still_reduces_with_a_null_factor_and_a_re
     assert s.stream_chunk_gap_p50_s is None
     assert "stream_chunk_gap_p50_s" in s.reasons
     assert s.e2e_p95_s is not None
+
+
+# --- peak in flight: the diagnostic that would have caught the pool cap -----------------
+
+
+def _flight_record(rid, issued, end):
+    """An OK record spanning [issued, end); ``end=None`` means it never finished."""
+    return RequestRecord(request_id=rid, issued_ts=issued, outcome=Outcome.OK, end_ts=end)
+
+
+def test_overlapping_intervals_give_the_true_maximum_not_the_record_count():
+    """Three records with at most two open at once must measure two.
+
+    A naive count of the in-window records would call this three, reading overlap into a
+    rung that never held more than two requests at once -- the flattering direction, in
+    which a throttled client looks like a healthy, busy one.
+    """
+    recs = [
+        _flight_record("a", 0.0, 1.0),
+        _flight_record("b", 0.5, 1.5),
+        _flight_record("c", 2.0, 3.0),
+    ]
+    assert peak_in_flight(recs) == 2
+
+
+def test_a_request_that_never_finished_still_counts_as_in_flight():
+    """An unfinished request was concurrent with everything issued after it.
+
+    Dropping the open interval would understate the peak exactly where the figure exists
+    to watch: a wedged connection holds its slot for the rest of the window.
+    """
+    recs = [
+        _flight_record("a", 0.0, 0.5),
+        _flight_record("stuck", 0.1, None),
+        _flight_record("b", 2.0, 3.0),
+        _flight_record("c", 2.1, 3.2),
+    ]
+    assert peak_in_flight(recs) == 3
+
+
+def test_out_of_window_records_are_excluded_from_the_peak():
+    """Warm-up records are marked, not deleted, so the sweep must skip them itself."""
+    warm = _flight_record("w0", 0.0, 100.0)
+    warm.in_window = False
+    steady = [_flight_record(f"r{i}", 10.0 + i, 10.4 + i) for i in range(3)]
+    assert peak_in_flight([warm, *steady]) == 1
+
+
+def test_an_end_at_the_exact_start_of_another_request_is_not_double_counted():
+    """Half-open intervals: [0, 1) and [1, 2) never share an instant.
+
+    Sweeping starts before ends at an equal timestamp would count both requests at the
+    seam and inflate the peak by one -- on a saturating rung, exactly the direction of
+    error that hides where the true knee sits.
+    """
+    recs = [
+        _flight_record("a", 0.0, 1.0),
+        _flight_record("b", 1.0, 2.0),
+        _flight_record("c", 1.0, 3.0),
+    ]
+    assert peak_in_flight(recs) == 2
+
+
+def test_a_window_with_no_qualifying_records_has_a_peak_of_zero():
+    """Zero is a measurement here, not a missing figure: nothing was ever open."""
+    warm = _flight_record("w0", 0.0, 1.0)
+    warm.in_window = False
+    assert peak_in_flight([]) == 0
+    assert peak_in_flight([warm]) == 0
+
+
+def test_a_pool_cap_pins_the_peak_far_below_the_declared_concurrency():
+    """The regression this diagnostic exists for: 256 declared users, 100 ever in flight.
+
+    An httpx.AsyncClient default of max_connections=100 capped every rung above 100 at a
+    true overlap of exactly 100 while the declared concurrency kept climbing, so the
+    saturation knee landed on whichever rung first crossed the cap and nothing in the
+    bundle said why. Three sequential waves reproduce that shape; the peak must read
+    exactly 100 even though 256 requests were issued, and 100 is below half of 256, which
+    is the shortfall the per-rung warning fires on.
+    """
+    recs = []
+    n = 0
+    for wave, size in enumerate([100, 100, 56]):
+        for k in range(size):
+            # Ten seconds between waves keeps them disjoint; within a wave every request
+            # outlives the slowest issue, so the whole wave is open at once.
+            issued = wave * 10.0 + k * 0.01
+            recs.append(_flight_record(f"r{n}", issued, issued + 5.0))
+            n += 1
+    assert len(recs) == 256
+    assert peak_in_flight(recs) == 100
+    assert peak_in_flight(recs) < 0.5 * 256

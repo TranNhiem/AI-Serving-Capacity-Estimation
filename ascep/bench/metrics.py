@@ -141,6 +141,38 @@ def bootstrap_ci(
     return (percentile(stats, alpha), percentile(stats, 1.0 - alpha))
 
 
+def peak_in_flight(records: Sequence[RequestRecord]) -> int:
+    """The most requests ever simultaneously in flight, from the same records the summary uses.
+
+    A capacity ladder whose client caps its connection pool offers less load than it
+    declares, and nothing else in the bundle records how many requests were actually open
+    at once: a throughput knee caused by a 100-connection pool is then indistinguishable
+    from a real saturation point, and a rung that never offered more than the cap gets
+    published as the measured maximum. Each in-window record is the half-open interval
+    [issued_ts, end_ts), swept as +1 at issue and -1 at end with ends processed before
+    starts at equal timestamps, so a request ending exactly as another begins counts once.
+    A record whose end_ts is None never finished, so it has no closing event and stays open
+    to the end of time -- it was concurrent with everything after it. Warm-up records are
+    excluded here rather than dropped upstream because they are marked, not deleted: a
+    cold ramp must not inflate the steady-state figure this diagnostic exists to check.
+    """
+    events: list[tuple[float, int]] = []
+    for record in records:
+        if not record.in_window or record.issued_ts is None:
+            continue
+        events.append((record.issued_ts, 1))
+        if record.end_ts is not None:
+            events.append((record.end_ts, -1))
+    peak = 0
+    current = 0
+    # Sorting on the delta as the tie-break puts the -1 close event ahead of the +1 open
+    # event at an equal timestamp, which is exactly the half-open interval rule.
+    for _ts, delta in sorted(events):
+        current += delta
+        peak = max(peak, current)
+    return peak
+
+
 @dataclass(frozen=True)
 class SloGates:
     """Window-level SLO gates, fixed before the run.
@@ -171,6 +203,13 @@ class WindowSummary:
     differ under overload, so a reader comparing them is reading the boundary effect, not
     an inconsistency.
 
+    ``peak_in_flight`` is the largest number of in-window requests ever simultaneously
+    open, by a sweep line over issue and completion events. It counts a cohort the three
+    above cannot see: a client-side pool or descriptor cap that clamps in-flight requests
+    below the declared concurrency leaves every count and rate internally consistent
+    while the offered load is quietly shrunk, and this figure is the only place the clamp
+    shows up in the bundle.
+
     ``tokens_per_stream_chunk`` is the window's measured substitution factor:
     server-reported output tokens divided by streamed content chunks, summed over the
     usable records before dividing. A value above the coalescing threshold is what
@@ -187,6 +226,13 @@ class WindowSummary:
 
     n_issued: int
     n_completed: int
+    # Required like the counts beside it rather than defaulted like the later additions:
+    # Not nullable, unlike most figures here. Every other statistic has a real
+    # unmeasurable state -- a percentile below its sample floor, a rate with no usable
+    # record -- but the sweep always terminates and always yields a number, and zero is a
+    # measured finding rather than an absence. A null state nothing can produce would be a
+    # branch every reader has to reason about and no test can ever cover.
+    peak_in_flight: int
     n_latency_samples: int
     excluded_error_count: int
     excluded_invalid_count: int
@@ -543,6 +589,7 @@ def reduce_window(
     return WindowSummary(
         n_issued=n_issued,
         n_completed=n_completed,
+        peak_in_flight=peak_in_flight(records),
         n_latency_samples=n_latency_samples,
         excluded_error_count=excluded_error_count,
         excluded_invalid_count=excluded_invalid_count,

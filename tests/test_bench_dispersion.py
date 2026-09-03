@@ -45,6 +45,7 @@ def _summary(**overrides):
         "requests_per_s": 10.0,
         "goodput_tok_s": 500.0,
         "slo_pass": True,
+        "peak_in_flight": 10,
     }
     fields.update(overrides)
     return WindowSummary(**fields)

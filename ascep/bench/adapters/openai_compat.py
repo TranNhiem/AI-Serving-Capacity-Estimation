@@ -42,8 +42,19 @@ class OpenAICompatAdapter(Adapter):
         # an injected clock -- rather than assert tolerances against a real one. Timing rules
         # like "the role-only chunk is not the first token" are only checkable to the
         # microsecond, and a test that has to allow slop would pass on the bug it exists for.
+        # The driver is the only thing allowed to decide how many requests are in flight.
+        # httpx defaults to max_connections=100, and a default that silently binds before the
+        # declared concurrency does is the worst kind of measurement bug: every rung above 100
+        # offers exactly 100, so throughput flatlines, the knee lands on whatever rung first
+        # crosses 100, and the report attributes a property of the HTTP client to the server.
+        # Requests past the cap also queue inside the pool after issued_ts is stamped, so the
+        # client's own queue is billed to the server as TTFT. None means the transport never
+        # throttles and the closed loop in the driver is the sole limiter.
         self._client = httpx.AsyncClient(
-            timeout=config.timeout_s, headers=headers, transport=transport
+            timeout=config.timeout_s,
+            headers=headers,
+            transport=transport,
+            limits=httpx.Limits(max_connections=None, max_keepalive_connections=None),
         )
         self._url = f"{config.base_url.rstrip('/')}/v1/chat/completions"
 

@@ -1056,9 +1056,27 @@ async def _run_ladder(adapter, workload_obj, config, gates, policy, state, err):
                 print(
                     f"ascep bench: concurrency={concurrency} repetition={repetition}: "
                     f"{summary.n_completed} completed, "
-                    f"output_tok_s={summary.output_tok_s!r}",
+                    f"output_tok_s={summary.output_tok_s!r}, "
+                    f"peak_in_flight={summary.peak_in_flight!r}",
                     file=err,
                 )
+                peak = summary.peak_in_flight
+                # Half of the declaration is deliberately conservative, and the think-time
+                # case is why: in a closed loop with think_time_s > 0 the virtual users
+                # idle between requests, so expected in-flight is about concurrency times
+                # service / (service + think), and warning there would cry wolf on every
+                # healthy workload. Only a collapse well under half points at a throttle.
+                if peak is not None and int(concurrency) > 1 and peak < 0.5 * concurrency:
+                    print(
+                        f"ascep bench: WARNING: peak_in_flight={peak} against the declared "
+                        f"concurrency={concurrency}: less than half of the offered load was "
+                        "ever in flight at once, so this rung may be throttled rather than "
+                        "saturated. The usual causes are a client-side connection-pool or "
+                        "file-descriptor cap, or a server-side admission limit; a peak "
+                        "pinned at the same value across several rungs is the signature. "
+                        "Check both limits before believing this rung as a capacity boundary",
+                        file=err,
+                    )
         await _confirm_boundary(adapter, workload_obj, config, gates, policy, state, err)
     finally:
         # The adapter's HTTP client belongs to this loop; closing it anywhere else risks a
@@ -1712,6 +1730,10 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "measured_input_output_ratio",
         "requests_per_s",
         "error_rate_pct",
+        # Not a percentile and not a rate, so the median-by-throughput repetition picker
+        # above already does the right thing: the row carries the peak the one chosen
+        # window actually exhibited, never an average across windows that no window had.
+        "peak_in_flight",
     )
     # These five are optional in the schema, so `ascep init` does not emit them and neither
     # does the row template. _unknown fills only a companion that already exists -- right for

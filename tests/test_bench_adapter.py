@@ -284,3 +284,29 @@ async def test_the_finish_reason_is_preserved_because_length_truncation_changes_
     events = [sse(chunk("a")), sse(chunk("b", finish="length")), b"data: [DONE]\n\n"]
     rec = await _adapter(_script(clock, events)).issue(SPEC, clock=clock)
     assert rec.finish_reason == "length"
+
+
+async def test_the_connection_pool_never_caps_below_the_declared_concurrency():
+    """httpx defaults to max_connections=100, which silently truncates every ladder rung above it.
+
+    The driver's closed loop is supposed to be the only thing deciding how many requests are
+    in flight. With the default pool a run declaring concurrency 512 offers 100, throughput
+    flatlines from the first rung past the cap, and the knee gets published as a property of
+    the model. The requests held back also queue after issued_ts is stamped, so the client's
+    own backlog is billed to the server as TTFT. This reaches into httpx internals on purpose:
+    an injected MockTransport bypasses the pool entirely, so a functional concurrency test
+    would pass on the very bug this exists to catch.
+    """
+    adapter = OpenAICompatAdapter(AdapterConfig(base_url="http://fake", model="m"))
+    try:
+        pool = adapter._client._transport._pool
+        # getattr with a sentinel rather than a default of None: if a httpx upgrade renames
+        # the attribute, this test must fail loudly instead of quietly asserting nothing.
+        limit = getattr(pool, "_max_connections", "attribute-missing")
+        # httpx turns an unlimited pool into sys.maxsize rather than keeping None, so the
+        # assertion is that the cap cannot bind before any rung an operator would declare --
+        # not that it is literally None.
+        assert isinstance(limit, int), f"httpx renamed the pool limit attribute: got {limit!r}"
+        assert limit > 100_000, f"connection pool caps in-flight requests at {limit:,}"
+    finally:
+        await adapter.aclose()

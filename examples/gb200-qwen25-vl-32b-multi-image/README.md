@@ -2,6 +2,19 @@
 
 > *"How many concurrent multi-image reasoning users can one GB200 carry -- and what does a framework owe you when the measurement cannot honestly say?"*
 
+> **CORRECTION (2026-09-04): the 128 rung on this ladder was never offered.** The bench harness
+> built its HTTP client without setting a connection-pool limit, so httpx's default
+> `max_connections=100` applied and no more than 100 requests could ever be in flight at once.
+> Rungs 4 through 64 are below that cap and stand exactly as measured. The 128 rung offered 100.
+> Worse, the requests the pool held back queued *after* their `issued_ts` was stamped, so the
+> client's own backlog was billed to the server as time-to-first-token. The measured tier on this
+> page therefore reports `max_concurrent_users = 128` for a load this campaign never generated,
+> and it does so in the flattering direction: an operator sizing from it would buy capacity on
+> the strength of a rung that never ran. The harness defect is fixed (the client now sets an
+> unbounded pool, and every window records its peak in-flight count so the failure cannot recur
+> silently), and this campaign is queued for re-measurement. Until it is re-run, treat every
+> 128-rung figure below as withdrawn and read the ladder as censored at 64.
+
 This example is the companion campaign to
 [`../gb200-gemma4-31b-multi-image/`](../gb200-gemma4-31b-multi-image/): same corpus, same
 digest, same seed, same ladder, same SLO gates, same tray, run three hours later against a

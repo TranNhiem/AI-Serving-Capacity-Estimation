@@ -336,6 +336,11 @@
             "exclusiveMinimum": 0,
             "description": "Concurrent in-flight requests. Units: requests."
           },
+          "peak_in_flight": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The most requests simultaneously open during the selected window (M), swept from the raw records as half-open [issued_ts, end_ts) intervals over in-window traffic only. This is what the rung ACHIEVED, against `concurrency`, which is what it DECLARED. The two are not the same figure and the gap is load-bearing: under a closed loop with think time the peak sits legitimately below the declared value by roughly the duty cycle, but a peak that stops tracking the declaration and pins at a constant across several rungs is a throttle, not a saturation point. This project shipped three campaigns reporting a measured 128 concurrent users before noticing that its own HTTP client defaulted to a 100-connection pool, so every rung above 100 offered exactly 100 while throughput flatlined and the knee looked real. Nothing in a bundle could have revealed it, which is why the figure is recorded rather than inferred. Optional: reports published before the diagnostic existed do not carry it, and its absence means the run was not checked, never that it passed."
+          },
           "ttft_p50_s": {
             "type": [
               "number",

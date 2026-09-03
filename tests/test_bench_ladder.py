@@ -25,6 +25,7 @@ def _summary(*, tok_s=1000.0, completed=500, slo_pass=True, error_pct=0.0):
     return WindowSummary(
         n_issued=completed,
         n_completed=completed,
+        peak_in_flight=completed,
         n_latency_samples=completed,
         excluded_error_count=0,
         excluded_invalid_count=0,
@@ -192,6 +193,7 @@ def test_zero_completions_fails_the_rung_with_unmeasured_latency():
             summary=WindowSummary(
                 n_issued=400,
                 n_completed=0,
+                peak_in_flight=400,
                 n_latency_samples=0,
                 excluded_error_count=400,
                 excluded_invalid_count=0,
