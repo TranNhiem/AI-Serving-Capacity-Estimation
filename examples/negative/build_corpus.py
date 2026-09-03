@@ -176,6 +176,13 @@ CASES: list[tuple[str, str, list[tuple[str, Any]], str, str | None]] = [
         "A capacity number carried across a change of token mix",
         "run.results.2.prefill_tok_s",
     ),
+    (
+        "c12",
+        "C12",
+        [("run.results.2.dispersion", DELETE)],
+        "A rung published without the spread of the windows behind it",
+        None,
+    ),
 ]
 
 

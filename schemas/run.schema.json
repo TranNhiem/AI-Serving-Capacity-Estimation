@@ -495,6 +495,263 @@
             ],
             "description": "true iff every gate held for the full window. Feeds ascep.capacity.capacity_at(slo_pass=...); a passing-floors run with slo_pass=false binds at Constraint.SLO."
           },
+          "dispersion": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Dispersion across the rung's counted repetitions (C8): minimum, lower median and maximum of the four figures the SLO gate reads plus throughput -- the figures a reader sizes from and the figures a gate verdict turns on. Null with dispersion_u_reason when the rung had fewer than two counted repetitions, because a block of identical min, median and max would publish perfect stability as a finding when nothing was measured twice. Optional so reports written before chapter 7 required it still validate; a fresh harness report that omits the key is a C12 violation, not a rung with nothing to say.",
+            "properties": {
+              "repetitions_counted": {
+                "type": "integer",
+                "minimum": 2,
+                "description": "How many counted repetitions the rung had. The section 5 confirmation window is excluded, exactly as the row itself excludes it."
+              },
+              "ttft_p95_s": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Spread of ttft_p95_s across the counted repetitions. Null with ttft_p95_s_u_reason when no counted repetition produced the figure.",
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "median": {
+                    "type": "number",
+                    "description": "Lower median: index (n - 1) // 2 of the sorted values, the same convention as the row picker, so the two cannot drift into meaning different things."
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How many counted repetitions produced this figure. It can be less than repetitions_counted: a window whose reduction could not compute a tail leaves it null, and a min/max over the survivors that claimed three would report a narrower spread than the rung actually had."
+                  },
+                  "spread_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "(max - min) / median * 100, rounded to two decimals. Null with spread_pct_u_reason when the median is zero -- a relative spread against a zero median is a division by zero dressed as a statistic."
+                  },
+                  "spread_pct_u_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "min",
+                  "median",
+                  "max",
+                  "n",
+                  "spread_pct"
+                ],
+                "additionalProperties": false
+              },
+              "itl_p95_s": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Spread of itl_p95_s across the counted repetitions. Null with itl_p95_s_u_reason when no counted repetition produced the figure.",
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "median": {
+                    "type": "number",
+                    "description": "Lower median: index (n - 1) // 2 of the sorted values, the same convention as the row picker, so the two cannot drift into meaning different things."
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How many counted repetitions produced this figure. It can be less than repetitions_counted: a window whose reduction could not compute a tail leaves it null, and a min/max over the survivors that claimed three would report a narrower spread than the rung actually had."
+                  },
+                  "spread_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "(max - min) / median * 100, rounded to two decimals. Null with spread_pct_u_reason when the median is zero -- a relative spread against a zero median is a division by zero dressed as a statistic."
+                  },
+                  "spread_pct_u_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "min",
+                  "median",
+                  "max",
+                  "n",
+                  "spread_pct"
+                ],
+                "additionalProperties": false
+              },
+              "e2e_p95_s": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Spread of e2e_p95_s across the counted repetitions. Null with e2e_p95_s_u_reason when no counted repetition produced the figure.",
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "median": {
+                    "type": "number",
+                    "description": "Lower median: index (n - 1) // 2 of the sorted values, the same convention as the row picker, so the two cannot drift into meaning different things."
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How many counted repetitions produced this figure. It can be less than repetitions_counted: a window whose reduction could not compute a tail leaves it null, and a min/max over the survivors that claimed three would report a narrower spread than the rung actually had."
+                  },
+                  "spread_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "(max - min) / median * 100, rounded to two decimals. Null with spread_pct_u_reason when the median is zero -- a relative spread against a zero median is a division by zero dressed as a statistic."
+                  },
+                  "spread_pct_u_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "min",
+                  "median",
+                  "max",
+                  "n",
+                  "spread_pct"
+                ],
+                "additionalProperties": false
+              },
+              "output_tok_s": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Spread of output_tok_s across the counted repetitions. Null with output_tok_s_u_reason when no counted repetition produced the figure.",
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "median": {
+                    "type": "number",
+                    "description": "Lower median: index (n - 1) // 2 of the sorted values, the same convention as the row picker, so the two cannot drift into meaning different things."
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How many counted repetitions produced this figure. It can be less than repetitions_counted: a window whose reduction could not compute a tail leaves it null, and a min/max over the survivors that claimed three would report a narrower spread than the rung actually had."
+                  },
+                  "spread_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "(max - min) / median * 100, rounded to two decimals. Null with spread_pct_u_reason when the median is zero -- a relative spread against a zero median is a division by zero dressed as a statistic."
+                  },
+                  "spread_pct_u_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "min",
+                  "median",
+                  "max",
+                  "n",
+                  "spread_pct"
+                ],
+                "additionalProperties": false
+              },
+              "error_rate_pct": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Spread of error_rate_pct across the counted repetitions. Null with error_rate_pct_u_reason when no counted repetition produced the figure. A zero median is the normal case for this figure, so spread_pct is usually null with a reason here.",
+                "properties": {
+                  "min": {
+                    "type": "number"
+                  },
+                  "median": {
+                    "type": "number",
+                    "description": "Lower median: index (n - 1) // 2 of the sorted values, the same convention as the row picker, so the two cannot drift into meaning different things."
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "How many counted repetitions produced this figure. It can be less than repetitions_counted: a window whose reduction could not compute a tail leaves it null, and a min/max over the survivors that claimed three would report a narrower spread than the rung actually had."
+                  },
+                  "spread_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "(max - min) / median * 100, rounded to two decimals. Null with spread_pct_u_reason when the median is zero -- a relative spread against a zero median is a division by zero dressed as a statistic."
+                  },
+                  "spread_pct_u_reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "min",
+                  "median",
+                  "max",
+                  "n",
+                  "spread_pct"
+                ],
+                "additionalProperties": false
+              },
+              "ttft_p95_s_u_reason": {
+                "type": "string",
+                "description": "(U) justification required when the ttft_p95_s dispersion entry is null."
+              },
+              "itl_p95_s_u_reason": {
+                "type": "string",
+                "description": "(U) justification required when the itl_p95_s dispersion entry is null."
+              },
+              "e2e_p95_s_u_reason": {
+                "type": "string",
+                "description": "(U) justification required when the e2e_p95_s dispersion entry is null."
+              },
+              "output_tok_s_u_reason": {
+                "type": "string",
+                "description": "(U) justification required when the output_tok_s dispersion entry is null."
+              },
+              "error_rate_pct_u_reason": {
+                "type": "string",
+                "description": "(U) justification required when the error_rate_pct dispersion entry is null."
+              }
+            },
+            "required": [
+              "repetitions_counted",
+              "ttft_p95_s",
+              "itl_p95_s",
+              "e2e_p95_s",
+              "output_tok_s",
+              "error_rate_pct"
+            ],
+            "additionalProperties": false
+          },
+          "dispersion_u_reason": {
+            "type": "string",
+            "description": "(U) justification required when dispersion is null (C12): says how many counted repetitions the rung actually had."
+          },
           "outcome": {
             "type": [
               "string",

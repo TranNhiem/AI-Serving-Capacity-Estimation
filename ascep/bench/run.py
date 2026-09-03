@@ -527,6 +527,12 @@ def _engine_log_problem(path, report_dir, declared):
     harness looked in: ``calib/vllm_server.out is not a file`` was true of the working
     directory and false of the config's, and it refused a run that was correct in every
     respect except the directory it was launched from.
+
+    Where the log lives only matters once it is too big to copy. ``write_bundle`` snapshots
+    a log at or under its cap into the bundle, so /var/log and /tmp are fine and the bytes
+    the report cites are frozen against a server that is still running. Above the cap the
+    bundle can only name the file, and a name outside the report directory resolves on one
+    machine, so that is the case this still refuses.
     """
     if not path.is_file():
         return (
@@ -540,15 +546,18 @@ def _engine_log_problem(path, report_dir, declared):
             pass
     except OSError as exc:
         return f"the declared engine log '{declared}', resolved to {path}, cannot be read: {exc}"
-    try:
-        path.resolve().relative_to(report_dir.resolve())
-    except ValueError:
-        return (
-            f"the declared engine log '{declared}', resolved to {path}, is outside the "
-            f"report directory {report_dir}, so the reproduction table would have to name "
-            "it with a path that resolves only on this machine; copy it under the report "
-            "directory before the run"
-        )
+    if path.stat().st_size > persist.ENGINE_LOG_SNAPSHOT_MAX_BYTES:
+        try:
+            path.resolve().relative_to(report_dir.resolve())
+        except ValueError:
+            return (
+                f"the declared engine log '{declared}', resolved to {path}, is "
+                f"{path.stat().st_size:,} bytes, above the "
+                f"{persist.ENGINE_LOG_SNAPSHOT_MAX_BYTES:,}-byte cap for copying it into the "
+                f"bundle, and it is outside the report directory {report_dir}; the "
+                "reproduction table would have to name it with a path that resolves only "
+                "on this machine. Trim it, or copy it under the report directory"
+            )
     return None
 
 
@@ -1283,22 +1292,40 @@ def _measured(node, key, value, reason):
 
 
 def _median_repetition(repetitions):
-    """Pick the median repetition of a rung by output_tok_s (lower median on a tie).
+    """Pick the median repetition of a rung by output_tok_s, then by ttft_p95_s.
 
     Averaging percentiles across windows would publish a row no window ever exhibited; the
     figures in one row have to be mutually consistent, so a single real repetition stands
     in for the rung.
 
+    Throughput alone cannot order the windows. Under ``ignore_eos`` with a declared output
+    length every completed request emits exactly that many tokens, so a rung's repetitions
+    tie on ``output_tok_s`` whenever they complete the same number of requests -- the normal
+    case for a saturated rung, not an edge one. A stable sort then leaves submission order
+    deciding, and "the median repetition" silently becomes "the second one submitted". On a
+    GB200 multi-image ladder that published the second repetition at all nine rungs; at
+    concurrency 32 the three windows measured ttft_p95 of 8.8817, 8.1633 and 8.6838 s and
+    the report published 8.1633 -- the fastest window, offered to the reader as typical.
+    Breaking the tie on ``ttft_p95_s`` makes the choice a median on the axis that moved.
+
     A repetition whose reduction produced no throughput figure at all is ranked with the
     others only if every repetition is in that state. ``None`` there means no completed
     record reported its output tokens, which is neither a fast window nor a zero one, and
     sorting it either way is a claim: at the top it becomes the median of a half-collapsed
-    rung and publishes the best window as typical.
+    rung and publishes the best window as typical. A missing ``ttft_p95_s`` sorts last
+    inside its throughput group for the same reason -- an unmeasured tail is not a short one.
     """
     ranked = [rep for rep in repetitions if rep.summary.output_tok_s is not None] or list(
         repetitions
     )
-    ordered = sorted(ranked, key=lambda rep: rep.summary.output_tok_s or 0.0)
+    ordered = sorted(
+        ranked,
+        key=lambda rep: (
+            rep.summary.output_tok_s or 0.0,
+            rep.summary.ttft_p95_s is None,
+            rep.summary.ttft_p95_s or 0.0,
+        ),
+    )
     return ordered[(len(ordered) - 1) // 2]
 
 
@@ -1311,6 +1338,90 @@ def _counted(reps):
     row no reader could reconcile with the grade beside it.
     """
     return [rep for rep in reps if not rep.post_search]
+
+
+#: The four figures the SLO gate reads plus throughput: the figures a reader sizes from and
+#: the figures a gate verdict turns on. A block over all twenty row figures would triple the
+#: file for statistics nobody grades against.
+_DISPERSION_FIGURES = (
+    "ttft_p95_s",
+    "itl_p95_s",
+    "e2e_p95_s",
+    "output_tok_s",
+    "error_rate_pct",
+)
+
+
+def _figure_dispersion(reps, field):
+    """Min, lower median and max of one figure across a rung's counted repetitions.
+
+    A window whose reduction could not compute the figure left it null, and reading that
+    null as zero would invent an endpoint no window measured; ``n`` counts the survivors so
+    a spread taken over two windows is not published as a spread over three. The median is
+    the lower median, index ``(n - 1) // 2`` of the sorted values -- the same convention as
+    the row picker, so the two cannot drift into meaning different things.
+    """
+    values = sorted(
+        value for rep in reps if (value := getattr(rep.summary, field)) is not None
+    )
+    if not values:
+        return None, (
+            f"(U) no counted repetition produced a {field}; every window's reduction left "
+            "it null, and a zero here would read as a measured spread of nothing"
+        )
+    median = values[(len(values) - 1) // 2]
+    entry = {
+        "min": values[0],
+        "median": median,
+        "max": values[-1],
+        "n": len(values),
+    }
+    if median == 0:
+        # error_rate_pct is the figure where a zero median is the normal case, so this
+        # branch is exercised by every healthy ladder, not by an edge one.
+        entry["spread_pct"] = None
+        entry["spread_pct_u_reason"] = (
+            f"(U) the median {field} across the counted repetitions is zero; a relative "
+            "spread against a zero median is a division by zero dressed as a statistic"
+        )
+    else:
+        entry["spread_pct"] = round((values[-1] - values[0]) / median * 100.0, 2)
+    return entry, None
+
+
+def _dispersion(reps):
+    """Per-figure spread across a rung's counted repetitions, or null with a reason.
+
+    The published row is ONE window: its ttft, itl, e2e and throughput all come from the
+    same 120 seconds of the system's life, so a reader can reason about them together. This
+    block is per-figure across windows. It follows that ``row["ttft_p95_s"]`` need not equal
+    ``row["dispersion"]["ttft_p95_s"]["median"]``, and usually will not: the row's window is
+    picked once by throughput and then by tail latency, while each figure's median is taken
+    over that figure alone. The alternative is worse -- a row assembled from per-figure
+    medians would report a combination of latencies and a throughput that no window ever
+    exhibited at the same time, and a reader dividing one by another would be computing a
+    property of an imaginary system.
+
+    Fewer than two counted repetitions means nothing was measured twice, so the rung gets an
+    explicit null with a reason rather than a block of identical min, median and max --
+    publishing ``spread_pct: 0.0`` there would report perfect stability as a finding, and
+    omitting the key would make an unmeasured rung indistinguishable from one the harness
+    simply never filled, which is the same absence that let the median defect sit unseen.
+    The returned reason is untagged; ``_unknown`` adds the ``(U)``.
+    """
+    if len(reps) < 2:
+        return None, (
+            f"this rung had {len(reps)} counted repetition(s); a spread needs two windows, "
+            "and publishing identical min, median and max would report perfect stability "
+            "nothing measured"
+        )
+    block = {"repetitions_counted": len(reps)}
+    for field in _DISPERSION_FIGURES:
+        entry, reason = _figure_dispersion(reps, field)
+        block[field] = entry
+        if reason is not None:
+            block[f"{field}_u_reason"] = reason
+    return block, None
 
 
 def _reason_for(summary, field, fallback):
@@ -1589,6 +1700,7 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
         "stream_chunk_gap_p95_s",
         "prefill_tok_s",
         "measured_input_output_ratio",
+        "dispersion",
     ):
         row_template.setdefault(f"{name}_u_reason", init.TODO)
     thin = []
@@ -1627,6 +1739,13 @@ def _build_report(config, declarations, runs, repetitions, result, c8, censor):
                     "completed samples survived exclusion",
                 ),
             )
+        # One number per rung is how a GB200 multi-image ladder published 2.4452 s of
+        # ttft_p95 at concurrency 7, inside its 2.5 s gate, on a rung whose three windows
+        # measured 2.2554, 2.4452 and 3.0255 and whose outcome was therefore failed. The
+        # spread rides beside the row so that contradiction is legible, and so a reader
+        # never compares two runs across a difference smaller than one run's own noise.
+        dispersion, dispersion_reason = _dispersion(reps)
+        _measured(row, "dispersion", dispersion, dispersion_reason)
         # A published figure between the two section 4.3 floors is real but one straggler
         # wide. It cannot be flagged in the row -- the schema has no field for it -- so it
         # goes in the assumptions table, which is where a reviewer looks for what the

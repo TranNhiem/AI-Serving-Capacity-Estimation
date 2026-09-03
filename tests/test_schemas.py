@@ -174,7 +174,9 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     import ascep.bench.driver as driver
     import ascep.bench.ladder as ladder
     import ascep.bench.metrics as metrics
+    import ascep.bench.persist as persist
     import ascep.bench.records as records
+    import ascep.bench.rereduce as rereduce
     import ascep.bench.sessions as sessions
     import ascep.bench.workloads as workloads
     import ascep.capacity as capacity
@@ -182,8 +184,12 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     # Every stdlib-only module a reader is expected to run. Their public names are our
     # vocabulary too: prose that says `apply_boundary_rules` is naming a function a reader
     # can call, not inventing a declaration field, and a check that could not tell the
-    # difference would push writers to stop backticking real API names.
-    modules = (capacity, records, metrics, ladder, driver, workloads, sessions)
+    # difference would push writers to stop backticking real API names. persist and rereduce
+    # are here because a bundle chapter that cannot write `verify_bundle` has to describe the
+    # function instead, and a reader cannot grep for a description.
+    modules = (
+        capacity, records, metrics, ladder, driver, workloads, sessions, persist, rereduce
+    )
 
     declared = set()
     for path in sorted((ROOT / "schemas").glob("*.schema.json")):
@@ -193,6 +199,14 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
             if isinstance(node, dict):
                 if isinstance(node.get("properties"), dict):
                     declared |= set(node["properties"])
+                # A closed enum's members are published vocabulary in exactly the way a field
+                # name is: `image_grounded` is the token an author has to write into a workload
+                # layer and the token a reader greps a bundle for, and the schema is what makes
+                # it spellable at all. Collecting only property names would leave a bundle
+                # README unable to quote the archetype it declares, which pushes the writer to
+                # paraphrase a value the reader then cannot search for.
+                if isinstance(node.get("enum"), list):
+                    declared |= {v for v in node["enum"] if isinstance(v, str)}
                 stack.extend(node.values())
             elif isinstance(node, list):
                 stack.extend(node)
@@ -299,6 +313,7 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
         "num_hidden_layers",
         "num_attention_heads",
         "num_key_value_heads",
+        "use_sliding_window",
         # hardware spec-sheet names
         "flops_per_s_dense",
         "ram_bytes",
@@ -315,6 +330,13 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
         "merge_size",
         "spatial_merge_size",
         "temporal_patch_size",
+        # Audio-preprocessor keys from the same checkpoint configs. A bundle that says "audio
+        # is accepted and unpriceable" has to name the two keys that make it so, because the
+        # claim is checkable only by reading them: `audio_token_id` is present while
+        # `audio_config` is null, and a reader told only that "audio is declared" cannot tell
+        # a missing tower from an unmeasured one.
+        "audio_token_id",
+        "audio_config",
         # Engine flags and request fields for multimodal and reasoning traffic
         "limit_mm_per_prompt",
         "mm_processor_kwargs",

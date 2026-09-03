@@ -1,6 +1,6 @@
 {
   "ascep_version": "0.5.0",
-  "report_generated_utc": "2026-09-02T18:08:34Z",
+  "report_generated_utc": "2026-09-03T07:06:43Z",
   "conformance": "partial",
   "conformance_note": "This report was emitted by `ascep bench` and graded afterwards. A load generator observes latency and throughput over HTTP and nothing else, so the four report sections it cannot observe -- the roofline comparison, the sizing result, the scaling table, and the theoretical and recommended capacity tiers -- are left unknown rather than estimated, and they are why the grade is what it is. The claim below was written by `ascep conformance` from the findings it computed; running that command again on this file reproduces the grade.",
   "hardware": {
@@ -130,17 +130,17 @@
     "engine_logs_path": "engine.log",
     "results": [
       {
-        "input_tokens": 1543.6538461538462,
+        "input_tokens": 1543.7692307692307,
         "output_tokens": 500.0,
         "concurrency": 4,
-        "ttft_p50_s": 0.40833459199348,
-        "ttft_p95_s": 0.42121095518814394,
+        "ttft_p50_s": 0.4083763840026222,
+        "ttft_p95_s": 0.42053052000119345,
         "ttft_p99_s": null,
         "ttft_p99_s_u_reason": "(U) 52 samples; p99 requires 100 (section 4.3)",
-        "itl_p50_s": 0.015238143998431042,
-        "itl_p95_s": 0.01604633121023653,
+        "itl_p50_s": 0.015233407990308478,
+        "itl_p95_s": 0.016054783976869658,
         "itl_population": "pooled-gaps",
-        "e2e_p95_s": 8.043232041600277,
+        "e2e_p95_s": 8.039306155206578,
         "e2e_p99_s": null,
         "e2e_p99_s_u_reason": "(U) 52 samples; p99 requires 100 (section 4.3)",
         "output_tok_s": 200.0,
@@ -153,25 +153,64 @@
         "slo_pass": true,
         "outcome": "complete",
         "provenance": "M",
-        "context_tokens": 2043.6538461538462,
-        "tokens_per_stream_chunk": 1.022977651872836,
-        "stream_chunk_gap_p50_s": 0.015238143998431042,
-        "stream_chunk_gap_p95_s": 0.01604633121023653,
-        "prefill_tok_s": 617.45,
-        "measured_input_output_ratio": 3.08725
+        "context_tokens": 2043.7692307692307,
+        "tokens_per_stream_chunk": 1.03499064527686,
+        "stream_chunk_gap_p50_s": 0.015233407990308478,
+        "stream_chunk_gap_p95_s": 0.016054783976869658,
+        "prefill_tok_s": 617.5,
+        "measured_input_output_ratio": 3.0875,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.4194839135860092,
+            "median": 0.42053052000119345,
+            "max": 0.42121095518814394,
+            "n": 3,
+            "spread_pct": 0.41
+          },
+          "itl_p95_s": {
+            "min": 0.01604633121023653,
+            "median": 0.016054783976869658,
+            "max": 0.01610646398330573,
+            "n": 3,
+            "spread_pct": 0.37
+          },
+          "e2e_p95_s": {
+            "min": 8.039306155206578,
+            "median": 8.040143126406473,
+            "max": 8.043232041600277,
+            "n": 3,
+            "spread_pct": 0.05
+          },
+          "output_tok_s": {
+            "min": 200.0,
+            "median": 200.0,
+            "max": 200.0,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
-        "input_tokens": 1543.9375,
+        "input_tokens": 1543.7083333333333,
         "output_tokens": 500.0,
         "concurrency": 8,
-        "ttft_p50_s": 0.6551517600018997,
-        "ttft_p95_s": 0.7877075360083836,
+        "ttft_p50_s": 0.6566979040071601,
+        "ttft_p95_s": 0.7894525280062226,
         "ttft_p99_s": null,
         "ttft_p99_s_u_reason": "(U) 96 samples; p99 requires 100 (section 4.3)",
-        "itl_p50_s": 0.016041888011386618,
-        "itl_p95_s": 0.016927081617177465,
+        "itl_p50_s": 0.01604851201409474,
+        "itl_p95_s": 0.016917279979679734,
         "itl_population": "pooled-gaps",
-        "e2e_p95_s": 8.841174759996647,
+        "e2e_p95_s": 8.849617248008144,
         "e2e_p99_s": null,
         "e2e_p99_s_u_reason": "(U) 96 samples; p99 requires 100 (section 4.3)",
         "output_tok_s": 366.6666666666667,
@@ -184,25 +223,64 @@
         "slo_pass": true,
         "outcome": "complete",
         "provenance": "M",
-        "context_tokens": 2043.9375,
-        "tokens_per_stream_chunk": 1.0364708168685626,
-        "stream_chunk_gap_p50_s": 0.016041888011386618,
-        "stream_chunk_gap_p95_s": 0.016927081617177465,
-        "prefill_tok_s": 1132.1416666666667,
-        "measured_input_output_ratio": 3.087659090909091
+        "context_tokens": 2043.7083333333333,
+        "tokens_per_stream_chunk": 1.0316812105059536,
+        "stream_chunk_gap_p50_s": 0.01604851201409474,
+        "stream_chunk_gap_p95_s": 0.016917279979679734,
+        "prefill_tok_s": 1131.95,
+        "measured_input_output_ratio": 3.087136363636364,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.7877075360083836,
+            "median": 0.7894525280062226,
+            "max": 0.7902237600210356,
+            "n": 3,
+            "spread_pct": 0.32
+          },
+          "itl_p95_s": {
+            "min": 0.016917279979679734,
+            "median": 0.016927081617177465,
+            "max": 0.01699724801001139,
+            "n": 3,
+            "spread_pct": 0.47
+          },
+          "e2e_p95_s": {
+            "min": 8.837332528004481,
+            "median": 8.841174759996647,
+            "max": 8.849617248008144,
+            "n": 3,
+            "spread_pct": 0.14
+          },
+          "output_tok_s": {
+            "min": 366.6666666666667,
+            "median": 366.6666666666667,
+            "max": 366.6666666666667,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
-        "input_tokens": 1545.28125,
+        "input_tokens": 1545.1875,
         "output_tokens": 500.0,
         "concurrency": 16,
-        "ttft_p50_s": 1.131173456014949,
-        "ttft_p95_s": 1.5664836895972258,
-        "ttft_p99_s": 1.6430039382370887,
-        "itl_p50_s": 0.019372799986740574,
-        "itl_p95_s": 0.02039777279132977,
+        "ttft_p50_s": 1.1301726400124608,
+        "ttft_p95_s": 1.5680647455985308,
+        "ttft_p99_s": 1.6414366009601509,
+        "itl_p50_s": 0.019378000011784025,
+        "itl_p95_s": 0.020392526406794786,
         "itl_population": "pooled-gaps",
-        "e2e_p95_s": 11.326343780793831,
-        "e2e_p99_s": 11.327913205126533,
+        "e2e_p95_s": 11.319016032016952,
+        "e2e_p99_s": 11.330140645430365,
         "output_tok_s": 600.0,
         "requests_per_s": 1.2,
         "gpu_util_pct": null,
@@ -213,25 +291,64 @@
         "slo_pass": true,
         "outcome": "complete",
         "provenance": "M",
-        "context_tokens": 2045.28125,
-        "tokens_per_stream_chunk": 1.0258383022376099,
-        "stream_chunk_gap_p50_s": 0.019372799986740574,
-        "stream_chunk_gap_p95_s": 0.02039777279132977,
-        "prefill_tok_s": 1854.275,
-        "measured_input_output_ratio": 3.0904583333333333
+        "context_tokens": 2045.1875,
+        "tokens_per_stream_chunk": 1.0307684378704325,
+        "stream_chunk_gap_p50_s": 0.019378000011784025,
+        "stream_chunk_gap_p95_s": 0.020392526406794786,
+        "prefill_tok_s": 1854.0916666666667,
+        "measured_input_output_ratio": 3.090152777777778,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 1.5664836895972258,
+            "median": 1.5680647455985308,
+            "max": 1.5694322576135165,
+            "n": 3,
+            "spread_pct": 0.19
+          },
+          "itl_p95_s": {
+            "min": 0.020392526406794786,
+            "median": 0.02039777279132977,
+            "max": 0.02042940799728967,
+            "n": 3,
+            "spread_pct": 0.18
+          },
+          "e2e_p95_s": {
+            "min": 11.312249161601358,
+            "median": 11.319016032016952,
+            "max": 11.326343780793831,
+            "n": 3,
+            "spread_pct": 0.12
+          },
+          "output_tok_s": {
+            "min": 600.0,
+            "median": 600.0,
+            "max": 600.0,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
-        "input_tokens": 1545.45703125,
+        "input_tokens": 1545.3671875,
         "output_tokens": 500.0,
         "concurrency": 32,
-        "ttft_p50_s": 2.015411119995406,
-        "ttft_p95_s": 3.025470288004726,
-        "ttft_p99_s": 3.256327593600145,
-        "itl_p50_s": 0.02439936000155285,
-        "itl_p95_s": 0.025993390382791404,
+        "ttft_p50_s": 1.9674444000120275,
+        "ttft_p95_s": 3.053480936003325,
+        "ttft_p99_s": 3.2444020624141556,
+        "itl_p50_s": 0.02441343999817036,
+        "itl_p95_s": 0.02581012799637392,
         "itl_population": "pooled-gaps",
-        "e2e_p95_s": 15.429760903993156,
-        "e2e_p99_s": 15.472277417595615,
+        "e2e_p95_s": 15.421382391999941,
+        "e2e_p99_s": 15.437695304007502,
         "output_tok_s": 933.3333333333334,
         "requests_per_s": 1.8666666666666667,
         "gpu_util_pct": null,
@@ -242,12 +359,51 @@
         "slo_pass": false,
         "outcome": "failed",
         "provenance": "M",
-        "context_tokens": 2045.45703125,
-        "tokens_per_stream_chunk": 1.0304796560774148,
-        "stream_chunk_gap_p50_s": 0.02439936000155285,
-        "stream_chunk_gap_p95_s": 0.025993390382791404,
-        "prefill_tok_s": 2884.6833333333334,
-        "measured_input_output_ratio": 3.090732142857143,
+        "context_tokens": 2045.3671875,
+        "tokens_per_stream_chunk": 1.0312683795389908,
+        "stream_chunk_gap_p50_s": 0.02441343999817036,
+        "stream_chunk_gap_p95_s": 0.02581012799637392,
+        "prefill_tok_s": 2884.65,
+        "measured_input_output_ratio": 3.0906964285714285,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 3.025470288004726,
+            "median": 3.053480936003325,
+            "max": 3.0559037439888925,
+            "n": 3,
+            "spread_pct": 1.0
+          },
+          "itl_p95_s": {
+            "min": 0.02581012799637392,
+            "median": 0.02581482240639161,
+            "max": 0.025993390382791404,
+            "n": 3,
+            "spread_pct": 0.71
+          },
+          "e2e_p95_s": {
+            "min": 15.41675172799296,
+            "median": 15.421382391999941,
+            "max": 15.429760903993156,
+            "n": 3,
+            "spread_pct": 0.08
+          },
+          "output_tok_s": {
+            "min": 933.3333333333334,
+            "median": 933.3333333333334,
+            "max": 933.3333333333334,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
         "reasons": [
           "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
           "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
@@ -282,6 +438,45 @@
         "stream_chunk_gap_p95_s": 0.03600040479796007,
         "prefill_tok_s": 3296.85,
         "measured_input_output_ratio": 3.090796875,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 6.017984401615104,
+            "median": 6.022132019215496,
+            "max": 6.0284920560166935,
+            "n": 3,
+            "spread_pct": 0.17
+          },
+          "itl_p95_s": {
+            "min": 0.035891520004952326,
+            "median": 0.0359823184175184,
+            "max": 0.03600040479796007,
+            "n": 3,
+            "spread_pct": 0.3
+          },
+          "e2e_p95_s": {
+            "min": 23.31822030079784,
+            "median": 23.34677579518757,
+            "max": 23.362011238400008,
+            "n": 3,
+            "spread_pct": 0.19
+          },
+          "output_tok_s": {
+            "min": 1066.6666666666667,
+            "median": 1066.6666666666667,
+            "max": 1066.6666666666667,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
         "reasons": [
           "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
           "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
@@ -289,17 +484,17 @@
         ]
       },
       {
-        "input_tokens": 1546.502336448598,
+        "input_tokens": 1546.4696261682243,
         "output_tokens": 500.0,
         "concurrency": 128,
-        "ttft_p50_s": 3.2771648640045896,
-        "ttft_p95_s": 33.061564364792126,
-        "ttft_p99_s": 34.81061241248622,
-        "itl_p50_s": 0.04531622398644686,
-        "itl_p95_s": 0.08894071358081418,
+        "ttft_p50_s": 3.2843778079986805,
+        "ttft_p95_s": 33.08536532799188,
+        "ttft_p99_s": 34.833099994566,
+        "itl_p50_s": 0.04528272000607103,
+        "itl_p95_s": 0.08617411199957103,
         "itl_population": "pooled-gaps",
-        "e2e_p95_s": 64.17478440640407,
-        "e2e_p99_s": 65.36393150271819,
+        "e2e_p95_s": 64.20013823839835,
+        "e2e_p99_s": 65.39210690816456,
         "output_tok_s": 1250.0,
         "requests_per_s": 2.5,
         "gpu_util_pct": null,
@@ -310,12 +505,51 @@
         "slo_pass": false,
         "outcome": "failed",
         "provenance": "M",
-        "context_tokens": 2046.502336448598,
-        "tokens_per_stream_chunk": 1.0275074302231229,
-        "stream_chunk_gap_p50_s": 0.04531622398644686,
-        "stream_chunk_gap_p95_s": 0.08894071358081418,
-        "prefill_tok_s": 3866.0583333333334,
-        "measured_input_output_ratio": 3.0928466666666665,
+        "context_tokens": 2046.4696261682243,
+        "tokens_per_stream_chunk": 1.027625848151474,
+        "stream_chunk_gap_p50_s": 0.04528272000607103,
+        "stream_chunk_gap_p95_s": 0.08617411199957103,
+        "prefill_tok_s": 3866.0333333333333,
+        "measured_input_output_ratio": 3.092826666666667,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 33.061564364792126,
+            "median": 33.08536532799188,
+            "max": 33.22659286879497,
+            "n": 3,
+            "spread_pct": 0.5
+          },
+          "itl_p95_s": {
+            "min": 0.08617411199957103,
+            "median": 0.08894071358081418,
+            "max": 0.09046932158380508,
+            "n": 3,
+            "spread_pct": 4.83
+          },
+          "e2e_p95_s": {
+            "min": 64.17478440640407,
+            "median": 64.20013823839835,
+            "max": 64.33751078398927,
+            "n": 3,
+            "spread_pct": 0.25
+          },
+          "output_tok_s": {
+            "min": 1250.0,
+            "median": 1250.0,
+            "max": 1250.0,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
         "reasons": [
           "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
           "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",

@@ -1,6 +1,6 @@
 {
-  "ascep_version": "0.4.0",
-  "report_generated_utc": "2026-09-02T03:04:50Z",
+  "ascep_version": "0.5.0",
+  "report_generated_utc": "2026-09-03T07:06:45Z",
   "conformance": "partial",
   "conformance_note": "This report was emitted by `ascep bench` and graded afterwards. A load generator observes latency and throughput over HTTP and nothing else, so the four report sections it cannot observe -- the roofline comparison, the sizing result, the scaling table, and the theoretical and recommended capacity tiers -- are left unknown rather than estimated, and they are why the grade is what it is. The claim below was written by `ascep conformance` from the findings it computed; running that command again on this file reproduces the grade.",
   "hardware": {
@@ -121,7 +121,7 @@
     }
   },
   "run": {
-    "ascep_version": "0.4.0",
+    "ascep_version": "0.5.0",
     "engine_version": null,
     "engine_version_u_reason": "(U) bench observes an HTTP endpoint, not a build; the engine version was never visible to the load generator",
     "container_digest": null,
@@ -182,7 +182,48 @@
         "context_tokens": 1174.566037735849,
         "tokens_per_stream_chunk": 1.002506411750991,
         "stream_chunk_gap_p50_s": 0.005598698742687702,
-        "stream_chunk_gap_p95_s": 0.005779647082090378
+        "stream_chunk_gap_p95_s": 0.005779647082090378,
+        "prefill_tok_s": 250.29444444444445,
+        "measured_input_output_ratio": 2.6195127623699053,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.2420945333316921,
+            "median": 0.281399094685912,
+            "max": 0.3025967318564653,
+            "n": 3,
+            "spread_pct": 21.5
+          },
+          "itl_p95_s": {
+            "min": 0.005779647082090378,
+            "median": 0.005780381523072719,
+            "max": 0.005821856437250972,
+            "n": 3,
+            "spread_pct": 0.73
+          },
+          "e2e_p95_s": {
+            "min": 2.999328305013478,
+            "median": 3.062672892957926,
+            "max": 3.0779569225385783,
+            "n": 3,
+            "spread_pct": 2.57
+          },
+          "output_tok_s": {
+            "min": 94.03888888888889,
+            "median": 95.55,
+            "max": 102.47222222222223,
+            "n": 3,
+            "spread_pct": 8.83
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 791.4343434343434,
@@ -211,7 +252,48 @@
         "context_tokens": 1137.5656565656566,
         "tokens_per_stream_chunk": 1.0310826262261539,
         "stream_chunk_gap_p50_s": 0.005866805091500282,
-        "stream_chunk_gap_p95_s": 0.006092616636306047
+        "stream_chunk_gap_p95_s": 0.006092616636306047,
+        "prefill_tok_s": 423.3222222222222,
+        "measured_input_output_ratio": 2.236447418625811,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.24759257892146708,
+            "median": 0.27551642600446935,
+            "max": 0.3056268298998473,
+            "n": 3,
+            "spread_pct": 21.06
+          },
+          "itl_p95_s": {
+            "min": 0.006084177456796169,
+            "median": 0.006092616636306047,
+            "max": 0.006098433211445808,
+            "n": 3,
+            "spread_pct": 0.23
+          },
+          "e2e_p95_s": {
+            "min": 3.197659970261156,
+            "median": 3.2129966773092744,
+            "max": 3.2205540160648525,
+            "n": 3,
+            "spread_pct": 0.71
+          },
+          "output_tok_s": {
+            "min": 186.92222222222222,
+            "median": 189.28333333333333,
+            "max": 189.67777777777778,
+            "n": 3,
+            "spread_pct": 1.46
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 834.8333333333334,
@@ -238,7 +320,48 @@
         "context_tokens": 1174.9375,
         "tokens_per_stream_chunk": 1.0866671104306729,
         "stream_chunk_gap_p50_s": 0.006046196445822716,
-        "stream_chunk_gap_p95_s": 0.006325328908860683
+        "stream_chunk_gap_p95_s": 0.006325328908860683,
+        "prefill_tok_s": 883.85,
+        "measured_input_output_ratio": 2.455593628449713,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.3328762742690742,
+            "median": 0.34749680040404196,
+            "max": 0.34976118183694793,
+            "n": 3,
+            "spread_pct": 4.86
+          },
+          "itl_p95_s": {
+            "min": 0.0064814998654854905,
+            "median": 0.006542279888025106,
+            "max": 0.006547687714382137,
+            "n": 3,
+            "spread_pct": 1.01
+          },
+          "e2e_p95_s": {
+            "min": 3.4233386210165917,
+            "median": 3.430656752362847,
+            "max": 3.477561260387301,
+            "n": 3,
+            "spread_pct": 1.58
+          },
+          "output_tok_s": {
+            "min": 357.84444444444443,
+            "median": 359.93333333333334,
+            "max": 366.68888888888887,
+            "n": 3,
+            "spread_pct": 2.46
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 890.8825136612022,
@@ -265,7 +388,48 @@
         "context_tokens": 1225.5765027322404,
         "tokens_per_stream_chunk": 1.2057127108801355,
         "stream_chunk_gap_p50_s": 0.006367073394358158,
-        "stream_chunk_gap_p95_s": 0.007162706181406972
+        "stream_chunk_gap_p95_s": 0.007162706181406972,
+        "prefill_tok_s": 1758.4277777777777,
+        "measured_input_output_ratio": 2.6262394105591556,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.40908875553868695,
+            "median": 0.41550120734609663,
+            "max": 0.478217541333288,
+            "n": 3,
+            "spread_pct": 16.64
+          },
+          "itl_p95_s": {
+            "min": 0.007280388872619528,
+            "median": 0.007353243707192115,
+            "max": 0.007360637265653766,
+            "n": 3,
+            "spread_pct": 1.09
+          },
+          "e2e_p95_s": {
+            "min": 3.7309524630196393,
+            "median": 3.7843949252273887,
+            "max": 3.8424210504163048,
+            "n": 3,
+            "spread_pct": 2.95
+          },
+          "output_tok_s": {
+            "min": 667.8555555555556,
+            "median": 669.5611111111111,
+            "max": 687.4666666666667,
+            "n": 3,
+            "spread_pct": 2.93
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 829.2527131782946,
@@ -292,7 +456,48 @@
         "context_tokens": 1174.617054263566,
         "tokens_per_stream_chunk": 1.4485440428658751,
         "stream_chunk_gap_p50_s": 0.007041635923087597,
-        "stream_chunk_gap_p95_s": 0.027824586443602868
+        "stream_chunk_gap_p95_s": 0.027824586443602868,
+        "prefill_tok_s": 2888.6555555555556,
+        "measured_input_output_ratio": 2.3945197909231157,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.5587138350121674,
+            "median": 0.6057823309674855,
+            "max": 0.652247563097626,
+            "n": 3,
+            "spread_pct": 15.44
+          },
+          "itl_p95_s": {
+            "min": 0.008971501314153585,
+            "median": 0.00900405048030026,
+            "max": 0.009063007807529345,
+            "n": 3,
+            "spread_pct": 1.02
+          },
+          "e2e_p95_s": {
+            "min": 4.6013495899736885,
+            "median": 4.624451372493058,
+            "max": 4.629650322766975,
+            "n": 3,
+            "spread_pct": 0.61
+          },
+          "output_tok_s": {
+            "min": 1194.5666666666666,
+            "median": 1206.361111111111,
+            "max": 1207.3777777777777,
+            "n": 3,
+            "spread_pct": 1.06
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 831.7855044074437,
@@ -319,7 +524,48 @@
         "context_tokens": 1181.360430950049,
         "tokens_per_stream_chunk": 1.9479443531793894,
         "stream_chunk_gap_p50_s": 0.008461815770715475,
-        "stream_chunk_gap_p95_s": 0.1056307670660317
+        "stream_chunk_gap_p95_s": 0.1056307670660317,
+        "prefill_tok_s": 4580.377777777778,
+        "measured_input_output_ratio": 2.3826007045489357,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 0.8375933001749216,
+            "median": 1.06253985678777,
+            "max": 1.1309128813445568,
+            "n": 3,
+            "spread_pct": 27.61
+          },
+          "itl_p95_s": {
+            "min": 0.012179387584726442,
+            "median": 0.012622087130346049,
+            "max": 0.012805722056121752,
+            "n": 3,
+            "spread_pct": 4.96
+          },
+          "e2e_p95_s": {
+            "min": 6.208450641389936,
+            "median": 6.33301021810621,
+            "max": 6.5071649537421745,
+            "n": 3,
+            "spread_pct": 4.72
+          },
+          "output_tok_s": {
+            "min": 1892.588888888889,
+            "median": 1922.4277777777777,
+            "max": 1931.1777777777777,
+            "n": 3,
+            "spread_pct": 2.01
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 829.5432451751251,
@@ -346,7 +592,48 @@
         "context_tokens": 1176.9077912794853,
         "tokens_per_stream_chunk": 3.816383426525099,
         "stream_chunk_gap_p50_s": 0.01777081098407507,
-        "stream_chunk_gap_p95_s": 0.24030135478824374
+        "stream_chunk_gap_p95_s": 0.24030135478824374,
+        "prefill_tok_s": 6168.361111111111,
+        "measured_input_output_ratio": 2.4050118809607874,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 2.3100782837718703,
+            "median": 2.3267888591624795,
+            "max": 2.6618662098422634,
+            "n": 3,
+            "spread_pct": 15.12
+          },
+          "itl_p95_s": {
+            "min": 0.01867134779905861,
+            "median": 0.01902552816697004,
+            "max": 0.019523221942711458,
+            "n": 3,
+            "spread_pct": 4.48
+          },
+          "e2e_p95_s": {
+            "min": 10.329221358988434,
+            "median": 10.472831910662352,
+            "max": 10.886834521126001,
+            "n": 3,
+            "spread_pct": 5.32
+          },
+          "output_tok_s": {
+            "min": 2485.5777777777776,
+            "median": 2564.7944444444443,
+            "max": 2572.0666666666666,
+            "n": 3,
+            "spread_pct": 3.37
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
       },
       {
         "input_tokens": 818.51209941138,
@@ -374,6 +661,47 @@
         "tokens_per_stream_chunk": 6.402038865880853,
         "stream_chunk_gap_p50_s": 0.053457725793123245,
         "stream_chunk_gap_p95_s": 0.2949439898133278,
+        "prefill_tok_s": 6351.555555555556,
+        "measured_input_output_ratio": 2.380519088419935,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 9.254520875960589,
+            "median": 9.598198004998263,
+            "max": 9.85988662582822,
+            "n": 3,
+            "spread_pct": 6.31
+          },
+          "itl_p95_s": {
+            "min": 0.02282667289589404,
+            "median": 0.023356067683614257,
+            "max": 0.02459368073054639,
+            "n": 3,
+            "spread_pct": 7.57
+          },
+          "e2e_p95_s": {
+            "min": 18.72011473942548,
+            "median": 19.122034086007623,
+            "max": 19.34912519752979,
+            "n": 3,
+            "spread_pct": 3.29
+          },
+          "output_tok_s": {
+            "min": 2650.6666666666665,
+            "median": 2668.1388888888887,
+            "max": 2697.7722222222224,
+            "n": 3,
+            "spread_pct": 1.77
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
         "reasons": [
           "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
           "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
@@ -384,7 +712,7 @@
     "drain_deadline_seconds": 60,
     "throughput_collapse_ratio": 0.7,
     "monotonic_across_ladder": true,
-    "single_point": false
+    "single_point": true
   },
   "workload": {
     "ascep_version": "0.4.0",
@@ -460,10 +788,7 @@
     "max_output_tokens": 512,
     "notes": {
       "input_tokens_per_request": "722 is one observed datapoint, not a distribution: a single smoke request (a 960x720 PNG plus its question) against the live server returned prompt_tokens 722. The run's per-rung context means supersede it and are the figures to read; it is declared here because a workload layer carrying no input length at all cannot be composed with per-GPU figures measured anywhere else."
-    },
-    "archetypes": [
-      "image_grounded"
-    ]
+    }
   },
   "capacity_tiers": {
     "theoretical": {

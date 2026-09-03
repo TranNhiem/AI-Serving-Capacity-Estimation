@@ -1,0 +1,26 @@
+# A rung published without the spread of the windows behind it
+
+**Rule broken:** C12
+**The one edit:** `run.results.2.dispersion` is deleted
+
+The run declares `repeats: 3`, so every rung in this report was measured three times and every rung but one publishes what those three windows spanned. The edit deletes `run.results.2.dispersion` and changes nothing else, so rung 8 still reports `ttft_p95_s: 0.9`, `output_tok_s: 245.76` and a passing gate -- exactly what it reported before -- with no way left on the page to see that those figures are the middle of a triple rather than the run's whole answer. The checker raises one C12 error at `run.results.2.dispersion`.
+
+Rung 8 is the sustainable rung. Its three windows measured 0.812, 0.9 and 1.004 s of `ttft_p95_s`, a spread of 23.65 percent, and the report publishes the 0.9 in the middle. That number is honest and it is also the least stable figure in the report: the two rungs above it spread by 14.42 and 10.80 percent, so the rung the capacity claim rests on is the one whose repeat-to-repeat variation is widest. A reader holding the deleted version cannot know that, and will compare this report against another one across a difference of a few percent that neither run could have resolved.
+
+Deleting the key is worse than deleting the block's contents, which is why the case is built this way. An absent key reads as "not applicable" -- the shape a rung with fewer than two counted windows would legitimately have -- so a rung nobody measured twice and a rung whose spread the harness forgot to write become indistinguishable. C12 accepts `dispersion: null` beside a `dispersion_u_reason` opening `(U) ` for the first case precisely so the second case has nowhere to hide.
+
+It is an error rather than a warning, and it sits in the C6 to C12 band rather than the fatal one. A report that measured honestly and did not publish its spread is not in the class of one whose capacity arithmetic does not close, and the `dispersion` block postdates every report the harness emitted before it existed, so a fatal band would retroactively condemn evidence that was collected correctly. The case therefore grades partial.
+
+## Reproduce
+
+```bash
+ascep conformance examples/negative/c12/report.json
+```
+
+Every other byte of this report is identical to `examples/negative/baseline.json`, which grades
+`conforming` with no findings. Diff the two to see the edit on its own:
+
+```bash
+diff <(jq -S . examples/negative/baseline.json) \
+     <(jq -S . examples/negative/c12/report.json)
+```

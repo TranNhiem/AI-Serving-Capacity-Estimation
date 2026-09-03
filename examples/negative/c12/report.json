@@ -256,45 +256,6 @@
         "gpu_mem_util_pct": 88.0,
         "error_rate_pct": 0.0,
         "slo_pass": true,
-        "dispersion": {
-          "repetitions_counted": 3,
-          "ttft_p95_s": {
-            "min": 0.812,
-            "median": 0.9,
-            "max": 1.004,
-            "n": 3,
-            "spread_pct": 21.33
-          },
-          "itl_p95_s": {
-            "min": 0.114,
-            "median": 0.12,
-            "max": 0.129,
-            "n": 3,
-            "spread_pct": 12.5
-          },
-          "e2e_p95_s": {
-            "min": 33.1,
-            "median": 35.0,
-            "max": 37.4,
-            "n": 3,
-            "spread_pct": 12.29
-          },
-          "output_tok_s": {
-            "min": 239.9,
-            "median": 245.76,
-            "max": 252.3,
-            "n": 3,
-            "spread_pct": 5.05
-          },
-          "error_rate_pct": {
-            "min": 0.0,
-            "median": 0.0,
-            "max": 0.0,
-            "n": 3,
-            "spread_pct": null,
-            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
-          }
-        },
         "outcome": "complete",
         "provenance": "M"
       }

@@ -103,8 +103,16 @@ SKIP_SUFFIXES = {
     ".woff2",
 }
 
-# These two necessarily contain the terms they look for, and would otherwise flag themselves.
-SELF = {pathlib.Path(__file__).name, ".ascep-denylist"}
+# Files that necessarily contain the shapes this scanner looks for, and would otherwise flag
+# themselves. The first two hold the patterns. The third is the test suite for
+# tools/redact_bundle.py, whose fixtures must carry a cluster-shaped path and a private-range
+# address or there is nothing for the redactor to redact and the tests prove nothing.
+#
+# This is a hole and it is worth naming: a real credential pasted into any of these three is
+# not caught. The mitigation is a rule, not a mechanism -- every leak-shaped string in the
+# redaction fixtures is fabricated, and one that was ever real belongs in a revocation, not
+# in a test.
+SELF = {pathlib.Path(__file__).name, ".ascep-denylist", "test_redact_bundle.py"}
 
 
 def load_denylist(root: pathlib.Path) -> list[tuple[str, str, str]]:

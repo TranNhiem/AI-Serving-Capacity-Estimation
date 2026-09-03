@@ -2,7 +2,7 @@
 
 > ASCEP v0.1 · report generated `<UTC timestamp>` · protocol conformance: **`<conforming | partial | non-conforming>`**
 
-**Conformance note.** `<Which of C1–C11 this report meets, and which it does not. A level
+**Conformance note.** `<Which of C1–C12 this report meets, and which it does not. A level
 claimed without a reason cannot be reviewed, so this paragraph is required at every level —
 including` conforming `. If any rule is unmet, say which, why, and what it would cost to
 close.>`

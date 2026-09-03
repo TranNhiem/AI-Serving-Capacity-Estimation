@@ -37,6 +37,14 @@ _RECORDS_NAME = "records.jsonl"
 _CONFIGS_NAME = "run_configs.json"
 _ENVIRONMENT_NAME = "environment.json"
 _MANIFEST_NAME = "manifest.json"
+_ENGINE_LOG_NAME = "engine.log"
+
+#: Above this the engine log is hashed where it lies instead of being copied in. The cap
+#: exists because a server that has been up for a week writes a log a bundle has no business
+#: duplicating, and it is generous because the common case is a log from the one server this
+#: run started. A GB200 ladder of eighteen windows produced 437 KB; a thousandfold margin on
+#: that still leaves the bundle smaller than its own records file.
+ENGINE_LOG_SNAPSHOT_MAX_BYTES = 64 * 1024 * 1024
 
 #: The serving stack: the distributions whose versions move the numbers, not an inventory.
 #: Both sides of the measurement are here -- the engine that generates the tokens and the
@@ -241,9 +249,18 @@ def write_bundle(
 ) -> dict:
     """Write the reproduction bundle for ``runs`` and return its C8 reproduction block.
 
-    The engine log is passed through, not copied: it can be gigabytes, and a harness that
-    duplicated it would fill the disk the run was just measured on. Its path is echoed
-    relative to ``relative_to`` and its bytes are hashed in place into the manifest.
+    The engine log is copied into the bundle when it is small enough to copy, and passed
+    through by path when it is not. Passing it through was the original behaviour and the
+    original reasoning still holds for a big log -- it can be gigabytes, and a harness that
+    duplicated one would fill the disk the run was just measured on -- but the reasoning
+    does not survive contact with a live log. The file a running server is still writing to
+    changes the moment it logs another line, so its manifest digest is stale before the
+    operator has finished reading the report, and ``verify_bundle`` calls an intact bundle
+    modified. Copying below ``ENGINE_LOG_SNAPSHOT_MAX_BYTES`` freezes the bytes that were
+    there when the run ended, which is the thing C8 actually wants, and it also lets the log
+    live in /var/log: a copy lands inside the bundle, so ``_relpath`` has nothing to refuse.
+    Above the cap the old behaviour returns, and the manifest records how many bytes were
+    hashed so that a log which has only grown can still be told from one that was replaced.
 
     ``engine_logs_path`` and ``container_digest`` have no defaults: neither is knowable
     from inside the harness, and a default would put a confident value in the one field
@@ -361,8 +378,23 @@ def write_bundle(
         _RECORDS_NAME: _sha256(records_file),
         _CONFIGS_NAME: _sha256(configs_file),
         _ENVIRONMENT_NAME: _sha256(env_file),
-        _manifest_key(engine_logs_path, bundle_dir): _sha256(engine_logs_path),
     }
+    hashed_prefix_bytes: dict[str, int] = {}
+    if engine_logs_path.stat().st_size <= ENGINE_LOG_SNAPSHOT_MAX_BYTES:
+        engine_log_file = bundle_dir / _ENGINE_LOG_NAME
+        shutil.copyfile(engine_logs_path, engine_log_file)
+        files[_ENGINE_LOG_NAME] = _sha256(engine_log_file)
+        engine_logs_published = engine_log_file
+    else:
+        engine_log_key = _manifest_key(engine_logs_path, bundle_dir)
+        files[engine_log_key] = _sha256(engine_logs_path)
+        # Recorded only for the pass-through log, because it is the only artifact a bundle
+        # names that something outside the bundle is still writing to. Without the length
+        # there is no way to ask the one question worth asking of a changed log -- did the
+        # server append to it, or did someone put a different file there -- and every
+        # long-lived server turns an intact bundle into a failed verification.
+        hashed_prefix_bytes[engine_log_key] = engine_logs_path.stat().st_size
+        engine_logs_published = engine_logs_path
     for name, payload in (extra_files or {}).items():
         if name in files or name == _MANIFEST_NAME:
             # Silently overwriting records.jsonl with a caller's bytes would leave a bundle
@@ -372,12 +404,15 @@ def write_bundle(
         extra_file.parent.mkdir(parents=True, exist_ok=True)
         extra_file.write_bytes(payload)
         files[name] = _sha256(extra_file)
-    (bundle_dir / _MANIFEST_NAME).write_text(json.dumps({"sha256": files}, indent=2) + "\n")
+    manifest: dict = {"sha256": files}
+    if hashed_prefix_bytes:
+        manifest["hashed_prefix_bytes"] = hashed_prefix_bytes
+    (bundle_dir / _MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
 
     return {
         "run_configs_path": _relpath(configs_file, relative_to),
         "raw_records_path": _relpath(records_file, relative_to),
-        "engine_logs_path": _relpath(engine_logs_path, relative_to),
+        "engine_logs_path": _relpath(engine_logs_published, relative_to),
         "environment_capture_path": _relpath(env_file, relative_to),
         "container_digest": container_digest,
     }
@@ -389,6 +424,14 @@ def verify_bundle(bundle_dir) -> list[str]:
     An empty list means intact. A missing manifest cannot be graded at all, and an edited
     or removed file is reported by name, because "the bundle is wrong" sends a reviewer to
     re-hash every artifact when one would do.
+
+    A file the manifest records a hashed length for -- only ever a pass-through engine log,
+    written by a server that outlived the run -- passes when it has merely grown and its
+    first recorded bytes still hash to the manifest value. Those bytes are the evidence; the
+    ones after them are the server's later life. Calling that a problem would mean no bundle
+    from a still-running server ever verifies, which trains a reader to ignore the check.
+    A log that shrank, or whose recorded prefix changed, is still reported: that is a
+    different file where the evidence used to be.
     """
     bundle_dir = Path(bundle_dir)
     manifest_file = bundle_dir / _MANIFEST_NAME
@@ -396,6 +439,7 @@ def verify_bundle(bundle_dir) -> list[str]:
     try:
         manifest = json.loads(manifest_file.read_text())
         entries = manifest["sha256"]
+        prefixes = manifest.get("hashed_prefix_bytes") or {}
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return [f"bundle manifest {_MANIFEST_NAME} is missing or unreadable: {exc}"]
     for name, expected in sorted(entries.items()):
@@ -406,9 +450,15 @@ def verify_bundle(bundle_dir) -> list[str]:
             problems.append(f"file {name} listed in the manifest is missing from the bundle")
             continue
         actual = _sha256(target)
-        if actual != expected:
-            problems.append(
-                f"file {name} has been modified since the bundle was written "
-                f"(manifest sha256 {expected}, now {actual})"
-            )
+        if actual == expected:
+            continue
+        hashed = prefixes.get(name)
+        if hashed is not None and target.stat().st_size > hashed:
+            with target.open("rb") as fp:
+                if hashlib.sha256(fp.read(hashed)).hexdigest() == expected:
+                    continue
+        problems.append(
+            f"file {name} has been modified since the bundle was written "
+            f"(manifest sha256 {expected}, now {actual})"
+        )
     return problems

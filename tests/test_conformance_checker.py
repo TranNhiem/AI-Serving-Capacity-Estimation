@@ -1,4 +1,4 @@
-"""Acceptance tests for `ascep.conformance`, the module that grades a report against C1-C11.
+"""Acceptance tests for `ascep.conformance`, the module that grades a report against C1-C12.
 
 Written against the specified contract before the implementation landed, so the tests are a
 statement of what the checker must do rather than a description of what it happens to do.

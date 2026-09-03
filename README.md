@@ -36,7 +36,7 @@ reference implementation.
 - **`schemas/`** — JSON Schema for the five layers: hardware, model, serving, run, workload.
 - **`ascep/`** — reference implementation. `capacity.py` is the transparent formula set and is
   **stdlib-only by design**, so it runs on an air-gapped cluster login node with no `pip install`;
-  `conformance.py` grades a report against C1–C11, `render.py` emits the Markdown form.
+  `conformance.py` grades a report against C1–C12, `render.py` emits the Markdown form.
 - **`templates/capacity-report.md`** — the standard report.
 - **`examples/`** — worked end-to-end reports you can diff your own against.
 
@@ -121,7 +121,7 @@ Then grade and publish the result:
 ```bash
 ascep init -o report.json           # a fillable skeleton of every field the schemas require
 ascep validate report.json          # structure and vocabulary, against the schemas
-ascep conformance report.json       # C1–C11, and whether the report overstates itself
+ascep conformance report.json       # C1–C12, and whether the report overstates itself
 ascep conformance report.json --raise   # ...and save that level into the file
 ascep render report.json -o report.md
 

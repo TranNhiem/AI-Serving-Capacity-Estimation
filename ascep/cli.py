@@ -84,7 +84,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_conformance(args: argparse.Namespace) -> int:
-    """Check a report against rules C1-C11, print findings by rule, and with --raise save
+    """Check a report against rules C1-C12, print findings by rule, and with --raise save
     the computed level into the file so the artifact carries its own grade."""
     try:
         report = _load_json(args.path)
@@ -344,6 +344,198 @@ def _recompute_derived(merged: dict) -> tuple[dict, list[str]]:
     return out, notes
 
 
+def _cmd_reduce(args: argparse.Namespace) -> int:
+    """Re-derive a report from its bundle under the current reduction rules.
+
+    The reduction is code and code gets fixed; without this command the only way to bring
+    a published report up to a corrected rule is to re-measure it, which spends GPU hours
+    to re-learn what the bundle already pins.
+    """
+    from ascep import validation
+    from ascep.bench.rereduce import ReduceError, rebuild_report
+
+    bundle_dir = pathlib.Path(args.bundle_dir)
+    report_path = (
+        pathlib.Path(args.report) if args.report else bundle_dir.parent / "report.json"
+    )
+    out_path = pathlib.Path(args.out) if args.out else report_path
+    try:
+        previous_report = _load_json(str(report_path))
+    except (OSError, ValueError) as exc:
+        _eprint(f"error: cannot read report {report_path}: {exc}")
+        return 2
+    if not isinstance(previous_report, dict):
+        _eprint(f"error: {report_path} is not a JSON object")
+        return 2
+    try:
+        rebuilt = rebuild_report(bundle_dir, previous_report=previous_report)
+    except ReduceError as exc:
+        _eprint(f"error: {exc}")
+        return 2
+    problems = validation.validate("capacity-report", rebuilt)
+    if problems:
+        # The bundle and the previous report were both accepted, so an invalid rebuild is
+        # reduce assembling the report wrongly -- a defect here, not in the operator's
+        # evidence, and nothing may be written on the strength of it.
+        _eprint(
+            "error: the rebuilt report fails capacity-report validation; this is a defect "
+            "in reduce, not in the bundle -- please report it:"
+        )
+        for problem in problems:
+            _eprint(f"  {problem}")
+        return 2
+    if args.check:
+        differing = _report_top_level_diffs(previous_report, rebuilt)
+        if not differing:
+            _eprint(
+                f"rebuilt report matches {report_path} (report_generated_utc and the "
+                "conformance grade excluded; the grade is recomputed from the figures by "
+                "`ascep conformance`, and the figures are what matched)"
+            )
+            return 0
+        _eprint(f"rebuilt report differs from {report_path} at:")
+        for path in differing:
+            _eprint(f"  {path}")
+        return 1
+    try:
+        out_path.write_text(json.dumps(rebuilt, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        _eprint(f"error: cannot write {out_path}: {exc}")
+        return 2
+    _print_result_changes(previous_report, rebuilt, out_path)
+    # A rebuild is an ungraded draft by construction: the grade belongs to the figures,
+    # and these figures are new. Carrying the old claim forward would let a report keep a
+    # level earned by numbers it no longer contains, so reduce drops it and says so --
+    # silently demoting a published `partial` to `non-conforming` would read as a
+    # regression the operator caused rather than a grade waiting to be recomputed.
+    claimed = previous_report.get("conformance")
+    if claimed != rebuilt.get("conformance"):
+        _eprint(
+            f"note: the previous report claimed `{claimed}` and this rebuild is an "
+            f"ungraded `{rebuilt.get('conformance')}`; run `ascep conformance --raise "
+            f"{out_path}` to grade it from the figures it now carries"
+        )
+    return 0
+
+
+#: Sentinel for "no value on this side", so an absent key is reported as absent rather than
+#: conflated with an explicit null, which is a different statement in a report.
+_ABSENT = object()
+
+#: Cap on printed figure changes. A re-reduction that moves more figures than this is a rule
+#: change the operator should diff in full, not a summary they should scroll.
+_CHANGE_LINE_CAP = 40
+
+
+def _ungraded(report: dict) -> dict:
+    """A copy of ``report`` with the grade folded back to how `ascep bench` writes it.
+
+    A rebuild is an ungraded draft by construction, so every graded report differs from its
+    own rebuild at `conformance` and at the note's opening paragraph -- which would make
+    --check report a difference on every published example in this repository and teach
+    operators that a failing --check is normal. The grade is not a figure: it is computed
+    from the figures by a different command, so if the figures match, re-grading reproduces
+    it. Folding rather than skipping keeps the rest of the note in the comparison, because
+    everything after the opening paragraph is written by the run and is a figure.
+    """
+    from ascep.conformance import DRAFT_NOTE, GRADED_NOTE
+
+    folded = dict(report)
+    folded.pop("conformance", None)
+    note = folded.get("conformance_note")
+    if isinstance(note, str) and note.startswith(GRADED_NOTE):
+        folded["conformance_note"] = DRAFT_NOTE + note[len(GRADED_NOTE) :]
+    return folded
+
+
+def _report_top_level_diffs(old: dict, new: dict) -> list[str]:
+    """Top-level keys whose values differ, excluding the generation timestamp and the grade.
+
+    report_generated_utc is excluded because a rebuild is genuinely generated at a new
+    time; comparing it would make --check fail by construction. `conformance` is excluded
+    for the same reason and reported by _ungraded's fold instead. Nothing else is excluded,
+    because anything else that differs is the point of the check.
+    """
+    old, new = _ungraded(old), _ungraded(new)
+    diffs = []
+    for key in list(old) + [k for k in new if k not in old]:
+        if key == "report_generated_utc":
+            continue
+        if old.get(key) != new.get(key):
+            diffs.append(key)
+    return diffs
+
+
+def _figure_diffs(old: Any, new: Any, path: str, out: list) -> None:
+    """Collect leaf-level differences between two report fragments as (path, old, new).
+
+    A side that is absent or null is treated as the empty container when the other side is
+    a container, so a rung that appears or disappears reads as its figures, not as one
+    opaque blob of JSON.
+    """
+    if isinstance(new, dict) and (old is _ABSENT or old is None):
+        old = {}
+    elif isinstance(new, list) and (old is _ABSENT or old is None):
+        old = []
+    elif isinstance(old, dict) and (new is _ABSENT or new is None):
+        new = {}
+    elif isinstance(old, list) and (new is _ABSENT or new is None):
+        new = []
+    if isinstance(old, dict) and isinstance(new, dict):
+        for key in list(old) + [k for k in new if k not in old]:
+            _figure_diffs(old.get(key, _ABSENT), new.get(key, _ABSENT), f"{path}.{key}", out)
+    elif isinstance(old, list) and isinstance(new, list):
+        for index in range(max(len(old), len(new))):
+            old_item = old[index] if index < len(old) else _ABSENT
+            new_item = new[index] if index < len(new) else _ABSENT
+            _figure_diffs(old_item, new_item, f"{path}[{index}]", out)
+    elif old is _ABSENT or new is _ABSENT or old != new:
+        out.append((path, old, new))
+
+
+def _format_figure(value: Any) -> str:
+    """Render one figure for the change summary; absent reads as absent, not as null."""
+    if value is _ABSENT:
+        return "<absent>"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, float):
+        return f"{value:,.6g}"
+    return json.dumps(value)
+
+
+def _print_result_changes(previous_report: dict, rebuilt: dict, out_path: pathlib.Path) -> None:
+    """Say which figures under run.results moved, and by how much.
+
+    The operator should not have to diff two 30 KB files to learn what the new reduction
+    rule did to their rungs.
+    """
+    old_results = (previous_report.get("run") or {}).get("results")
+    new_results = (rebuilt.get("run") or {}).get("results")
+    changes: list = []
+    _figure_diffs(old_results, new_results, "run.results", changes)
+    if not changes:
+        _eprint(f"wrote {out_path}; no figures under run.results changed")
+        return
+    shown = changes[:_CHANGE_LINE_CAP]
+    _eprint(f"wrote {out_path}; {len(changes):,} figure(s) under run.results changed:")
+    for path, old, new in shown:
+        line = f"  {path}: {_format_figure(old)} -> {_format_figure(new)}"
+        if (
+            isinstance(old, (int, float))
+            and not isinstance(old, bool)
+            and isinstance(new, (int, float))
+            and not isinstance(new, bool)
+        ):
+            line += f" ({new - old:+,.6g})"
+        _eprint(line)
+    suppressed = len(changes) - len(shown)
+    if suppressed:
+        _eprint(f"  ... {suppressed:,} more suppressed")
+
+
 def _cmd_agent_profile(args: argparse.Namespace) -> int:
     """Turn agent session transcripts into a measured ``code_agent`` workload block.
 
@@ -498,7 +690,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_validate.set_defaults(handler=_cmd_validate)
 
-    p_conf = sub.add_parser("conformance", help="check a report against rules C1-C11")
+    p_conf = sub.add_parser("conformance", help="check a report against rules C1-C12")
     p_conf.add_argument("path", help="path to the report JSON file")
     p_conf.add_argument(
         "--strict",
@@ -557,6 +749,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("config", help="path to the bench config JSON")
     p_bench.add_argument("--dry-run", action="store_true", help="print the plan and exit")
     p_bench.set_defaults(handler=_cmd_bench)
+
+    p_reduce = sub.add_parser(
+        "reduce", help="re-derive a report from its bundle under the current reduction"
+    )
+    p_reduce.add_argument("bundle_dir", help="path to the bundle to reduce")
+    p_reduce.add_argument(
+        "--report",
+        help="path to the existing report (default: BUNDLE_DIR/../report.json)",
+    )
+    p_reduce.add_argument(
+        "--out",
+        help="write the rebuilt report here (default: overwrite --report)",
+    )
+    p_reduce.add_argument(
+        "--check",
+        action="store_true",
+        help="do not write; exit 0 if the rebuilt report matches the existing one, "
+        "1 if it differs",
+    )
+    p_reduce.set_defaults(handler=_cmd_reduce)
 
     p_agent = sub.add_parser(
         "agent-profile",

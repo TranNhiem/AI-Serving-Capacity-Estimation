@@ -105,10 +105,23 @@ best.
 | KV offload to host | `swap_space` / CPU offload | KV pool above VRAM, ITL tail on miss | sustained-tier collapse at the exact concurrency the headline number claims |
 | Speculative decoding | draft model + acceptance config | decode tok/s per active step | measured ÷ theoretical approaches or exceeds 1.0 — per spec a measurement error unless the draft is declared and active-param accounting is corrected |
 | Scheduler / concurrency limits | `max_num_seqs`, waiting-queue policy | which requests queue, and the tail | open-loop saturation reported as user capacity (the spec's canonical sin) |
+| Media preprocessing | `media_preprocessing`, `limit_mm_per_prompt`, `mm_processor_cache_gb` | tokens charged per image, media admitted per request, images that skip preprocessing | see below |
 
 The rule is not that these features are forbidden — several are the correct production
 choice — it is that each is a different system. C2 requires tagging every number that
 depends on one.
+
+The last row is the one whose failure will not fit in a table cell, and it is the newest.
+For a media-bearing workload the serving layer holds cost configuration that no other layer
+records: the per-image soft-token tier the server was launched on, which on one measured
+processor is selectable across a range whose ends differ by a factor of sixteen; a pixel
+budget that silently downscales rather than rejects, so the benchmark measures a mix the
+report does not name; a per-prompt media limit whose default of one image turns a
+multi-image request into a millisecond-long rejection; and a processor cache that is on by
+default and lets a repeating corpus skip preprocessing entirely. Each of these was measured
+moving capacity by up to an integer multiple, none is derivable from the model layer, and
+each MUST be declared. The mechanisms, the measurements and the run-validity consequences
+are [chapter 9](09-multimodal-and-reasoning.md)'s, and are not repeated here.
 
 ## R7 — Cross-framework field map
 
@@ -131,7 +144,12 @@ observed behaviour as `(M)` or mark the field `(U)`. Never guess a default.
 ## Conformance notes
 
 A `serving` declaration missing R1, R3 or R5 fails C1 outright. Figures detached from the
-R2 topology fail C3. Feature-driven tier differences (R6) without declarations fail C2.
-Remember C5: the binding constraint of every capacity figure in later chapters will have
-been set by the knobs declared here — this chapter is where `weights`, `kv`, `throughput`
-and `slo` outcomes are manufactured.
+R2 topology fail C3. Feature-driven tier differences (R6) without declarations fail C2, and
+for a media-bearing workload that includes R6's last row: a figure whose real constraint is
+media in flight rather than tokens in flight describes a different system the moment the
+soft-token tier moves. Remember C5: the binding constraint of every capacity figure in later
+chapters will have been set by the knobs declared here — this chapter is where `weights`,
+`kv`, `throughput` and `slo` outcomes are manufactured. One caveat, measured and recorded in
+§9.2: on an engine with a multimodal encoder cache there is a fifth bound that none of those
+four names, so for a media-dense workload C5's answer is the binding floor *among the ones
+the model prices*, and the report has to say so.

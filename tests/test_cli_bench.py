@@ -317,19 +317,40 @@ def test_a_run_from_a_foreign_working_directory_writes_beside_the_config_not_the
     assert not (elsewhere / "report.json").exists()
 
 
-def test_the_reproduction_table_names_the_declared_engine_log_not_the_resolved_path(
-    tmp_path, monkeypatch
-):
+def test_the_reproduction_table_names_the_engine_log_the_bundle_froze(tmp_path, monkeypatch):
     """A report that names an absolute path from the machine that produced it cannot be
-    checked by anyone else. The harness needs the resolved path to hash the file; what it
-    publishes is the string the operator wrote."""
+    checked by anyone else, and a report that names the live log names a file the server
+    keeps changing. Below the snapshot cap the harness copies the log into the bundle and
+    publishes the copy, so the path resolves for a reader and the bytes stay put."""
     config_dir = tmp_path / "cfg"
     config_dir.mkdir()
     path = _write(config_dir, _config(config_dir, **{"output.engine_logs_path": "engine.log"}))
     _run_offline(monkeypatch)
     assert main(["bench", path]) == 0
     report = json.loads((config_dir / "report.json").read_text(encoding="utf-8"))
-    assert report["reproduction"]["engine_logs_path"] == "engine.log"
+    published = report["reproduction"]["engine_logs_path"]
+    assert not pathlib.Path(published).is_absolute()
+    assert (config_dir / published).read_text(encoding="utf-8") == "fixture engine log\n"
+
+
+def test_a_run_whose_server_keeps_logging_still_produces_a_bundle_that_verifies(
+    tmp_path, monkeypatch
+):
+    """The end-to-end form of the defect a GB200 campaign found. Every real run leaves the
+    server up -- the next rung needs it -- so the log grows between the bundle being written
+    and anyone checking it, and the pre-snapshot harness published a bundle that could never
+    verify. Asserted through the CLI because the failure needed the whole path: the C8 check
+    forces the log inside the report directory, and the writer then hashed it in place."""
+    from ascep.bench.persist import verify_bundle
+
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    path = _write(config_dir, _config(config_dir, **{"output.engine_logs_path": "engine.log"}))
+    _run_offline(monkeypatch)
+    assert main(["bench", path]) == 0
+    with (config_dir / "engine.log").open("a", encoding="utf-8") as fp:
+        fp.write("Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0\n")
+    assert verify_bundle(config_dir / "bundle") == []
 
 
 def test_the_c8_refusal_names_both_the_declared_string_and_where_it_resolved(

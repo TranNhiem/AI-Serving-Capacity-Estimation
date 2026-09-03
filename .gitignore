@@ -18,3 +18,9 @@ results/
 
 # local, never committed — see tools/check_no_secrets.py
 .ascep-denylist
+
+# Campaign working files: a 54 MB third-party corpus index and a symlink into the
+# cluster image tree. The corpus is pinned in the report by name and digest, not by
+# being republished here.
+examples/*/corpus.jsonl
+examples/*/media

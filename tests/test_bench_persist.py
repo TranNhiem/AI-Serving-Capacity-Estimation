@@ -18,6 +18,7 @@ import pathlib
 import pytest
 
 from ascep import ASCEP_VERSION, __version__
+from ascep.bench import persist
 from ascep.bench.driver import Boundary, WindowPolicy, WindowRun
 from ascep.bench.persist import capture_environment, verify_bundle, write_bundle
 from ascep.bench.records import Outcome, RequestRecord, read_records
@@ -82,8 +83,8 @@ class _Manifest:
 
 
 def _write(tmp_path, runs=None, **kw):
-    # The engine log is the caller's artifact and is passed through, not copied: it can be
-    # gigabytes, and a harness that duplicated it would fill the disk it just measured on.
+    # Small, so the bundle snapshots it. A real engine log can be gigabytes, and the
+    # pass-through path that handles those is exercised below with a lowered cap.
     (tmp_path / "engine.log").write_text("KV cache size: 574798 tokens\n")
     base = dict(
         runs=runs if runs is not None else [_run(0), _run(1, t0=30.0)],
@@ -333,6 +334,94 @@ def test_an_extra_file_may_not_take_the_name_of_an_artifact_the_bundle_owns(tmp_
     manifest cannot report, because it would be hashing the substitute."""
     with pytest.raises(ValueError):
         _write(tmp_path, extra_files={"records.jsonl": b"not the records\n"})
+
+
+# --- the engine log: frozen when it is small, tolerated when it is still growing --------
+
+
+def _manifest(tmp_path) -> dict:
+    return json.loads((tmp_path / "bundle" / "manifest.json").read_text())
+
+
+def test_a_small_engine_log_is_copied_into_the_bundle_rather_than_hashed_in_place(tmp_path):
+    """Hashing it in place was the original behaviour and it cannot survive a live server.
+
+    The engine writes another line the moment the bundle is closed, so the manifest digest is
+    stale before the operator finishes reading the report and verify_bundle calls an intact
+    bundle modified. A copy is the frozen evidence C8 is asking for, and it is the whole file
+    -- an archive somebody downloads has to carry the log, not a path to one.
+    """
+    reproduction = _write(tmp_path)
+    snapshot = tmp_path / "bundle" / "engine.log"
+    assert snapshot.read_text() == (tmp_path / "engine.log").read_text()
+    assert reproduction["engine_logs_path"] == "bundle/engine.log"
+    assert "engine.log" in _manifest(tmp_path)["sha256"]
+    assert "hashed_prefix_bytes" not in _manifest(tmp_path)
+
+
+def test_a_snapshotted_log_verifies_after_the_server_writes_more_of_it(tmp_path):
+    """The regression this pins is the one that failed a real GB200 bundle: the run ended,
+    the server stayed up, and the next request it served invalidated the manifest."""
+    _write(tmp_path)
+    with (tmp_path / "engine.log").open("a") as fp:
+        fp.write("Avg prompt throughput: 0.0 tokens/s\n")
+    assert verify_bundle(tmp_path / "bundle") == []
+
+
+def test_a_snapshotted_log_that_lives_outside_the_report_directory_is_still_publishable(
+    tmp_path,
+):
+    """Engine logs habitually live in /var/log or /tmp, which _relpath has to refuse because
+    an absolute path in the reproduction table resolves on one machine. Copying moots the
+    refusal: what the table names is the copy, and the copy is inside the bundle."""
+    elsewhere = tmp_path / "var"
+    elsewhere.mkdir()
+    (elsewhere / "vllm.out").write_text("Available KV cache memory: 104.88 GiB\n")
+    reproduction = _write(tmp_path, engine_logs_path=elsewhere / "vllm.out")
+    assert reproduction["engine_logs_path"] == "bundle/engine.log"
+    assert (tmp_path / "bundle" / "engine.log").read_text().startswith("Available KV")
+
+
+def test_an_engine_log_above_the_cap_is_hashed_where_it_lies_with_its_length(tmp_path, monkeypatch):
+    """A server up for a week writes a log the bundle has no business duplicating. Above the
+    cap the manifest key walks out of the bundle, which is what a pass-through log is, and
+    the recorded length is what lets a grown log be told from a substituted one."""
+    monkeypatch.setattr(persist, "ENGINE_LOG_SNAPSHOT_MAX_BYTES", 8)
+    reproduction = _write(tmp_path)
+    assert reproduction["engine_logs_path"] == "engine.log"
+    assert not (tmp_path / "bundle" / "engine.log").exists()
+    prefixes = _manifest(tmp_path)["hashed_prefix_bytes"]
+    assert prefixes == {"../engine.log": (tmp_path / "engine.log").stat().st_size}
+
+
+def test_verify_accepts_a_pass_through_log_the_server_only_appended_to(tmp_path, monkeypatch):
+    """The bytes the manifest hashed are the evidence; the ones after them are the server's
+    later life. Reporting that as tampering means no bundle from a still-running server ever
+    verifies, which teaches a reader to ignore the check."""
+    monkeypatch.setattr(persist, "ENGINE_LOG_SNAPSHOT_MAX_BYTES", 8)
+    _write(tmp_path)
+    with (tmp_path / "engine.log").open("a") as fp:
+        fp.write("Engine iteration timed out\n" * 200)
+    assert verify_bundle(tmp_path / "bundle") == []
+
+
+def test_verify_refuses_a_pass_through_log_whose_recorded_prefix_changed(tmp_path, monkeypatch):
+    """A longer file is not automatically an appended-to one. A log rotated and replaced by a
+    different server's output is longer too, and the prefix check is the only thing between
+    that and a bundle that verifies against evidence it never saw."""
+    monkeypatch.setattr(persist, "ENGINE_LOG_SNAPSHOT_MAX_BYTES", 8)
+    _write(tmp_path)
+    (tmp_path / "engine.log").write_text("a different server said something else entirely\n")
+    assert "engine.log" in " ".join(verify_bundle(tmp_path / "bundle"))
+
+
+def test_verify_refuses_a_pass_through_log_that_was_truncated(tmp_path, monkeypatch):
+    """Shorter than the length recorded means the evidence has been thrown away, and the
+    prefix tolerance must not reach it: hashing fewer bytes than were hashed cannot match."""
+    monkeypatch.setattr(persist, "ENGINE_LOG_SNAPSHOT_MAX_BYTES", 8)
+    _write(tmp_path)
+    (tmp_path / "engine.log").write_text("KV cache size:")
+    assert "engine.log" in " ".join(verify_bundle(tmp_path / "bundle"))
 
 
 # --- the packages block pins the serving stack, not just the platform -------------------

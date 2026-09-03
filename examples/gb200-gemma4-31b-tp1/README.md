@@ -242,3 +242,33 @@ by declaration.
 - **Do not read `partial` as a failed run.** It is a published measurement with declared gaps
   and a published description of what closing them takes. The grade says which inputs are
   absent, not that the numbers are unsound.
+
+## Corrections a later campaign found in this bundle's declarations
+
+The multi-image campaign at [`../gb200-gemma4-31b-multi-image/`](../gb200-gemma4-31b-multi-image/)
+served the same checkpoint and, because it actually sent images, exercised three media fields
+this campaign only transcribed. Two of them were wrong here. The declarations and the report in
+this directory are left exactly as they were run -- editing an input after the fact would break
+the correspondence between the bundle and the numbers it produced -- so the corrections are
+recorded here instead.
+
+- **`model.image_tokens_fixed: 280` overstates the cost by about 5.6 percent.** 280 is the
+  checkpoint's own soft-tokens-per-image setting, transcribed from its config. Measured against
+  the running server it is a ceiling the preprocessor approaches but never reaches: over 24
+  resolutions the charged cost was 256 to 274 tokens, mean 265, and it depends on aspect ratio
+  rather than on pixel count. This campaign sent no images, so nothing here was affected; a
+  reader pricing an image workload from this file would have been.
+- **`model.video_frame_policy: "n-a"` is wrong, and `input_modalities` is missing `video`.**
+  The checkpoint ships a `Gemma4VideoProcessor` with `do_sample_frames: true`, `num_frames: 32`
+  and `max_soft_tokens: 70`, and the engine sizes its encoder cache "profiled with 3 video items"
+  at startup. The policy is `uniform-count` at a flat 2,240 tokens per clip regardless of
+  duration. `n-a` was an assumption from a text-only run, not a finding.
+- **`serving` has no `media_preprocessing` object**, which is correct for a text-only run and is
+  why C4 stays quiet here. The multi-image bundle fills it, and the number that belongs in it --
+  a 645,120-pixel budget, about 0.65 megapixels -- is the one that decides what this deployment
+  actually sees of a scanned page.
+
+The general lesson is the one the dead-rule doctrine already states in the other direction: a
+field that a campaign does not exercise is a field that campaign cannot check, and transcribing
+a config value into it looks exactly like measuring it. The `_tag` mechanism marks a number as
+measured, inferred or unknown for exactly this reason, and these three fields carried no tag.

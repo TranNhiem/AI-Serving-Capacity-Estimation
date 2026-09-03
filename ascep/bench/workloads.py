@@ -658,9 +658,7 @@ class MultimodalJsonlCorpus(PromptSource):
                     # resident cost -- the server fetches from url_prefix instead.
                     self._encode_once(resolved, lineno)
                 size = sizes[index] if kind == "image" else (None, None)
-                media.append(
-                    _MediaRef(kind=kind, rel_path=rel, width=size[0], height=size[1])
-                )
+                media.append(_MediaRef(kind=kind, rel_path=rel, width=size[0], height=size[1]))
         return _MmRecord(
             text=MEDIA_PLACEHOLDER.sub(" ", text).strip(),
             media=tuple(media),

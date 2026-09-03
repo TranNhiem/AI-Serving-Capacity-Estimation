@@ -162,26 +162,37 @@ def _window_records(records: list[RequestRecord], window: dict) -> list[RequestR
 def _median_counted_repetition(summaries):
     """The one repetition a rung publishes, re-derived rather than imported.
 
-    Ranks by ``output_tok_s`` with a stable sort and takes the LOWER median, so an even
-    count picks the slower of the two middle windows. A repetition whose reduction produced
-    no throughput figure is ranked alongside the others only when every repetition is in
-    that state: ``None`` means the tokens were never counted, which is neither a fast window
-    nor a zero one, and sorting it to either end is a claim -- at the top it becomes the
-    median of a half-collapsed rung and publishes the best window as typical.
+    Ranks by ``output_tok_s`` and then by ``ttft_p95_s``, with a stable sort, and takes the
+    LOWER median, so an even count picks the slower of the two middle windows. A repetition
+    whose reduction produced no throughput figure is ranked alongside the others only when
+    every repetition is in that state: ``None`` means the tokens were never counted, which
+    is neither a fast window nor a zero one, and sorting it to either end is a claim -- at
+    the top it becomes the median of a half-collapsed rung and publishes the best window as
+    typical. A missing ``ttft_p95_s`` sorts last inside its throughput group, for the same
+    reason: an unmeasured tail is not a short one.
+
+    The second key is not decoration. Under ``ignore_eos`` with a declared output length,
+    repetitions that complete the same number of requests tie exactly on ``output_tok_s``,
+    the stable sort becomes a no-op, and the choice collapses to submission order -- so the
+    rule would be "the second window submitted" while claiming to be a median.
 
     A free function so the rule can be exercised on synthetic input below, rather than only
-    on a bundle that may not exist yet. It reads ``output_tok_s`` and nothing else.
+    on a bundle that may not exist yet. It reads those two attributes and nothing else.
     """
     ranked = [s for s in summaries if s.output_tok_s is not None] or list(summaries)
-    ordered = sorted(ranked, key=lambda s: s.output_tok_s or 0.0)
+    ordered = sorted(
+        ranked,
+        key=lambda s: (s.output_tok_s or 0.0, s.ttft_p95_s is None, s.ttft_p95_s or 0.0),
+    )
     return ordered[(len(ordered) - 1) // 2]
 
 
 class _Ranked(NamedTuple):
-    """A stand-in for the one WindowSummary attribute the picker reads."""
+    """A stand-in for the two WindowSummary attributes the picker reads."""
 
     label: str
     output_tok_s: float | None
+    ttft_p95_s: float | None = None
 
 
 def test_the_rung_picker_takes_the_lower_median_and_never_ranks_a_dead_window():
@@ -211,6 +222,36 @@ def test_the_rung_picker_takes_the_lower_median_and_never_ranks_a_dead_window():
     # the reduction's own nulls carry the (U) forward.
     all_dead = [_Ranked("a", None), _Ranked("b", None)]
     assert _median_counted_repetition(all_dead).output_tok_s is None
+
+
+def test_windows_that_tie_on_throughput_are_ranked_by_latency_not_by_arrival_order():
+    """A fixed output length makes throughput ties the normal case, not the edge one.
+
+    Every request under ``ignore_eos`` emits exactly the declared number of tokens, so two
+    windows that complete the same number of requests report the same ``output_tok_s`` to
+    every digit. Ranking on throughput alone then leaves a stable sort with nothing to do
+    and submission order picks the published window -- observed on a GB200 media ladder,
+    where the report published the second repetition at all six rungs, once quoting 7.972 s
+    from a rung whose three windows measured 8.769, 7.972 and 9.412 s. The fastest window,
+    published as typical, is the exact failure the lower-median rule was written to prevent,
+    reintroduced through the back door of a tie.
+    """
+    tied = [
+        _Ranked("first", 833.3, 8.769),
+        _Ranked("second", 833.3, 7.972),
+        _Ranked("third", 833.3, 9.412),
+    ]
+    assert _median_counted_repetition(tied).label == "first"
+
+    # Reordering the same three windows must not change the answer. Order-dependence is the
+    # defect; a picker that still reads arrival order would return "second" here.
+    reordered = [tied[1], tied[2], tied[0]]
+    assert _median_counted_repetition(reordered).label == "first"
+
+    # An unmeasured tail sorts last within its throughput group rather than to the front,
+    # where it would displace a measured window and publish the faster survivor as typical.
+    with_null_tail = [_Ranked("a", 500.0, 2.0), _Ranked("b", 500.0, None), _Ranked("c", 500.0, 3.0)]
+    assert _median_counted_repetition(with_null_tail).label == "c"
 
 
 def test_a_bundle_backed_example_verifies_its_own_manifest(bundle):

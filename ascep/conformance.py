@@ -1,4 +1,4 @@
-"""Completeness and consistency grader for the ASCEP conformance rules C1-C11.
+"""Completeness and consistency grader for the ASCEP conformance rules C1-C12.
 
 The JSON Schemas (ascep.validation) validate structure and vocabulary; this module grades
 what a schema cannot express: that every null is justified, that every number carries a
@@ -133,7 +133,7 @@ class Verdict:
 
 
 def check(report: dict) -> Verdict:
-    """Grade ``report`` against C1-C11 and return the computed verdict."""
+    """Grade ``report`` against C1-C12 and return the computed verdict."""
     if not isinstance(report, dict):
         findings = (
             Finding(
@@ -156,6 +156,7 @@ def check(report: dict) -> Verdict:
     _check_c9(report, findings)
     _check_c10(report, findings)
     _check_c11(report, findings)
+    _check_c12(report, findings)
     ordered = tuple(sorted(findings, key=lambda f: (f.rule, f.path)))
     claimed = report.get("conformance")
     return Verdict(
@@ -517,7 +518,7 @@ def _warn_schema_skipped(findings: list[Finding]) -> None:
             path="report",
             message=(
                 "Install jsonschema and ship the schemas/ directory: structural "
-                "validation was skipped, so this verdict covers C1-C11 semantics only."
+                "validation was skipped, so this verdict covers C1-C12 semantics only."
             ),
         )
     )
@@ -1555,3 +1556,93 @@ def _check_c11(report: dict, findings: list[Finding]) -> None:
                 message=message,
             )
         )
+
+
+# ---------------------------------------------------------- C12 repetition dispersion
+
+
+#: The gate-bearing statistics a rung row reports when it measured anything at all. A row
+#: carrying any of these as a number is making a measured claim, and a measured claim published
+#: with no repetition spread beside it asks the reader to trust a point estimate whose stability
+#: is unknown.
+_C12_MEASURED_FIELDS = ("ttft_p95_s", "itl_p95_s", "e2e_p95_s", "output_tok_s", "error_rate_pct")
+
+
+def _check_c12(report: dict, findings: list[Finding]) -> None:
+    """Require every measured rung of a repeated run to publish its repetition spread.
+
+    Where run.repeats declares two or more repetitions, a rung row reporting measured figures
+    must carry a dispersion block over the gate-bearing statistics, or dispersion: null with a
+    dispersion_u_reason opening '(U) ' that says why fewer than two windows counted. The wrong
+    outcome this prevents is the silent point estimate. On a GB200 multi-image ladder the
+    ttft_p95_s spread across the three counted windows ran from 0.78 percent at concurrency 64
+    to 31.49 percent at concurrency 7, and concurrency 7 is where the cost shows: its windows
+    measured 2.2554, 2.4452 and 3.0255 s against a 2.5 s gate, so the row published the lower
+    median 2.4452 with slo_pass true beside outcome failed, and nothing on the page reconciled
+    the two. Without the block a reader also compares two reports across a difference smaller
+    than either run's own noise.
+
+    An error in the C6-C12 band, so it caps the grade at partial rather than non-conforming: a
+    report that measured honestly and did not publish the spread is not in the class of one
+    whose capacity arithmetic does not close, and a fatal grade would retroactively condemn
+    every report the harness emitted before the field existed. Skipped when repeats is absent
+    or below 2, where the single-repetition run is already section 6's finding and C12 would
+    only restate it less usefully. Aborted rows are exempt: an aborted rung has no counted
+    window at all, and demanding a spread over zero windows would force an invented null reason
+    for a rung that never ran.
+    """
+    run = _get(report, "run")
+    repeats = _get(run, "repeats")
+    if not _is_number(repeats) or repeats < 2:
+        return
+    results = _get(run, "results")
+    if not isinstance(results, list):
+        # No rung rows exist to grade; the missing results are C1's finding, and repeating it
+        # here would bill one gap to two rules.
+        return
+    for index, row in enumerate(results):
+        if not isinstance(row, dict):
+            continue
+        # The schema's outcome enum is lowercase -- complete, failed, invalid, aborted -- and
+        # comparing against an uppercase spelling would make this exemption dead code, so every
+        # aborted rung would be asked to justify a spread it could never have.
+        if row.get("outcome") == "aborted":
+            continue
+        if not any(_is_number(row.get(field)) for field in _C12_MEASURED_FIELDS):
+            # A rung publishing no measured figure makes no claim whose stability could be
+            # unknown; its nulls are C1's finding, not a dispersion gap.
+            continue
+        if "dispersion" not in row:
+            findings.append(
+                Finding(
+                    rule="C12",
+                    severity="error",
+                    path=f"run.results.{index}.dispersion",
+                    message=(
+                        f"Add run.results.{index}.dispersion with the per-repetition spread of "
+                        "the gate-bearing statistics, or set it to null with a "
+                        "dispersion_u_reason opening '(U) ' that says why fewer than two "
+                        "windows counted at this rung: an omitted key reads as 'not "
+                        "applicable', so a censored rung and a rung nobody measured twice are "
+                        "indistinguishable on the page."
+                    ),
+                )
+            )
+            continue
+        if row["dispersion"] is None:
+            reason = row.get("dispersion_u_reason")
+            if not isinstance(reason, str) or not reason.startswith("(U) "):
+                findings.append(
+                    Finding(
+                        rule="C12",
+                        severity="error",
+                        path=f"run.results.{index}.dispersion_u_reason",
+                        message=(
+                            f"Give run.results.{index}.dispersion_u_reason as a string opening "
+                            "'(U) ' that says why fewer than two windows counted at this rung: "
+                            "a bare null carries no cause, so a reader cannot tell a censored "
+                            "rung from a forgotten one, and the sustainable tier resting on it "
+                            "has an unknown stability."
+                        ),
+                    )
+                )
