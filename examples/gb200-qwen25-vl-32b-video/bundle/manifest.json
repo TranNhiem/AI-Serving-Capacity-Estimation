@@ -1,0 +1,28 @@
+{
+  "sha256": {
+    "records.jsonl": "02117cab9164f7e160fc4401411b46e3565d5d0642b1031e26e70c5af74a3add",
+    "run_configs.json": "a25b66e3923eb6730fd42e70baeeb2d4b24645649b01b3c0da2474c82ac461ce",
+    "environment.json": "f4250222894abb6eb9b738d8ae457c5173353cced6f71d047d18c066d3fb86cf",
+    "engine.log": "25849d5e9ae0aa3ce6f57896a600def0057f7298e44493c007e25ac0a1c22163",
+    "bench-config.json": "566f05ee8ef2c624870aab8b3516811a2c790389e8771d0bed4e3bc7ddd38eae",
+    "declarations/hardware.json": "13a5ee8c9cd019a528dde15bbb4122cdcaaa71a36d2547d2f2010ddfcdc6ac8f",
+    "declarations/model.json": "85301e4f5eb3ee4a52f62e21d65a8ceeab80daee14f871a2d26988f70a367d90",
+    "declarations/serving.json": "b1cbcc5467a27b661d16e3e8533060dac1f485a81225dc6f97488c31cf40fbb9",
+    "declarations/workload.json": "0350485f970141afe8ad3a9064e107a0535d66b2717938383db0ec11bbc88f89"
+  },
+  "redactions": {
+    "engine.log": {
+      "sha256_original": "7c7848317df2ebb306ad8b06d4897a04a8a4be55d7b83be53e4118b11463ec79",
+      "substitutions": [
+        {
+          "replacement": "/models/Qwen2.5-VL-32B-Instruct",
+          "occurrences": 6
+        },
+        {
+          "replacement": "REDACTED-NODE-IP",
+          "occurrences": 1
+        }
+      ]
+    }
+  }
+}

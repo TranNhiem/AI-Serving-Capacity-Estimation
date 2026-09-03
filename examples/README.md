@@ -55,6 +55,9 @@ has to be backed by artifacts, never an exemption from having any.
 | [`moe-26b-h100-tp2`](moe-26b-h100-tp2/) | MoE, 26B total / 4B active, bf16 | 1× 8-GPU H100 SXM node | TP=2 | **partial** | throughput |
 | [`qwen3-vl-4b-h100-image-qa`](qwen3-vl-4b-h100-image-qa/) | dense Qwen3-VL-4B-Instruct, bf16, vision | 1× H100 SXM | TP=1 | **partial** | slo |
 | [`gb200-gemma4-31b-tp1`](gb200-gemma4-31b-tp1/) | dense Gemma-4-31B-it, bf16, hybrid attention | 1× NVIDIA GB200, Grace host | TP=1 | **partial** | slo |
+| [`gb200-gemma4-31b-multi-image`](gb200-gemma4-31b-multi-image/) | dense Gemma-4-31B-it, bf16, vision | 1× NVIDIA GB200, Grace host | TP=1 | **partial** | slo |
+| [`gb200-qwen25-vl-32b-multi-image`](gb200-qwen25-vl-32b-multi-image/) | dense Qwen2.5-VL-32B-Instruct, bf16, vision | 1× NVIDIA GB200, Grace host | TP=1 | **partial** | slo |
+| [`gb200-qwen25-vl-32b-video`](gb200-qwen25-vl-32b-video/) | dense Qwen2.5-VL-32B-Instruct, bf16, video | 1× NVIDIA GB200, Grace host | TP=1 | **partial** | slo |
 
 ## Workload declarations
 
@@ -73,9 +76,10 @@ also checks that the example's prose still quotes the numbers the formulas produ
 
 ## Same grade, different distance: how to read three `partial` reports
 
-This directory now holds three capacity reports, [`moe-26b-h100-tp2`](moe-26b-h100-tp2/),
+Take the first three capacity reports this directory held, [`moe-26b-h100-tp2`](moe-26b-h100-tp2/),
 [`qwen3-vl-4b-h100-image-qa`](qwen3-vl-4b-h100-image-qa/), and
-[`gb200-gemma4-31b-tp1`](gb200-gemma4-31b-tp1/), and all three are graded `partial`. That is
+[`gb200-gemma4-31b-tp1`](gb200-gemma4-31b-tp1/). All three are graded `partial`, as is every
+media campaign added since. That is
 the teaching point. `partial` is not one condition but a spectrum, and the spectrum has a
 direction: it runs from "the information was never captured" toward "everything was captured
 except this one thing." The three examples do not spread evenly along it. One sits near the

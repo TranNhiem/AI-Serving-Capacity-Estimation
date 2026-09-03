@@ -330,6 +330,11 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
         "merge_size",
         "spatial_merge_size",
         "temporal_patch_size",
+        # The Qwen2.5-VL preprocessor function that rounds a frame to multiples of the patch
+        # size before it is tokenized. A video bundle that predicts a per-clip token count has
+        # to name it, because the prediction is only checkable by someone who can find the
+        # rounding rule -- paraphrased as "the resizer" it becomes an unverifiable assertion.
+        "smart_resize",
         # Audio-preprocessor keys from the same checkpoint configs. A bundle that says "audio
         # is accepted and unpriceable" has to name the two keys that make it so, because the
         # claim is checkable only by reading them: `audio_token_id` is present while

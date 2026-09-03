@@ -1,0 +1,42 @@
+{
+  "ascep_version": "0.1.0",
+  "framework": "vllm",
+  "framework_version": "0.18.2rc1.dev73+gdb7a17ecc",
+  "container_digest": null,
+  "container_digest_u_reason": "(U) the serving container is a local enroot root filesystem with no image manifest or registry digest on disk; established by rebuilding it from a named registry tag and recording the RepoDigest, or by hashing the squashfs the root filesystem was imported from.",
+  "tensor_parallel": 1,
+  "pipeline_parallel": 1,
+  "gpu_count": 1,
+  "max_model_len": 32768,
+  "memory_utilization": 0.9,
+  "batching_mode": "continuous",
+  "prefix_caching": "on",
+  "kv_cache_offload": "off",
+  "kv_cache_quantized": "off",
+  "chunked_prefill": "on",
+  "speculative_decoding": "off",
+  "engine_reported_kv_cache_tokens": 396016,
+  "cold_start_to_ready_s": 117,
+  "image_input_transport": "base64",
+  "media_preprocessing": {
+    "video_sampling_fps": null,
+    "video_sampling_fps_u_reason": "(U) this deployment delivers no sampling rate to declare: --media-io-kwargs video.num_frames 16 selects a frame count, not a rate, so the fps a clip is effectively sampled at falls out of its duration and varies 21-fold across this corpus. video_max_frames below is the delivered control, and the realized fps distribution is characterized in the workload notes because neither schema has a field for it. Launching with a rate-based frame policy instead would give this field a value.",
+    "video_max_frames": 16,
+    "image_pixel_budget_px": 1003520,
+    "mm_processor_cache_gb": 0.0,
+    "per_request_override_supported": false,
+    "notes": {
+      "video_max_frames": "16, set at launch through --media-io-kwargs with video.num_frames 16, so no client can move it. The engine takes min(num_frames, total_frames) and then min of that and floor(duration x fps); every clip in this corpus is longer than 16 frames at 30 fps native, so all 1,000 are sampled at exactly 16. This is the flag that makes the video cost per request a constant per resolution rather than a function of clip length, and it is the single most consequential number in this file.",
+      "image_pixel_budget_px": "1,003,520 pixels, set at launch through --mm-processor-kwargs with max_pixels 1,003,520 and min_pixels 3,136 in the same flag. Both video resolutions in this corpus, 960x768 at 737,280 pixels and 640x480 at 307,200, are below the budget, so the clamp does not bind on this workload and every frame is priced at its native geometry. It is declared because it would bind on a higher-resolution corpus, silently: above the budget the preprocessor downscales the frame to fit rather than rejecting the request, and nothing in the token counts reveals the rescale.",
+      "mm_processor_cache_gb": "Set to 0 on purpose, as in both multi-image campaigns on this tray. The ladder draws with replacement from a 1,000-record corpus and a 120 s window at the upper rungs issues enough requests to repeat records, so a cache would serve repeats that the workload's unique-media-prefix policy says cannot happen. With the cache off every request pays host-side demux, decode, frame sampling and patchify in full, and a record drawn a second time is decoded a second time rather than served from a cache, which is what makes the declared policy true. On video this matters more than it did on images: the decode being cached is the single largest piece of host work in the request.",
+      "per_request_override_supported": "Declared false and not exercised. Both the frame count and the pixel budget are applied at launch, not per request, so no per-request media_io_kwargs or mm_processor_kwargs a client could send is part of this declaration."
+    }
+  },
+  "notes": {
+    "the_encoder_cache_is_a_memory_consumer_ascep_does_not_model_and_it_bound_first": "This is the finding this campaign was not looking for, and it is the one an operator sizing a video service most needs. The first video request to this engine did not run slowly; it was refused with HTTP 400, reporting that a video item of length 19,552 exceeded the pre-allocated encoder cache size of 8,960. The encoder cache is a distinct pool from the KV cache, holding vision-tower output for items that have been encoded but not yet consumed by prefill. vLLM sizes it from --max-num-batched-tokens, so on this build the default gave 8,960 tokens, and the engine measured the refused clip at 19,552 -- 2.18 times the budget, on its own, with nothing else in flight. The unit matters: 19,552 is the encoder cache's own accounting of the item, not the 7,346 post-merge media tokens the language model then sees for a 960x768 clip, and this campaign did not establish the conversion between the two. What it did establish is the operational fact, which is that one clip overran the default budget by itself, so no batching or profiling-headroom argument is needed to explain the refusal. Relaunching with --max-num-batched-tokens 32768 raised the encoder cache to 32,768 tokens and made the workload servable. The cost is measurable and was measured: the multi-image campaign on this identical checkpoint, tray and gpu_memory_utilization reported a 415,584-token KV pool, and this one reports 396,016. Raising the batched-token budget for the encoder cache therefore cost 19,568 KV tokens, 4.78 GiB, 4.71 percent of the original 415,584-token pool -- equivalently 4.94 percent of the 396,016 tokens this file declares. The denominator has to be stated, because the two differ. Two things follow. First, ASCEP's KV floor is computed against a pool that a media flag can move without any declaration in this schema changing, which is a protocol gap recorded here rather than patched by inventing a field in an example. Second, and more sharply: on a video workload the encoder cache can refuse requests before the KV cache is anywhere near full, so the binding constraint at the bottom of the ladder is not one of ASCEP's four floors at all. A capacity estimate that only checked weights, KV, prefill and throughput would have predicted a working server and got a 400 on the first request.",
+    "max_num_batched_tokens_is_doing_two_jobs_at_once": "32,768 was chosen to size the encoder cache, but it is also the scheduler's per-step token budget and it equals max_model_len exactly. That coincidence is not load-bearing here and should not be read as tuning: chunked prefill is on, so a single 8,008-token request never approaches the budget, and the figure was raised until video was admitted rather than until throughput peaked. An operator reproducing this bundle who wants to separate the two effects would have to vary the flag and watch both the encoder-cache line and the KV pool line in the startup log, which is the experiment this campaign did not run.",
+    "limit_mm_per_prompt_is_a_launch_flag_the_protocol_cannot_hold": "The engine was launched admitting up to 2 videos and 16 images per prompt, against a corpus that sends exactly 1 video and no images. The margin is deliberate: the engine default of 1 video would have served this corpus correctly, but a rejected request is not a slow request, it returns in milliseconds, so an under-set limit inflates throughput and empties the media out of a media benchmark while every SLO gate still passes. media_arrival_check catches that after the fact and the flag is what stops it from firing at all. ASCEP has no field for the per-modality admission limit, so as in both sibling bundles it is recorded here in prose.",
+    "prefix_caching_is_on_and_on_this_workload_it_has_almost_nothing_to_cache": "Inherited on from the sibling campaigns for comparability. It is worth saying what it can do here, which is very little: the corpus policy is unique-prefix, every request carries a distinct clip, and roughly 91.5 percent of the mean prompt is video tokens that no other request shares. The only shareable span is the chat template preamble. This is not an argument for turning it off -- it costs nothing idle -- but a reader should not attribute any of this bundle's throughput to it.",
+    "max_num_seqs_was_256_at_launch_and_never_bound": "The launch set --max-num-seqs 256, far above the highest ladder rung of 32, so the engine's sequence-slot limit is not part of any result in this bundle. It is recorded because it is not an ASCEP schema field and a reader reproducing the launch command needs it."
+  }
+}

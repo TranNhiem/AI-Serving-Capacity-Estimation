@@ -1,0 +1,28 @@
+{
+  "ascep_version": "0.1.0",
+  "gpu_model": "NVIDIA GB200",
+  "gpu_count": 1,
+  "nodes": 1,
+  "gpus_per_node": 4,
+  "vram_bytes_per_gpu": 198674743296,
+  "interconnect_intra_node": "NVLink 5",
+  "interconnect_inter_node": null,
+  "interconnect_inter_node_u_reason": "(U) single-GPU campaign on one tray; no inter-node path was exercised, so nothing about multi-node scaling is claimed here",
+  "node_exclusivity": "exclusive",
+  "driver_version": "580.126.09",
+  "compute_runtime_version": "CUDA 13.0",
+  "hbm_bandwidth_bytes_s": 8000000000000,
+  "dense_bf16_flops_per_s": 2500000000000000,
+  "cpu_model": "NVIDIA Grace (Arm Neoverse-V2)",
+  "cpu_cores": 144,
+  "system_ram_bytes": 1026841051136,
+  "storage_class": "WekaFS parallel filesystem, shared",
+  "model_load_path": "shared parallel filesystem, not node-local NVMe",
+  "notes": {
+    "cpu_cores": "144 is the machine's physical core count -- lscpu reports 2 sockets of 72 Neoverse-V2 cores -- not an allocation, and not what this deployment had to itself. The tray carries four GB200 GPUs against those two sockets, and this campaign used one GPU, so a fully loaded tray divides the same cores four ways. The serving process was not pinned or cgroup-limited: cpu.max is unset, and nproc inside the session reports 128, so 16 of the 144 are outside the default affinity mask.",
+    "the_host_does_more_work_here_than_in_either_sibling_campaign": "The two multi-image bundles on this tray noted that a media request makes the host decode and patchify before the vision tower sees a tensor, and that none of it was separated out of ttft. On video that caveat gets larger, and it is worth stating in proportion. Every request in this run carries one H.264 clip with a median size of 3.67 MB and a median duration of 57.55 s, which the server must demux and decode on these Grace cores, sample down to 16 frames, resize and patchify. The image campaign's per-request host work was roughly 4.19 PNG decodes averaging 337 KB each; this request is one video decode of 1,726 frames at the median, of which all but 16 are thrown away. In bytes the video request is only about 3.1 times the image request -- 4.38 MB against 1.41 MB of raw media -- so bytes understate it; the gap that matters is in decoded frames, where 1,726 against 4.19 is more than two orders of magnitude. Nothing in this campaign instruments that split: no host-side profile was taken, and the ttft figures in this bundle are end to end. Reading them as accelerator time would credit the GPU with work these cores did, and on this workload that misattribution is larger than on any previous bundle here.",
+    "the_decode_is_thrown_away_and_that_is_a_sizing_fact_not_a_footnote": "At 30 fps native and a 57.55 s median clip, the median request delivers 1,726 decoded frames to the sampler, which keeps 16. The discarded 99.1 percent still cost host CPU, and they scale with clip duration while the GPU-side cost does not: a 240 s clip and an 11 s clip both cost exactly 16 frames of vision tokens, and differ by more than twenty-fold in decode work. An operator sizing a video service from GPU-side figures alone will therefore mis-size the host, and the direction of the error grows with the length of the clips. This tray's 36 physical cores per GPU is a generous ratio; a box with fewer cores per GPU could become host-bound before the GPU is.",
+    "system_ram_and_the_corpus": "The corpus holds every clip base64-inlined in memory for the duration of the run so that no request waits on the filesystem, which is the only way the arrival times mean anything. 1,000 records at 4,381,298,125 bytes of MP4 is about 5.84 GB, or 5.44 GiB, once base64-expanded, against 1,026 GB of system RAM. That is comfortable, and it would still have been comfortable at the source split's full 2,000 records, so RAM is not what set the corpus size and saying it was would overstate the constraint. The cut to the first 1,000 records bounds build time and resident footprint, it was taken when the corpus file was written rather than by the bench config's media_max_records field, which is null in this run, and it is recorded in the workload declaration rather than left implicit.",
+    "the_load_generator_shared_the_host": "The client ran on this same machine, so it competed for the cores the server was decoding on. The corpus pre-encodes its media once at construct time rather than per request, so base64 encoding is not repeatedly charged to the machine under test, but the JSON serialization of a roughly 5.84 MB request body at the mean, 4.89 MB at the median clip, still is, and that body is about 3.1 times larger than the image campaign's 1.88 MB. A deployment whose clients are remote does not pay that part, and would push the same bytes across a network this campaign did not exercise."
+  }
+}
