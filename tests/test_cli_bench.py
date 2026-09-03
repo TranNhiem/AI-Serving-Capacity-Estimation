@@ -995,6 +995,81 @@ def test_media_root_on_a_synthetic_corpus_is_refused_as_a_text_run_under_a_media
     assert "would silently measure a text one" in err
 
 
+def test_a_text_corpus_reads_the_declared_prompt_field_and_not_a_hardcoded_one(tmp_path):
+    """'prompt_field' used to be honoured only when 'media_root' was set; a text corpus was
+    pinned to "messages", which no protocol section names and no published config carries.
+    Every post-training corpus nests its prompt under "conversations", so a text campaign
+    against a real dataset died at load -- and an operator who declared the right field had
+    the declaration silently ignored."""
+    corpus = tmp_path / "text.jsonl"
+    corpus.write_text(
+        json.dumps({"turns": [{"from": "human", "value": "declared prompt"}]}) + "\n",
+        encoding="utf-8",
+    )
+    config = _config(
+        tmp_path,
+        **{
+            "workload.corpus": str(corpus),
+            "workload.input_tokens": None,
+            "workload.cache_policy": "declared-workload",
+            "workload.prompt_field": "turns",
+        },
+    )
+    workload = bench_run._build_workload(config, str(tmp_path))
+    assert workload.source.field == "turns"
+    assert workload.for_repetition(0)(0).messages[0]["content"] == "declared prompt"
+
+
+def test_a_text_corpus_with_no_prompt_field_declared_defaults_to_conversations(tmp_path):
+    """The default the optional-key table documents. It had documented "conversations" while
+    the code used "messages" the whole time, so the table described a config that did not
+    exist."""
+    corpus = tmp_path / "text.jsonl"
+    corpus.write_text(
+        json.dumps({"conversations": [{"from": "human", "value": "default prompt"}]}) + "\n",
+        encoding="utf-8",
+    )
+    config = _config(
+        tmp_path,
+        **{
+            "workload.corpus": str(corpus),
+            "workload.input_tokens": None,
+            "workload.cache_policy": "declared-workload",
+        },
+    )
+    workload = bench_run._build_workload(config, str(tmp_path))
+    assert workload.source.field == "conversations"
+    assert workload.for_repetition(0)(0).messages[0]["content"] == "default prompt"
+
+
+def test_stripping_media_placeholders_from_a_media_run_is_refused(tmp_path, capsys):
+    """The key declares the text-only variant of a media-bearing corpus. Accepting it
+    alongside 'media_root' would let a report claim the media was stripped from a run that
+    sent every image."""
+    corpus = tmp_path / "mm.jsonl"
+    corpus.write_text(
+        json.dumps(
+            {"conversations": [{"from": "human", "value": "<image> q"}], "image": ["a.png"]}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        _dry_run(
+            tmp_path,
+            **{
+                "workload.corpus": str(corpus),
+                "workload.input_tokens": None,
+                "workload.media_root": ".",
+                "workload.strip_media_placeholders": True,
+            },
+        )
+        != 0
+    )
+    err = capsys.readouterr().err
+    assert "'strip_media_placeholders' is true" in err
+
+
 def test_a_media_root_that_is_not_a_directory_is_refused_before_the_first_request(tmp_path, capsys):
     """A run that cannot find its images does not fail, it measures something else.
     Refusing before the first request is the whole point, because the alternative is

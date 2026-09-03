@@ -138,8 +138,13 @@ _OPTIONAL_KEY_CITATIONS = {
         "media_url_prefix": "section 9",
         # Cap on records, for a smoke run.
         "media_max_records": "section 9",
-        # Where the prompt text lives in each record; default "conversations".
+        # Where the prompt text lives in each record; default "conversations". Read by both
+        # corpus readers, so it selects the same turn whether or not 'media_root' is set.
         "prompt_field": "section 9",
+        # Send a media-bearing corpus as its text-only variant, markers removed. Opting in
+        # from the config is the only way the reader's own error message can be acted on;
+        # without it that message names a Python argument an operator cannot reach.
+        "strip_media_placeholders": "section 9",
         # True when 'corpus' is a shapes file written by `ascep agent-profile --shapes`
         # rather than a prompt corpus: the ladder then replays whole captured sessions,
         # each step carrying the prompt growth, the generated length and the gap the
@@ -181,6 +186,7 @@ _TYPES = {
     ("workload", "media_url_prefix"): (str, type(None)),
     ("workload", "media_max_records"): (int, type(None)),
     ("workload", "prompt_field"): (str,),
+    ("workload", "strip_media_placeholders"): (bool,),
     ("workload", "replay_sessions"): (bool,),
     ("window", "window_s"): (int, float),
     ("window", "drain_deadline_s"): (int, float),
@@ -813,6 +819,16 @@ def _build_workload(config, config_dir):
             "media, so this config asks for a media run and would silently measure a "
             "text one (section 9)"
         )
+    strip_media = bool(wl.get("strip_media_placeholders", False))
+    if strip_media and (media_root is not None or corpus == "synthetic"):
+        raise ConfigError(
+            "'strip_media_placeholders' is true, but this config is not reading a corpus as "
+            "text: it declares "
+            + ("'media_root'" if media_root is not None else "the synthetic corpus")
+            + " (section 9). The key exists to send a media-bearing corpus as its text-only "
+            "variant, so accepting it here would let a report claim the media was stripped "
+            "from a run that sent every image"
+        )
     replay_sessions = bool(wl.get("replay_sessions", False))
     if replay_sessions and corpus == "synthetic":
         raise ConfigError(
@@ -863,7 +879,16 @@ def _build_workload(config, config_dir):
                 run_label=wl["run_label"],
             )
         if media_root is None:
-            source = workloads.JsonlCorpus(corpus_path, field="messages")
+            # 'prompt_field' is read here as well as on the multimodal path. It used to be
+            # honoured only when 'media_root' was set, and a text corpus was pinned to a
+            # hardcoded "messages" no protocol section names and no published config ever
+            # carried -- so a text campaign against any post-training corpus died at load,
+            # and an operator who declared 'prompt_field' had it silently ignored.
+            source = workloads.JsonlCorpus(
+                corpus_path,
+                field=wl.get("prompt_field", "conversations"),
+                strip_media_placeholders=bool(wl.get("strip_media_placeholders", False)),
+            )
         else:
             source = _build_multimodal_corpus(wl, corpus_path, media_root, config_dir)
     if wl["ignore_eos"]:

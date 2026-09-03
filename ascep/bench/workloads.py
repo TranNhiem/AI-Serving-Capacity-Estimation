@@ -292,6 +292,62 @@ def _resolve(record: object, steps: list[str], lineno: int, field: str) -> objec
     return node
 
 
+def _is_turn_list(value: object) -> bool:
+    """True for a ShareGPT conversation list, false for an OpenAI content-parts list.
+
+    Both are lists of objects, and which one it is decides whether the text reader has found
+    a prompt or a multimodal record it must refuse. Sending a content-parts list through the
+    turn reader would refuse it as "no human turn", which points the operator at the
+    conversation format instead of at the image the corpus actually carries.
+    """
+    return isinstance(value, list) and any(
+        isinstance(turn, dict) and "from" in turn for turn in value
+    )
+
+
+def _human_turn(turns: object, lineno: int, field: str) -> tuple[str, bool]:
+    """Pull the prompt out of a list of conversation turns, and say whether the answer was a
+    thinking-mode one.
+
+    Shared by the text and multimodal readers on purpose. The two used to walk the same
+    ShareGPT shape with two copies of the rule, so ``prompt_field: conversations`` could have
+    come to mean a different turn in a text campaign than in a media one -- a difference that
+    changes every published prompt-token figure and shows up nowhere in the report.
+    """
+    if not isinstance(turns, list):
+        raise ValueError(
+            f"line {lineno}: field {field!r} must be a list of conversation turns, "
+            f"got {type(turns).__name__}"
+        )
+    text: str | None = None
+    has_reasoning = False
+    for turn in turns:
+        if not isinstance(turn, dict):
+            raise ValueError(
+                f"line {lineno}: field {field!r} -- a conversation turn must be an object, "
+                f"got {type(turn).__name__}"
+            )
+        speaker = turn.get("from")
+        value = turn.get("value")
+        if speaker == "human" and text is None:
+            if not isinstance(value, str):
+                raise ValueError(
+                    f"line {lineno}: the human turn's value must be text, "
+                    f"got {type(value).__name__}"
+                )
+            text = value
+        # A dict-shaped gpt value carrying "reasoning" is the corpus declaring a
+        # thinking-mode record; counted so the run's reasoning_mode is declared
+        # from evidence rather than guessed.
+        if speaker == "gpt" and isinstance(value, dict) and "reasoning" in value:
+            has_reasoning = True
+    if text is None:
+        raise ValueError(
+            f"line {lineno}: no human turn in {field!r}; the prompt has nowhere to come from"
+        )
+    return text, has_reasoning
+
+
 @dataclass
 class JsonlCorpus(PromptSource):
     """A JSONL file of text prompts, fully read and validated at construction. A corpus
@@ -317,11 +373,18 @@ class JsonlCorpus(PromptSource):
             if not line.strip():
                 continue
             value = _resolve(json.loads(line), steps, lineno, self.field)
-            if not isinstance(value, str):
+            if _is_turn_list(value):
+                # A conversation turn list, the shape every post-training corpus writes.
+                # Refusing it would leave the operator pre-flattening the dataset into a
+                # second file, and then the manifest digest pins the copy rather than the
+                # dataset the campaign claims to have served.
+                value, _ = _human_turn(value, lineno, self.field)
+            elif not isinstance(value, str):
                 # A multimodal value flattened to text would publish an input_tokens the
                 # server never saw.
                 raise ValueError(
-                    f"line {lineno}: field {self.field!r} must be text, got {type(value).__name__}"
+                    f"line {lineno}: field {self.field!r} must be text or a list of "
+                    f"conversation turns, got {type(value).__name__}"
                 )
             if MEDIA_PLACEHOLDER.search(value):
                 if not self.strip_media_placeholders:
@@ -582,38 +645,7 @@ class MultimodalJsonlCorpus(PromptSource):
 
     def _parse_record(self, record: dict, lineno: int, steps: list[str]) -> _MmRecord:
         turns = _resolve(record, steps, lineno, self.prompt_field)
-        if not isinstance(turns, list):
-            raise ValueError(
-                f"line {lineno}: field {self.prompt_field!r} must be a list of "
-                f"conversation turns, got {type(turns).__name__}"
-            )
-        text: str | None = None
-        has_reasoning = False
-        for turn in turns:
-            if not isinstance(turn, dict):
-                raise ValueError(
-                    f"line {lineno}: field {self.prompt_field!r} -- a conversation turn "
-                    f"must be an object, got {type(turn).__name__}"
-                )
-            speaker = turn.get("from")
-            value = turn.get("value")
-            if speaker == "human" and text is None:
-                if not isinstance(value, str):
-                    raise ValueError(
-                        f"line {lineno}: the human turn's value must be text, "
-                        f"got {type(value).__name__}"
-                    )
-                text = value
-            # A dict-shaped gpt value carrying "reasoning" is the corpus declaring a
-            # thinking-mode record; counted so the run's reasoning_mode is declared
-            # from evidence rather than guessed.
-            if speaker == "gpt" and isinstance(value, dict) and "reasoning" in value:
-                has_reasoning = True
-        if text is None:
-            raise ValueError(
-                f"line {lineno}: no human turn in {self.prompt_field!r}; the prompt has "
-                "nowhere to come from"
-            )
+        text, has_reasoning = _human_turn(turns, lineno, self.prompt_field)
         images = _media_list(record, "image", lineno)
         videos = _media_list(record, "video", lineno)
         image_markers = len(_IMAGE_MARKER.findall(text))

@@ -474,6 +474,39 @@ def test_a_nested_field_path_reaches_the_prompt_where_it_actually_lives(tmp_path
     assert w.manifest()["corpus_field"] == "conversations.0.value"
 
 
+def test_a_turn_list_is_read_the_same_way_the_multimodal_reader_reads_one(tmp_path):
+    """Pointing 'prompt_field' at the conversation list itself is what an operator writes,
+    because that is what the multimodal reader wants. Both readers now take the first human
+    turn from the same code, so the same declaration cannot select a different turn -- and a
+    different turn is a different prompt-token figure with nothing in the report saying so."""
+    path = tmp_path / "conv.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": 1,
+                "conversations": [
+                    {"from": "human", "value": "the prompt"},
+                    {"from": "gpt", "value": "the answer"},
+                ],
+            }
+        )
+        + "\n"
+    )
+    corpus = JsonlCorpus(path=path, field="conversations")
+    w = _workload(source=corpus, cache_policy="declared-workload")
+    assert w.for_repetition(0)(0).messages[0]["content"] == "the prompt"
+
+
+def test_a_turn_list_with_no_human_turn_is_refused_rather_than_sent_empty(tmp_path):
+    """An assistant-only record has no prompt. Sending it as the empty string would publish
+    an input_tokens the corpus never contained."""
+    path = tmp_path / "conv.jsonl"
+    path.write_text(json.dumps({"conversations": [{"from": "gpt", "value": "answer"}]}) + "\n")
+    with pytest.raises(ValueError) as exc:
+        JsonlCorpus(path=path, field="conversations")
+    assert "no human turn" in str(exc.value)
+
+
 def test_a_nested_path_that_does_not_resolve_names_the_component_that_failed(tmp_path):
     """A bare "missing field" over a dotted path sends the operator to grep the wrong key."""
     path = tmp_path / "conv.jsonl"
