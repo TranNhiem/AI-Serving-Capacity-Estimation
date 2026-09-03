@@ -1,0 +1,1165 @@
+{
+  "ascep_version": "0.5.0",
+  "report_generated_utc": "2026-09-03T07:06:21Z",
+  "conformance": "partial",
+  "conformance_note": "This report was emitted by `ascep bench` and graded afterwards. A load generator observes latency and throughput over HTTP and nothing else, so the four report sections it cannot observe -- the roofline comparison, the sizing result, the scaling table, and the theoretical and recommended capacity tiers -- are left unknown rather than estimated, and they are why the grade is what it is. The claim below was written by `ascep conformance` from the findings it computed; running that command again on this file reproduces the grade.",
+  "hardware": {
+    "ascep_version": "0.1.0",
+    "gpu_model": "NVIDIA GB200",
+    "gpu_count": 1,
+    "nodes": 1,
+    "gpus_per_node": 4,
+    "vram_bytes_per_gpu": 198674743296,
+    "interconnect_intra_node": "NVLink 5",
+    "interconnect_inter_node": null,
+    "interconnect_inter_node_u_reason": "(U) single-GPU campaign on one tray; no inter-node path was exercised, so nothing about multi-node scaling is claimed here",
+    "node_exclusivity": "exclusive",
+    "driver_version": "580.126.09",
+    "compute_runtime_version": "CUDA 13.0",
+    "hbm_bandwidth_bytes_s": 8000000000000,
+    "dense_bf16_flops_per_s": 2500000000000000,
+    "cpu_model": "NVIDIA Grace (Arm Neoverse-V2)",
+    "cpu_cores": 144,
+    "system_ram_bytes": 1026841051136,
+    "storage_class": "WekaFS parallel filesystem, shared",
+    "model_load_path": "shared parallel filesystem, not node-local NVMe",
+    "notes": {
+      "cpu_cores": "144 is the machine's physical core count -- lscpu reports 2 sockets of 72 Neoverse-V2 cores -- not an allocation, and not what this deployment had to itself. The tray carries four GB200 GPUs against those two sockets, and this campaign used one GPU, so a fully loaded tray divides the same cores four ways. The serving process was not pinned or cgroup-limited: cpu.max is unset, and nproc inside the session reports 128, so 16 of the 144 are outside the default affinity mask.",
+      "cpu_is_on_the_critical_path_here_and_was_not_in_the_text_campaign": "The companion text run at ../gb200-gemma4-31b-tp1/ declared this core count without exercising it, because a text prompt reaches the GPU as token ids and the host does nothing but tokenize. A media run is different: every request carries roughly 4.19 base64 PNGs that the server must decode, resize and patchify on these Grace cores before the vision tower sees a tensor. How much of that host work the engine overlaps with other requests' prefill was not instrumented here: no host-side profile was taken, and nothing in this campaign separates decode time from GPU time inside ttft. The latency figures in this bundle are therefore end-to-end, and reading them as pure accelerator time would credit the GPU with work these cores did. Two consequences for a reader sizing from this bundle. First, the same GPU-side capacity numbers can be unreachable on a host with fewer cores per GPU, and this tray's ratio of 36 physical cores per GPU is generous; a 2-GPU-per-socket box would halve it. Second, the load generator ran on this same host, so client and server competed for the cores -- the corpus pre-encodes its media once at construct time rather than per request (131.1 s to build, 6,124,064,253 bytes resident) precisely so that base64 encoding is not repeatedly charged to the machine under test, but the JSON serialization of a roughly 1.9 MB request body still is. A deployment whose clients are remote does not pay that part.",
+      "system_ram_is_a_real_constraint_for_a_base64_media_run": "The corpus holds every encoded image in memory for the duration of the run so that no request waits on the filesystem, which is the only way the arrival times mean anything. At 3,256 records and 4.19 images each that is 6.1 GB against 1,026 GB of system RAM -- comfortable here, and worth stating because it does not stay comfortable: the same design on a 100,000-record corpus of larger images would not fit, which is what media_max_records in the bench config exists to bound."
+    }
+  },
+  "model": {
+    "ascep_version": "0.1.0",
+    "model_id": "gemma-4-31b-it",
+    "revision": null,
+    "revision_u_reason": "(U) served from a local checkpoint directory with no upstream commit recorded. Consequence: the architecture fields below are read from the checkpoint's own config.json and are exact for the bytes that were served, but a reader cannot pin the same bytes from a hub revision.",
+    "total_params": 31273088876,
+    "active_params": 31273088876,
+    "architecture": "dense",
+    "moe_experts": null,
+    "moe_experts_u_reason": "(U) not applicable: the model is dense, so there is no expert layout to declare",
+    "moe_top_k": null,
+    "moe_top_k_u_reason": "(U) not applicable: the model is dense",
+    "weight_precision": "bf16",
+    "kv_precision": "bf16",
+    "n_layers": 60,
+    "n_kv_heads": 16,
+    "head_dim": 256,
+    "attention_type": "hybrid",
+    "global_layer_frac": 0.16666666666666666,
+    "sliding_window_tokens": 1024,
+    "native_max_context_tokens": 262144,
+    "weight_bytes_on_disk": 62546177752,
+    "weight_bytes_tag": "M",
+    "licence": "Gemma Terms of Use",
+    "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "audio"
+    ],
+    "reasoning_modes": [
+      "non-thinking"
+    ],
+    "image_token_policy": "fixed-grid",
+    "image_tokens_fixed": 265,
+    "video_frame_policy": "uniform-count",
+    "video_temporal_merge": null,
+    "video_temporal_merge_u_reason": "(U) the checkpoint's video_processor declares no temporal pooling: it samples 32 frames and prices each one independently at its own soft-token budget, so there is no divisor to declare. Consequence: frame count and token count are proportional on this model, and a reader cannot assume the halving that a temporally merged encoder would give.",
+    "vision_encoder_params": 569550384,
+    "vision_encoder_replicated_per_rank": null,
+    "vision_encoder_replicated_per_rank_u_reason": "(U) the campaign ran at tensor_parallel 1, where there is only one rank and replication is therefore unobservable. Consequence: the weights floor measured here must not be extrapolated to TP>1 without re-measuring, because a replicated 570 M-parameter tower costs 1.1 GiB on every added rank.",
+    "notes": {
+      "attention_layout": "Hybrid, 5:1 local:global. 50 of the 60 layers are sliding_attention with a 1,024-token window; 10 are full_attention, so global_layer_frac is 10/60.",
+      "kv_engine_prices_the_sliding_layers_at_full_length": "The engine's KV token count is the all-layers-full closed form, not the hybrid one. 2 * 2 bytes * 16 kv heads * 256 head_dim * 60 layers is 983,040 bytes per token; times the engine's 114,544 tokens is 104.868 GiB, against the 104.88 GiB it reports as 'Available KV cache memory' -- ascep.capacity.kv_bytes_per_token reproduces the engine to 0.011 percent. Adding --limit-mm-per-prompt image=16 to the launch did not move either figure: the multimodal encoder cache is a separate 8,192-token budget, so this campaign's KV pool is byte-identical to the text campaign it is meant to be compared against.",
+      "image_tokens_fixed_is_measured_here_not_transcribed": "The checkpoint's config.json declares vision_soft_tokens_per_image 280, and the text-only campaign in ../gb200-gemma4-31b-tp1/ transcribed that number into this field without exercising it. Serving it says otherwise. Sending one image and subtracting the same prompt without it, the cost is 256 to 274 tokens over 24 distinct resolutions, mean 265.1, and 280 is never charged. The cost does not depend on resolution at all: one picture resized from 32x32 to 2048x2048 square costs 260 tokens at every size, and six different pictures scaled to 512x512 all cost 260. It depends only on aspect ratio, and the mechanism is legible in the numbers -- the preprocessor lays the image on the integer patch grid R x C whose ratio best matches the image and whose product does not exceed the 280-token budget, then adds 4 wrapper tokens. A square takes 16x16 because 17x17 is 289 and overruns the budget, giving 256 + 4 = 260; a 4:3 image takes 14x19 = 266 + 4 = 270; a 2:1 image takes 11x23 = 253 + 4 = 257. So 280 is a ceiling the grid can approach but not reach, and declaring it as the charged cost overstates every image by about 5.6 percent. This field carries that mean rounded to the integer the schema takes. Three numbers for one price appear across this bundle and they do not disagree: 265.1 is the unweighted mean over the 24 synthetic resolutions probed here, 265.23 is the image-weighted mean over 300 draws from the corpus this ladder actually sends (workload.notes.where_the_media_numbers_come_from), and 265 is what this field can hold. One further fact fell out of probing whether the budget can be overridden per request: the engine's rejection message names the whole ladder of legal budgets, (70, 140, 280, 560, 1120). 280 is a chosen tier and not an architectural constant, 70 is the tier the video path uses, and a deployment that launched on 1120 would charge roughly four times as much per image with nothing in this file changing to say so -- which is why serving.media_preprocessing.image_pixel_budget_px, not this field, is where a reader should look for what an image cost on the day.",
+      "fixed_grid_is_the_right_policy_and_the_protocol_has_no_better_one": "fixed-grid is defensible here in the sense that matters for capacity -- the cost is independent of the image's size, so a corpus of 5-megapixel images costs the same as a corpus of thumbnails -- but it is not exactly right, because the cost still moves by up to 7 percent with aspect ratio. dynamic-resolution is worse: it models tokens as growing with pixel count, which this model does not do. declared-table is worse still, since it picks the smallest row covering the image's width and height and is therefore monotone in size. The protocol's three-value vocabulary has no term for an aspect-adaptive fixed budget, which is what this model and several current vision encoders implement, and this report declares fixed-grid with a measured constant rather than inventing a fourth value in an example.",
+      "parameter_split": "language_model 30,697,345,340; vision_tower 569,550,384; embed_vision projector 6,193,152. Summed from the safetensors headers, not from the model card.",
+      "video_is_declared_from_the_checkpoint_not_from_a_measurement": "The text campaign at ../gb200-gemma4-31b-tp1/ declared video_frame_policy n-a and left video out of input_modalities, and both were wrong. The checkpoint ships a Gemma4VideoProcessor with do_sample_frames true, num_frames 32 and max_soft_tokens 70, and the engine says so out loud at startup -- it sizes its encoder cache 'profiled with 3 video items of the maximum feature size' -- so this deployment accepts video and resamples every clip to a fixed 32 frames regardless of duration. That is uniform-count, not uniform-fps and certainly not n-a. The arithmetic that follows is worth stating because it is what a capacity model needs: 70 soft tokens per frame times 32 frames is 2,240 tokens per clip, flat, so on this model a 10-second clip and a 10-minute clip cost the same and the cost of video is entirely a question of how many clips are in flight. Three of them fill the 8,192-token encoder cache, which is why the engine profiled exactly three. None of this was measured here -- no video was sent -- so it is declared as the deployment's stated behaviour and campaign 1 on Qwen2.5-VL exists to measure the same fields on a model that samples by rate instead.",
+      "audio_is_accepted_and_the_protocol_still_cannot_price_it": "The checkpoint's config.json carries audio_token_id and an audio_config key, but audio_config is null in these weights and no audio tower is present, so audio is declared as an accepted modality and left unmeasured. The token model is nevertheless fully specified in processor_config.json and is worth recording, because it is the shape an ASCEP audio field would have to hold: audio_ms_per_token 40 and audio_seq_length 750 against a 16 kHz Gemma4AudioFeatureExtractor, which is 25 tokens per second of speech capped at 30 seconds, or 750 tokens for any clip at or beyond that length. So audio prices like video does here -- a flat ceiling rather than a rate -- and the cap is the thing an operator would get wrong. ASCEP cannot represent any of it: audio appears only as an input_modalities enum value, with no audios_per_request, no audio token model and no corpus support. That is a protocol gap this campaign is recording rather than patching, and the candidate model for closing it is Nemotron-3-Nano-Omni, which carries a real sound_config."
+    }
+  },
+  "serving": {
+    "ascep_version": "0.1.0",
+    "framework": "vllm",
+    "framework_version": "0.18.2rc1.dev73+gdb7a17ecc",
+    "container_digest": null,
+    "container_digest_u_reason": "(U) the engine ran from an enroot container created out of a local squashfs image, which carries no registry digest. Consequence: the framework_version string above is the only handle on the engine build, and a release-candidate development build is not a stable one.",
+    "tensor_parallel": 1,
+    "pipeline_parallel": 1,
+    "gpu_count": 1,
+    "max_model_len": 32768,
+    "memory_utilization": 0.9,
+    "batching_mode": "continuous",
+    "prefix_caching": "on",
+    "kv_cache_offload": "off",
+    "kv_cache_quantized": "off",
+    "chunked_prefill": "on",
+    "speculative_decoding": "off",
+    "engine_reported_kv_cache_tokens": 114544,
+    "cold_start_to_ready_s": 134.0,
+    "image_input_transport": "base64",
+    "media_preprocessing": {
+      "video_sampling_fps": null,
+      "video_sampling_fps_u_reason": "(U) this preprocessor has no frames-per-second knob. The checkpoint's video_processor sets do_sample_frames true with num_frames 32, so a clip of any duration is resampled to the same 32 frames and the delivered rate is 32 divided by the clip length rather than a constant the server can declare. Consequence: a reader sizing a video workload against this deployment must reason in frames per clip, not frames per second, and the workload layer's video_sampling_fps has nothing on the serving side to be checked against.",
+      "video_max_frames": 32,
+      "image_pixel_budget_px": 645120,
+      "mm_processor_cache_gb": 0.0,
+      "per_request_override_supported": false,
+      "notes": {
+        "image_pixel_budget_px": "280 soft tokens times a 48 x 48 pixel cell, which is the 16-pixel patch under the 3 x 3 pooling kernel the checkpoint's processor_config.json declares: 280 x 2,304 = 645,120 pixels, about 0.65 megapixels. This is a budget the preprocessor rescales into, not a limit that rejects: the measurement in ../gb200-gemma4-31b-multi-image/model.json shows a 2048 x 2048 image (4.19 megapixels, six and a half times the budget) costing exactly the same 260 tokens as a 32 x 32 one, which is what the field's description means by the cap that binds silently. Every image in this corpus above roughly 0.65 megapixels -- and the corpus median is well above it -- is downscaled before the model sees it, so the accuracy this deployment delivers on a 2352 x 1695 scan is the accuracy of that scan at about 1,100 x 800. Nothing in the token counts reveals that, which is why it is declared here.",
+        "video_max_frames": "32, read from the served checkpoint's video_processor config (do_sample_frames true, num_frames 32, max_soft_tokens 70 per frame), not from a video request. This campaign sends no video, so the number is provenance rather than measurement, and it is declared rather than left null because the cap is a property of the deployment that was checked and found present. At 70 soft tokens per frame a clip costs about 2,240 tokens whatever its length, which is why the engine profiled its encoder cache with three video items and why that 8,192-token cache holds only three clips at once.",
+        "per_request_override_supported": "False, and established the hard way. A request carrying mm_processor_kwargs {\"max_soft_tokens\": 64} did not return HTTP 400 as the schema's default assumption expects: the engine logged 'Unsupported max_soft_tokens value: 64. Valid values are (70, 140, 280, 560, 1120)' from gemma4_mm.py:483 and then called sys.exit(1) inside the processor, which terminated the API server for every other client on the endpoint. So this field is false in a stronger sense than the protocol contemplates, and the finding generalises past this model: a deployment that accepts mm_processor_kwargs from untrusted clients has a one-request denial of service. The valid-values list is itself informative -- the budget is selectable from (70, 140, 280, 560, 1120) soft tokens and 280 is the default, so image cost on this model is a chosen tier and not an architectural constant. No measurement was lost: the ladder had already finished and its bundle had already been pulled when the server died.",
+        "mm_processor_cache_gb": "Set to 0 on purpose, so every request pays host-side decode and patchify and no image is preprocessed twice. This is the second run of this campaign and the reason for the second run. The first run took vLLM's default of 4 GiB, and the engine's own MM cache hit rate ran between 12 and 54 percent across the ladder -- 13 percent at the tail of the highest rung -- because the load generator draws with replacement from 3,256 records and a 120 s window at concurrency 128 issues more requests than the corpus has records. Those hits are free images. They contradict the workload's declared unique-prefix cache policy, they flatter throughput by an amount nobody can read off the report, and they are an artefact of corpus size against window length rather than anything a production deployment would see. Turning the cache off makes the declared policy true. The comparison between the two runs is in the README and is the measurement of how much a media benchmark flatters itself."
+      }
+    },
+    "notes": {
+      "cold_start_measurement": "Read off the engine log rather than by polling: 10:56:33 on the first banner line to 10:58:47 on the last route registration, which is the line immediately before uvicorn reports application startup complete. Resolution is the log's 1 s, and the launch command ran a moment before the first line prints, so this is a lower bound by well under a second. The companion text run declared 140.3 s for the same model on the same tray by polling /v1/models every 5 s, which is an upper bound by up to 5 s plus the poll that missed; the two figures are the same start measured two ways and should not be read as a media penalty. Neither the multimodal limit nor disabling the media processor cache slowed the start, and neither moved the memory layout: this boot reports the same 104.88 GiB and 114,544 KV tokens and the same 8,192-token encoder cache as the cached-media boot before it, so the two runs of this campaign differ in exactly one thing. What the number covers: 62.5 GB of weights off the shared parallel filesystem, 36.43 s of torch.compile, 12 s of CUDA graph capture, and 74.78 s the engine attributes to init overall. What it does not cover: a genuinely cold filesystem -- this checkpoint had been served minutes earlier so the WekaFS client and page cache were warm -- and any scheduler queueing, since nothing here waited for an allocation.",
+      "limit_mm_per_prompt_is_a_launch_flag_the_protocol_cannot_hold": "The engine was launched with --limit-mm-per-prompt {\"image\":16} because this corpus reaches 16 images in a single record and the default of 1 rejects such a request with HTTP 400. That failure mode is worth naming: a rejected request is not a slow request, it returns in milliseconds, so an under-set limit inflates throughput and empties the media out of a media benchmark while every gate still passes. media_arrival_check catches it after the fact by comparing the media the workload declared against the media the server was actually sent; the flag is what stops it from firing. ASCEP has no field for it -- the serving schema can express prefix caching, chunked prefill and quantization but not the per-modality admission limit -- so it is recorded here in prose, which means an operator reproducing this bundle has to read the note.",
+      "the_multimodal_encoder_cache_is_a_second_budget_and_it_is_small": "The engine allocated an 8,192-token encoder cache, separate from and additional to the 114,544-token KV pool, and profiled it with three video items of maximum feature size even though this run sends only images. At the measured 265 tokens per image that cache holds about 30 images, or roughly 7 requests worth of this corpus, and it is the ceiling on how many images can be in flight through the vision tower at once -- a bound that does not appear in any of ASCEP's four capacity floors. It did not bind at the concurrencies this ladder reached, but it is the reason a media run cannot be sized from the KV floor alone, and the reason the images_per_request axis has a ceiling that the tokens_per_request axis does not.",
+      "kv_pool_is_byte_identical_to_the_text_campaign": "114,544 tokens and 104.88 GiB, the same figures the text run at ../gb200-gemma4-31b-tp1/ reported, because the encoder cache above is carved out of a different budget and the multimodal limit does not touch KV. That is deliberate: the two campaigns differ only in what the prompts carry, so a difference in the measured capacity is attributable to the media and not to a differently sized engine.",
+      "prefix_caching_is_on_and_does_almost_nothing_here": "The workload uses cache_policy unique-prefix, which prepends a distinct salt to every request, so no two requests share a prefix by construction; the engine agrees, reporting a prefix cache hit rate of 0.0 percent for the whole run. The media are nearly unique as well, though not perfectly so: 13,644 image references over 13,631 distinct files, with 13 images appearing in two records each, which would leave almost nothing to reuse even without the salt. The setting is inherited from the text campaign for comparability rather than exercised. A media workload with a shared system image -- a document template, a UI screenshot the agent keeps re-reading -- would behave very differently, and that case is campaign 6's, not this one's."
+    }
+  },
+  "run": {
+    "ascep_version": "0.5.0",
+    "engine_version": null,
+    "engine_version_u_reason": "(U) bench observes an HTTP endpoint, not a build; the engine version was never visible to the load generator",
+    "container_digest": null,
+    "container_digest_u_reason": "(U) the operator did not declare a container digest; bench pulls HTTP responses, not image registries",
+    "warmup_seconds": 32.565775971429375,
+    "repeats": 3,
+    "sustained_window_seconds": 120,
+    "concurrency_ladder": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "percentile_method": "hyndman-fan-type-7",
+    "tokenizer": null,
+    "tokenizer_u_reason": "(U) bench ships no tokenizer: the local token count required by chapter 4.7.1 was not taken, so the server's usage numbers are unchecked",
+    "outlier_method": "none",
+    "open_loop": false,
+    "slo_gates": {
+      "ttft_p95_max_s": 2.5,
+      "itl_p95_max_s": 0.0667,
+      "e2e_p95_max_s": 120,
+      "error_rate_max_pct": 1.0,
+      "declared_before_run": true
+    },
+    "environment_capture_path": "bundle/environment.json",
+    "raw_records_path": "bundle/records.jsonl",
+    "engine_logs_path": "bundle/engine.log",
+    "results": [
+      {
+        "input_tokens": 1060.625,
+        "output_tokens": 500.0,
+        "concurrency": 4,
+        "ttft_p50_s": 0.7423595839936752,
+        "ttft_p95_s": 1.6016999760031467,
+        "ttft_p99_s": null,
+        "ttft_p99_s_u_reason": "(U) 48 samples; p99 requires 100 (section 4.3)",
+        "itl_p50_s": 0.01546549729856836,
+        "itl_p95_s": 0.017006739065340833,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 9.520403091178741,
+        "e2e_p99_s": null,
+        "e2e_p99_s_u_reason": "(U) 48 samples; p99 requires 100 (section 4.3)",
+        "output_tok_s": 183.33333333333334,
+        "requests_per_s": 0.36666666666666664,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": true,
+        "outcome": "complete",
+        "provenance": "M",
+        "context_tokens": 1560.625,
+        "tokens_per_stream_chunk": 1.085383502170767,
+        "stream_chunk_gap_p50_s": 0.015272288001142442,
+        "stream_chunk_gap_p95_s": 0.0303047359775519,
+        "prefill_tok_s": 397.90833333333336,
+        "measured_input_output_ratio": 2.1704090909090907,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 1.563739078422077,
+            "median": 1.6016999760031467,
+            "max": 1.8420658560149605,
+            "n": 3,
+            "spread_pct": 17.38
+          },
+          "itl_p95_s": {
+            "min": 0.017006739065340833,
+            "median": 0.017031669287435162,
+            "max": 0.017232382816841352,
+            "n": 3,
+            "spread_pct": 1.32
+          },
+          "e2e_p95_s": {
+            "min": 9.484473731202888,
+            "median": 9.520403091178741,
+            "max": 9.603847088027397,
+            "n": 3,
+            "spread_pct": 1.25
+          },
+          "output_tok_s": {
+            "min": 183.33333333333334,
+            "median": 183.33333333333334,
+            "max": 183.33333333333334,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
+      },
+      {
+        "input_tokens": 1174.3,
+        "output_tokens": 500.0,
+        "concurrency": 5,
+        "ttft_p50_s": 1.2038817919965368,
+        "ttft_p95_s": 1.8628632175852542,
+        "ttft_p99_s": null,
+        "ttft_p99_s_u_reason": "(U) 60 samples; p99 requires 100 (section 4.3)",
+        "itl_p50_s": 0.01580656198798707,
+        "itl_p95_s": 0.01774606785405346,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 9.868709700799082,
+        "e2e_p99_s": null,
+        "e2e_p99_s_u_reason": "(U) 60 samples; p99 requires 100 (section 4.3)",
+        "output_tok_s": 229.16666666666666,
+        "requests_per_s": 0.4583333333333333,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": true,
+        "outcome": "complete",
+        "provenance": "M",
+        "context_tokens": 1674.3,
+        "tokens_per_stream_chunk": 1.113916530521313,
+        "stream_chunk_gap_p50_s": 0.01570025601540692,
+        "stream_chunk_gap_p95_s": 0.03146954078983981,
+        "prefill_tok_s": 558.4583333333334,
+        "measured_input_output_ratio": 2.436909090909091,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 1.7321585440047784,
+            "median": 1.8628632175852542,
+            "max": 1.8768439456034678,
+            "n": 3,
+            "spread_pct": 7.77
+          },
+          "itl_p95_s": {
+            "min": 0.017608939148676964,
+            "median": 0.01774606785405346,
+            "max": 0.01781209604176581,
+            "n": 3,
+            "spread_pct": 1.14
+          },
+          "e2e_p95_s": {
+            "min": 9.868709700799082,
+            "median": 9.947313958426822,
+            "max": 10.28810596636904,
+            "n": 3,
+            "spread_pct": 4.22
+          },
+          "output_tok_s": {
+            "min": 229.16666666666666,
+            "median": 229.16666666666666,
+            "max": 229.16666666666666,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
+      },
+      {
+        "input_tokens": 1165.8484848484848,
+        "output_tokens": 500.0,
+        "concurrency": 6,
+        "ttft_p50_s": 1.3297959039919078,
+        "ttft_p95_s": 2.245773504022509,
+        "ttft_p99_s": null,
+        "ttft_p99_s_u_reason": "(U) 66 samples; p99 requires 100 (section 4.3)",
+        "itl_p50_s": 0.016220399230473186,
+        "itl_p95_s": 0.018850117162330066,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 10.358530199999223,
+        "e2e_p99_s": null,
+        "e2e_p99_s_u_reason": "(U) 66 samples; p99 requires 100 (section 4.3)",
+        "output_tok_s": 250.0,
+        "requests_per_s": 0.5,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": true,
+        "outcome": "complete",
+        "provenance": "M",
+        "context_tokens": 1665.8484848484848,
+        "tokens_per_stream_chunk": 1.1104754854123902,
+        "stream_chunk_gap_p50_s": 0.016041280003264546,
+        "stream_chunk_gap_p95_s": 0.032189424004172906,
+        "prefill_tok_s": 585.0916666666667,
+        "measured_input_output_ratio": 2.3403666666666667,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 2.0444721920066513,
+            "median": 2.245773504022509,
+            "max": 2.381316591970972,
+            "n": 3,
+            "spread_pct": 15.0
+          },
+          "itl_p95_s": {
+            "min": 0.018596502044139,
+            "median": 0.01860962024857108,
+            "max": 0.018850117162330066,
+            "n": 3,
+            "spread_pct": 1.36
+          },
+          "e2e_p95_s": {
+            "min": 10.301236879997305,
+            "median": 10.358530199999223,
+            "max": 10.59964082397346,
+            "n": 3,
+            "spread_pct": 2.88
+          },
+          "output_tok_s": {
+            "min": 250.0,
+            "median": 250.0,
+            "max": 250.0,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        }
+      },
+      {
+        "input_tokens": 1127.8311688311687,
+        "output_tokens": 500.0,
+        "concurrency": 7,
+        "ttft_p50_s": 1.4374392000027,
+        "ttft_p95_s": 2.4451655104174277,
+        "ttft_p99_s": null,
+        "ttft_p99_s_u_reason": "(U) 77 samples; p99 requires 100 (section 4.3)",
+        "itl_p50_s": 0.01654717858116943,
+        "itl_p95_s": 0.01939091664288223,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 10.904594732809347,
+        "e2e_p99_s": null,
+        "e2e_p99_s_u_reason": "(U) 77 samples; p99 requires 100 (section 4.3)",
+        "output_tok_s": 291.6666666666667,
+        "requests_per_s": 0.5833333333333334,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": true,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1627.8311688311687,
+        "tokens_per_stream_chunk": 1.0986502297177754,
+        "stream_chunk_gap_p50_s": 0.016260351985692978,
+        "stream_chunk_gap_p95_s": 0.03264694396057166,
+        "prefill_tok_s": 639.8166666666667,
+        "measured_input_output_ratio": 2.193657142857143,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 2.2553652864298788,
+            "median": 2.4451655104174277,
+            "max": 3.0254653376410716,
+            "n": 3,
+            "spread_pct": 31.49
+          },
+          "itl_p95_s": {
+            "min": 0.01939091664288223,
+            "median": 0.019722181784347415,
+            "max": 0.019959428232445012,
+            "n": 3,
+            "spread_pct": 2.88
+          },
+          "e2e_p95_s": {
+            "min": 10.904594732809347,
+            "median": 11.037007641571108,
+            "max": 11.70642775039887,
+            "n": 3,
+            "spread_pct": 7.26
+          },
+          "output_tok_s": {
+            "min": 291.6666666666667,
+            "median": 291.6666666666667,
+            "max": 291.6666666666667,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      },
+      {
+        "input_tokens": 1197.3636363636363,
+        "output_tokens": 500.0,
+        "concurrency": 8,
+        "ttft_p50_s": 1.7058453600038774,
+        "ttft_p95_s": 2.719670726417098,
+        "ttft_p99_s": null,
+        "ttft_p99_s_u_reason": "(U) 88 samples; p99 requires 100 (section 4.3)",
+        "itl_p50_s": 0.01657144654102909,
+        "itl_p95_s": 0.019494707283343675,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 11.060182644810993,
+        "e2e_p99_s": null,
+        "e2e_p99_s_u_reason": "(U) 88 samples; p99 requires 100 (section 4.3)",
+        "output_tok_s": 333.3333333333333,
+        "requests_per_s": 0.6666666666666666,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": false,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1697.3636363636363,
+        "tokens_per_stream_chunk": 1.097530556248441,
+        "stream_chunk_gap_p50_s": 0.016071024001576006,
+        "stream_chunk_gap_p95_s": 0.032134844819665886,
+        "prefill_tok_s": 803.575,
+        "measured_input_output_ratio": 2.410725,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 2.531890780793037,
+            "median": 2.719670726417098,
+            "max": 2.8500145247642648,
+            "n": 3,
+            "spread_pct": 11.7
+          },
+          "itl_p95_s": {
+            "min": 0.019494707283343675,
+            "median": 0.01961283723291575,
+            "max": 0.020017640089786716,
+            "n": 3,
+            "spread_pct": 2.67
+          },
+          "e2e_p95_s": {
+            "min": 10.884671036805958,
+            "median": 10.994815320029739,
+            "max": 11.060182644810993,
+            "n": 3,
+            "spread_pct": 1.6
+          },
+          "output_tok_s": {
+            "min": 333.3333333333333,
+            "median": 333.3333333333333,
+            "max": 333.3333333333333,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      },
+      {
+        "input_tokens": 1166.1953125,
+        "output_tokens": 500.0,
+        "concurrency": 16,
+        "ttft_p50_s": 3.4196476160141174,
+        "ttft_p95_s": 4.6954653616121504,
+        "ttft_p99_s": 5.016027067202376,
+        "itl_p50_s": 0.02101221999196888,
+        "itl_p95_s": 0.02620927341718517,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 15.125232456001687,
+        "e2e_p99_s": 15.352210997458316,
+        "output_tok_s": 466.6666666666667,
+        "requests_per_s": 0.9333333333333333,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": false,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1666.1953125,
+        "tokens_per_stream_chunk": 1.0985427144303885,
+        "stream_chunk_gap_p50_s": 0.02019968000240624,
+        "stream_chunk_gap_p95_s": 0.040383904037298635,
+        "prefill_tok_s": 1086.5583333333334,
+        "measured_input_output_ratio": 2.3283392857142857,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 4.690767182389391,
+            "median": 4.6954653616121504,
+            "max": 4.742629583977395,
+            "n": 3,
+            "spread_pct": 1.1
+          },
+          "itl_p95_s": {
+            "min": 0.02620927341718517,
+            "median": 0.026413648035233786,
+            "max": 0.027704866420829206,
+            "n": 3,
+            "spread_pct": 5.66
+          },
+          "e2e_p95_s": {
+            "min": 14.812275303999195,
+            "median": 15.125232456001687,
+            "max": 15.97710448000289,
+            "n": 3,
+            "spread_pct": 7.7
+          },
+          "output_tok_s": {
+            "min": 466.6666666666667,
+            "median": 466.6666666666667,
+            "max": 466.6666666666667,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      },
+      {
+        "input_tokens": 1214.0,
+        "output_tokens": 500.0,
+        "concurrency": 32,
+        "ttft_p50_s": 6.053917295997962,
+        "ttft_p95_s": 8.68379339198873,
+        "ttft_p99_s": 9.250191722548916,
+        "itl_p50_s": 0.029029145138338208,
+        "itl_p95_s": 0.03921150643051763,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 21.77211332800507,
+        "e2e_p99_s": 21.854457607399674,
+        "output_tok_s": 666.6666666666666,
+        "requests_per_s": 1.3333333333333333,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": false,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1714.0,
+        "tokens_per_stream_chunk": 1.0969422734128615,
+        "stream_chunk_gap_p50_s": 0.024978064000606537,
+        "stream_chunk_gap_p95_s": 0.05002524480223655,
+        "prefill_tok_s": 1599.9916666666666,
+        "measured_input_output_ratio": 2.3999875,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 8.163344432014856,
+            "median": 8.68379339198873,
+            "max": 8.881717654375825,
+            "n": 3,
+            "spread_pct": 8.27
+          },
+          "itl_p95_s": {
+            "min": 0.037647607605590556,
+            "median": 0.039211494380738614,
+            "max": 0.03921150643051763,
+            "n": 3,
+            "spread_pct": 3.99
+          },
+          "e2e_p95_s": {
+            "min": 21.454432256016297,
+            "median": 21.77211332800507,
+            "max": 21.830664088009506,
+            "n": 3,
+            "spread_pct": 1.73
+          },
+          "output_tok_s": {
+            "min": 666.6666666666666,
+            "median": 666.6666666666666,
+            "max": 666.6666666666666,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      },
+      {
+        "input_tokens": 1162.1171875,
+        "output_tokens": 500.0,
+        "concurrency": 64,
+        "ttft_p50_s": 8.9660038400325,
+        "ttft_p95_s": 15.945149791994481,
+        "ttft_p99_s": 17.34135735198506,
+        "itl_p50_s": 0.046127705843612934,
+        "itl_p95_s": 0.061001806557165666,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 34.43651808000868,
+        "e2e_p99_s": 34.51663981600723,
+        "output_tok_s": 800.0,
+        "requests_per_s": 1.6,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": false,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1662.1171875,
+        "tokens_per_stream_chunk": 1.1030869198021338,
+        "stream_chunk_gap_p50_s": 0.033615936001297086,
+        "stream_chunk_gap_p95_s": 0.06807820641552098,
+        "prefill_tok_s": 1860.6833333333334,
+        "measured_input_output_ratio": 2.325854166666667,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 15.943139760012855,
+            "median": 15.945149791994481,
+            "max": 16.066799663982238,
+            "n": 3,
+            "spread_pct": 0.78
+          },
+          "itl_p95_s": {
+            "min": 0.060407266965920275,
+            "median": 0.060984271278557975,
+            "max": 0.061001806557165666,
+            "n": 3,
+            "spread_pct": 0.97
+          },
+          "e2e_p95_s": {
+            "min": 32.99821554400842,
+            "median": 34.43651808000868,
+            "max": 34.81095956799982,
+            "n": 3,
+            "spread_pct": 5.26
+          },
+          "output_tok_s": {
+            "min": 800.0,
+            "median": 800.0,
+            "max": 800.0,
+            "n": 3,
+            "spread_pct": 0.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      },
+      {
+        "input_tokens": 1211.6707317073171,
+        "output_tokens": 500.0,
+        "concurrency": 128,
+        "ttft_p50_s": 19.567499119992135,
+        "ttft_p95_s": 53.816075206405365,
+        "ttft_p99_s": 56.87656380163624,
+        "itl_p50_s": 0.06314151294587529,
+        "itl_p95_s": 0.09019556160002429,
+        "itl_population": "per-request-mean",
+        "e2e_p95_s": 97.67566786560637,
+        "e2e_p99_s": 97.84239063964749,
+        "output_tok_s": 833.3333333333334,
+        "requests_per_s": 1.6666666666666667,
+        "gpu_util_pct": null,
+        "gpu_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "gpu_mem_util_pct": null,
+        "gpu_mem_util_pct_u_reason": "(U) a load generator cannot see the GPU; this must come from the serving host",
+        "error_rate_pct": 0.0,
+        "slo_pass": false,
+        "outcome": "failed",
+        "provenance": "M",
+        "context_tokens": 1711.6707317073171,
+        "tokens_per_stream_chunk": 1.1090073032188261,
+        "stream_chunk_gap_p50_s": 0.04312473596655764,
+        "stream_chunk_gap_p95_s": 0.08955995040305424,
+        "prefill_tok_s": 2100.5,
+        "measured_input_output_ratio": 2.5206,
+        "dispersion": {
+          "repetitions_counted": 3,
+          "ttft_p95_s": {
+            "min": 53.816075206405365,
+            "median": 55.45112637920247,
+            "max": 56.98901460476918,
+            "n": 3,
+            "spread_pct": 5.72
+          },
+          "itl_p95_s": {
+            "min": 0.08954571325374269,
+            "median": 0.09019556160002429,
+            "max": 0.09055110429499237,
+            "n": 3,
+            "spread_pct": 1.11
+          },
+          "e2e_p95_s": {
+            "min": 97.67566786560637,
+            "median": 97.68951750883716,
+            "max": 98.8746341919934,
+            "n": 3,
+            "spread_pct": 1.23
+          },
+          "output_tok_s": {
+            "min": 816.6666666666666,
+            "median": 833.3333333333334,
+            "max": 833.3333333333334,
+            "n": 3,
+            "spread_pct": 2.0
+          },
+          "error_rate_pct": {
+            "min": 0.0,
+            "median": 0.0,
+            "max": 0.0,
+            "n": 3,
+            "spread_pct": null,
+            "spread_pct_u_reason": "(U) the median error_rate_pct across the counted repetitions is zero; a relative spread against a zero median is a division by zero dressed as a statistic"
+          }
+        },
+        "reasons": [
+          "repetition 0: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 1: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)",
+          "repetition 2: the declared gates did not hold for the full steady-state window; one failing window fails the rung, because capacity is defined by the worst served user, not by best-of-N or majority vote (section 5)"
+        ]
+      }
+    ],
+    "drain_deadline_seconds": 60,
+    "throughput_collapse_ratio": 0.7,
+    "monotonic_across_ladder": true,
+    "single_point": true
+  },
+  "workload": {
+    "ascep_version": "0.1.0",
+    "application_type": "multi-image visual reasoning over charts, documents and photographs",
+    "daily_active_users": null,
+    "daily_active_users_u_reason": "(U) this campaign was specified directly in concurrent users, not DAU",
+    "concurrent_users": 200,
+    "sessions_per_user_per_day": null,
+    "sessions_per_user_per_day_u_reason": "(U) not applicable; specified as CCU",
+    "avg_session_seconds": null,
+    "avg_session_seconds_u_reason": "(U) not applicable; specified as CCU",
+    "peak_to_mean": null,
+    "peak_to_mean_u_reason": "(U) not applicable; CCU is already the peak figure",
+    "duty_cycle": 0.25,
+    "input_tokens_per_request": 33.5,
+    "output_tokens_per_request": 500,
+    "requests_per_session": null,
+    "requests_per_session_u_reason": "(U) the ladder issues independent requests rather than multi-turn sessions, so no per-session request count was declared",
+    "target_tok_s_per_user": 15.0,
+    "peak_concurrent_users": 200,
+    "active_sessions": 50.0,
+    "avg_context_tokens": 1395.0,
+    "avg_context_tokens_tag": "M",
+    "demand_tok_s": 750.0,
+    "images_per_request": 4.1904,
+    "image_resolution_mix": [
+      {
+        "width": 1700,
+        "height": 2200,
+        "fraction": 0.0103
+      },
+      {
+        "width": 1654,
+        "height": 2339,
+        "fraction": 0.0033
+      },
+      {
+        "width": 1000,
+        "height": 1000,
+        "fraction": 0.0022
+      },
+      {
+        "width": 1500,
+        "height": 1500,
+        "fraction": 0.0018
+      },
+      {
+        "width": 1024,
+        "height": 768,
+        "fraction": 0.0017
+      },
+      {
+        "width": 600,
+        "height": 600,
+        "fraction": 0.0016
+      },
+      {
+        "width": 500,
+        "height": 500,
+        "fraction": 0.0015
+      },
+      {
+        "width": 600,
+        "height": 400,
+        "fraction": 0.0015
+      },
+      {
+        "width": 800,
+        "height": 800,
+        "fraction": 0.0014
+      },
+      {
+        "width": 1568,
+        "height": 1130,
+        "fraction": 0.0014
+      },
+      {
+        "width": 900,
+        "height": 600,
+        "fraction": 0.0013
+      },
+      {
+        "width": 348,
+        "height": 348,
+        "fraction": 0.0012
+      },
+      {
+        "width": 1600,
+        "height": 1200,
+        "fraction": 0.0012
+      },
+      {
+        "width": 800,
+        "height": 600,
+        "fraction": 0.0011
+      },
+      {
+        "width": 2352,
+        "height": 1695,
+        "fraction": 0.0011
+      },
+      {
+        "width": 1568,
+        "height": 584,
+        "fraction": 0.001
+      },
+      {
+        "width": 750,
+        "height": 1000,
+        "fraction": 0.001
+      },
+      {
+        "width": 1200,
+        "height": 800,
+        "fraction": 0.001
+      },
+      {
+        "width": 1200,
+        "height": 900,
+        "fraction": 0.0009
+      },
+      {
+        "width": 1700,
+        "height": 1200,
+        "fraction": 0.0009
+      },
+      {
+        "width": 400,
+        "height": 300,
+        "fraction": 0.0008
+      },
+      {
+        "width": 600,
+        "height": 450,
+        "fraction": 0.0008
+      },
+      {
+        "width": 1700,
+        "height": 1400,
+        "fraction": 0.0008
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "fraction": 0.0008
+      },
+      {
+        "width": 2352,
+        "height": 876,
+        "fraction": 0.0008
+      },
+      {
+        "width": 700,
+        "height": 1300,
+        "fraction": 0.0007
+      },
+      {
+        "width": 1200,
+        "height": 1600,
+        "fraction": 0.0007
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "fraction": 0.0007
+      },
+      {
+        "width": 1568,
+        "height": 536,
+        "fraction": 0.0007
+      },
+      {
+        "width": 640,
+        "height": 427,
+        "fraction": 0.0007
+      },
+      {
+        "width": 1080,
+        "height": 1080,
+        "fraction": 0.0007
+      },
+      {
+        "width": 320,
+        "height": 320,
+        "fraction": 0.0006
+      }
+    ],
+    "videos_per_request": 0,
+    "video_seconds_per_request": null,
+    "video_seconds_per_request_u_reason": "(U) no video is sent; this corpus is images only",
+    "video_sampling_fps": null,
+    "video_sampling_fps_u_reason": "(U) no video is sent",
+    "video_max_frames": null,
+    "video_max_frames_u_reason": "(U) no video is sent",
+    "media_tokens_per_request": 1111.5,
+    "reasoning_mode": "non-thinking",
+    "reasoning_share": null,
+    "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload; no record in this corpus carries a reasoning turn, so the run is uniformly non-thinking",
+    "reasoning_tokens_per_request": 0,
+    "max_output_tokens": 500,
+    "archetypes": [
+      "image_grounded"
+    ],
+    "notes": {
+      "where_the_media_numbers_come_from": "images_per_request is exact over the corpus -- 13,644 images across 3,256 records, from the reader's own media_shape, not from the corpus card. media_tokens_per_request is measured against this server: 300 draws were rendered through the same corpus object the ladder uses and sent twice each, once with the image parts and once with the text part alone, and the difference is the media's cost with the chat template held constant. Over those draws the media cost 265.23 tokens per image (weighted by image, spread 252 to 276.5 per request -- the same price model.image_tokens_fixed carries as the integer 265, measured there over 24 synthetic resolutions at 265.1 unweighted), and 4.1904 times that is the 1111.5 declared here. The declaration deliberately uses the corpus-wide image count rather than the sample's 4.2767, because the count is exact and the per-image price is what needed measuring; the direct sample mean was 1134.3, and the difference is the sample drawing slightly image-heavy records. This is a pre-run declaration, so the run's own prompt-token total is an independent check on it, which is the point of media_token_cap_check.",
+      "input_tokens_per_request_is_the_text_that_is_left": "33.5 tokens, measured the same way: the mean server-reported prompt_tokens for the text part alone, chat template included. It is small because these prompts are questions about the images rather than passages -- the shortest was 19 tokens and the longest 101. Two consequences worth stating. The workload is roughly 97 percent media by prompt token, so anything that changes the image price moves the whole prefill and KV story, and this is the workload where the difference between the checkpoint's declared 280 tokens per image and the measured 265 is not a rounding argument. And a text-only comparison against ../gb200-gemma4-31b-tp1/ is not like for like on the text side either: that campaign declared 1,500 synthetic input tokens, so the two runs share a KV pool and a model and nothing else about the prompt.",
+      "avg_context_tokens_composition": "1395.0 is 33.5 text plus 1111.5 media plus half of the 500 output tokens, tagged M because the prompt side is server-measured rather than forecast. The output half is the residency convention every ASCEP report uses -- a request holds its generated tokens for on average half the generation -- and is a model, not a measurement; it is stated here so a reader does not read the M as covering all three terms.",
+      "the_resolution_mix_is_truncated_and_the_schema_has_nowhere_to_say_so": "This corpus has 11,916 distinct resolutions across its 13,644 images: almost every image is its own resolution, because the images are real charts, scanned pages and photographs rather than a curated set. The 32 rows above are the most common, and they cover 4.61 percent of the images. So the fractions sum to 0.046, not to 1, and the schema's SHOULD is knowingly not met -- listing every row would be a 700 KB workload declaration that no operator can transcribe or check. The alternative of reporting a mean resolution is worse, since the field exists precisely because a mean hides the spread. What is missing is a place to declare the residual: the bench's media_shape now reports image_resolution_mix_listed_share and image_resolution_mix_distinct alongside the mix, and the workload schema has no matching field, so on this corpus the two disagree about how complete the mix is and only the prose says which is right. That is a protocol gap this campaign found, recorded here rather than patched by inventing a field in an example.",
+      "the_mix_matters_less_on_this_model_than_the_field_assumes": "The field's description warns that on a dynamic-resolution model a single mean resolution hides a tenfold token spread. On this model it hides almost nothing: the measured cost is 252 to 276.5 tokens per image over the whole corpus, a spread of under 10 percent, because Gemma-4 fits every image to the same 280-token grid budget and only the aspect ratio moves the count. The mix is still declared because it is the input a reader needs to price the same corpus on a model that does scale with pixels, and this bundle is meant to be compared against exactly such a run.",
+      "concurrent_users_and_duty_cycle_are_inherited_not_measured": "200 users at a 0.25 duty cycle and 15 tokens per second per user are carried over unchanged from the text campaign so the two reports differ only in what the prompts contain. They describe a hypothetical deployment, not this corpus, and nothing in the ladder measures them."
+    }
+  },
+  "capacity_tiers": {
+    "theoretical": {
+      "tier": "theoretical",
+      "max_concurrent_users": null,
+      "max_concurrent_users_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+      "max_tokens_per_s": null,
+      "max_tokens_per_s_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+      "max_requests_per_s": null,
+      "max_requests_per_s_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+      "daily_requests": null,
+      "daily_requests_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+      "binding_constraint": null,
+      "binding_constraint_u_reason": "(U) bench exercises the throughput and latency floors only; the weights and KV floors are never evaluated, and a rung whose gates held still says nothing about whether KV would have bound first at another context length",
+      "n_gpus": 1,
+      "provenance": "U"
+    },
+    "measured": {
+      "tier": "measured",
+      "max_concurrent_users": 128,
+      "max_tokens_per_s": 833.3333333333334,
+      "max_requests_per_s": 1.6666666666666667,
+      "daily_requests": 144000.0,
+      "binding_constraint": "slo",
+      "n_gpus": 1,
+      "provenance": "M"
+    },
+    "sustainable": {
+      "tier": "sustainable",
+      "max_concurrent_users": 6,
+      "max_tokens_per_s": 250.0,
+      "max_requests_per_s": 0.5,
+      "daily_requests": 43200.0,
+      "binding_constraint": "slo",
+      "n_gpus": 1,
+      "provenance": "M"
+    },
+    "recommended": {
+      "tier": "recommended",
+      "max_concurrent_users": null,
+      "max_concurrent_users_u_reason": "(U) a recommended tier derates a measurement by a headroom factor, and that factor is a policy choice, not a measurement; bench does not invent policy",
+      "max_tokens_per_s": null,
+      "max_tokens_per_s_u_reason": "(U) a recommended tier derates a measurement by a headroom factor, and that factor is a policy choice, not a measurement; bench does not invent policy",
+      "max_requests_per_s": null,
+      "max_requests_per_s_u_reason": "(U) a recommended tier derates a measurement by a headroom factor, and that factor is a policy choice, not a measurement; bench does not invent policy",
+      "daily_requests": null,
+      "daily_requests_u_reason": "(U) a recommended tier derates a measurement by a headroom factor, and that factor is a policy choice, not a measurement; bench does not invent policy",
+      "binding_constraint": null,
+      "binding_constraint_u_reason": "(U) bench exercises the throughput and latency floors only; the weights and KV floors are never evaluated, and a rung whose gates held still says nothing about whether KV would have bound first at another context length",
+      "n_gpus": 1,
+      "provenance": "U"
+    }
+  },
+  "roofline_comparison": {
+    "decode_tok_s_theoretical": null,
+    "decode_tok_s_theoretical_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+    "decode_tok_s_measured": null,
+    "decode_tok_s_measured_u_reason": "(U) bench measures workload throughput, not an isolated decode rate at the roofline's operating point; the two are not interchangeable",
+    "roofline_efficiency": null,
+    "roofline_efficiency_u_reason": "(U) the ratio of two figures this run does not have: no theoretical roofline and no isolated decode measurement",
+    "prefill_ttft_s_theoretical": null,
+    "prefill_ttft_s_theoretical_u_reason": "(U) the roofline needs the hardware's bandwidth and FLOPs and is computed by `ascep size`; bench measures latency, it does not model it",
+    "prefill_ttft_s_measured": null,
+    "prefill_ttft_s_measured_u_reason": "(U) the TTFT bench measured mixes queueing with prefill; the roofline needs an isolated prefill measurement this run did not make"
+  },
+  "scaling": [],
+  "sizing_result": {
+    "gpus_required": null,
+    "gpus_required_u_reason": "(U) sizing needs the declared demand targets and a headroom policy; `ascep size` computes it from those, not from this ladder",
+    "replica_topology": null,
+    "replica_topology_u_reason": "(U) a replica topology is an output of sizing, not of measurement",
+    "binding_constraint": null,
+    "binding_constraint_u_reason": "(U) sizing binds only once demand and the roofline are known; this run has neither",
+    "headroom_factor": 1.15,
+    "utilization_at_target_pct": null,
+    "utilization_at_target_pct_u_reason": "(U) a bench run has no declared demand target to compute utilization against",
+    "provenance": "U"
+  },
+  "unmeasured_assumptions": [
+    {
+      "field": "roofline_comparison",
+      "value_used": null,
+      "impact_if_wrong": "Without a roofline, a measured throughput far from the hardware's ceiling is indistinguishable from a healthy one, and the real bottleneck goes uninvestigated.",
+      "cost_to_measure": "Run `ascep size` against the declared hardware block; it needs bandwidth and FLOPs from the declaration, not another bench run."
+    },
+    {
+      "field": "sizing_result (gpus_required and the headroom policy)",
+      "value_used": null,
+      "impact_if_wrong": "A capacity decision made against the measured tier with no headroom leaves nothing for demand peaks; one made against an assumed headroom is policy dressed up as data.",
+      "cost_to_measure": "Declare the demand targets and run `ascep size`; the policy input is a capacity-planning decision, not a measurement."
+    },
+    {
+      "field": "scaling table (one topology only)",
+      "value_used": null,
+      "impact_if_wrong": "A single topology says nothing about scaling efficiency, and extrapolating it to a node count this run never measured can halve or double a GPU order.",
+      "cost_to_measure": "Repeat the ladder at each tensor-parallel and pipeline-parallel degree of interest and fill one row per topology."
+    },
+    {
+      "field": "run.tokenizer (local token count not taken)",
+      "value_used": null,
+      "impact_if_wrong": "Server-reported usage goes unchecked, so an engine that miscounts tokens inflates every tokens-per-second figure in this report.",
+      "cost_to_measure": "Count prompts and outputs locally with the served model's own tokenizer, as chapter 4.7.1 requires; bench ships no tokenizer to do it."
+    },
+    {
+      "field": "capacity_tiers.*.binding_constraint (weights and KV floors not evaluated)",
+      "value_used": null,
+      "impact_if_wrong": "The named constraint is the floor observed under the declared gates. A weights or KV floor lower than it would not have been seen, so a deployment whose true floor is KV at another context length is still sized against the wrong resource, and the shortfall appears only in production.",
+      "cost_to_measure": "Inspect engine-reported KV cache occupancy and memory headroom on the serving host during the run, and repeat the ladder at longer context lengths; latency at one context length cannot decide the weights or KV floors."
+    },
+    {
+      "field": "run.results[].gpu_util_pct and gpu_mem_util_pct (not observed)",
+      "value_used": null,
+      "impact_if_wrong": "Without utilization, a rung that failed its gates because the GPU was saturated is indistinguishable from one that failed because the client, the network or another tenant was, and the ladder's boundary gets attributed to the wrong component.",
+      "cost_to_measure": "Sample the serving host during each window -- nvidia-smi, DCGM, or the engine's own metrics endpoint -- and align the series to the window timestamps in the bundle; a load generator cannot see it over HTTP."
+    },
+    {
+      "field": "run.engine_version (not observed)",
+      "value_used": null,
+      "impact_if_wrong": "Throughput moves by tens of percent between engine releases, so a report without the version cannot be compared with another run of the same model on the same hardware -- which is most of what these reports get used for.",
+      "cost_to_measure": "Read it from the serving host or the container image and record it; `/v1/models` does not carry it, so bench cannot ask."
+    },
+    {
+      "field": "figures published below the section 4.3 advisory sample floor: e2e_p95_s at concurrency 4, itl_p95_s at concurrency 4, ttft_p95_s at concurrency 4, e2e_p95_s at concurrency 5, itl_p95_s at concurrency 5, ttft_p95_s at concurrency 5, e2e_p95_s at concurrency 6, itl_p95_s at concurrency 6, ttft_p95_s at concurrency 6, e2e_p95_s at concurrency 7, itl_p95_s at concurrency 7, ttft_p95_s at concurrency 7, e2e_p95_s at concurrency 8, itl_p95_s at concurrency 8, ttft_p95_s at concurrency 8, e2e_p95_s at concurrency 16, e2e_p99_s at concurrency 16, itl_p95_s at concurrency 16, ttft_p95_s at concurrency 16, ttft_p99_s at concurrency 16, e2e_p95_s at concurrency 32, e2e_p99_s at concurrency 32, itl_p95_s at concurrency 32, ttft_p95_s at concurrency 32, ttft_p99_s at concurrency 32, e2e_p99_s at concurrency 64, ttft_p99_s at concurrency 64, e2e_p99_s at concurrency 128, ttft_p99_s at concurrency 128",
+      "value_used": null,
+      "impact_if_wrong": "These percentiles are computed from enough samples to report but not enough to be stable: a single straggler moves them, so a tier boundary that turns on one of them can flip between two runs of the same config.",
+      "cost_to_measure": "Lengthen the window or raise the repetition count until the tail percentile clears its advisory floor; the sample count, not the estimator, is the limit."
+    }
+  ],
+  "reproduction": {
+    "run_configs_path": "bundle/run_configs.json",
+    "raw_records_path": "bundle/records.jsonl",
+    "engine_logs_path": "bundle/engine.log",
+    "environment_capture_path": "bundle/environment.json",
+    "analysis_script_path": null,
+    "analysis_script_path_u_reason": "(U) bench writes records and a manifest but no analysis script; every figure in this report is produced by `ascep bench` itself from the bundled records",
+    "container_digest": null,
+    "container_digest_u_reason": "(U) no container digest was declared for this run, so the software these figures were produced by is pinned only by the environment capture in the same bundle"
+  }
+}

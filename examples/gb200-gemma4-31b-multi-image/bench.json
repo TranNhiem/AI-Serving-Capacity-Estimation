@@ -1,0 +1,60 @@
+{
+  "endpoint": {
+    "base_url": "http://127.0.0.1:8000",
+    "model": "gemma-4-31b-it",
+    "timeout_s": 600
+  },
+  "declarations": {
+    "hardware": "hardware.json",
+    "model": "model.json",
+    "serving": "serving.json",
+    "workload": "workload.json"
+  },
+  "workload": {
+    "corpus": "corpus.jsonl",
+    "media_root": "media",
+    "image_input_transport": "base64",
+    "media_url_prefix": null,
+    "media_max_records": null,
+    "input_tokens": null,
+    "output_tokens": 500,
+    "ignore_eos": true,
+    "cache_policy": "unique-prefix",
+    "seed": 20260903,
+    "think_time_s": 1.5,
+    "run_label": "gemma4-31b-gb200x1-tp1-multi-image"
+  },
+  "window": {
+    "window_s": 120,
+    "drain_deadline_s": 60,
+    "warmup_requests": 20
+  },
+  "ladder": {
+    "concurrency": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "repetitions": 3,
+    "throughput_collapse_ratio": 0.7
+  },
+  "slo_gates": {
+    "ttft_p95_max_s": 2.5,
+    "itl_p95_max_s": 0.0667,
+    "e2e_p95_max_s": 120,
+    "error_rate_max_pct": 1.0,
+    "declared_before_run": true
+  },
+  "output": {
+    "bundle_dir": "bundle",
+    "report_path": "report.json",
+    "engine_logs_path": "/tmp/ascep_serve_gemma-4-31b-it.log",
+    "container_digest": null
+  }
+}

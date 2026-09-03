@@ -1,0 +1,26 @@
+{
+  "ascep_version": "0.1.0",
+  "gpu_model": "NVIDIA GB200",
+  "gpu_count": 1,
+  "nodes": 1,
+  "gpus_per_node": 4,
+  "vram_bytes_per_gpu": 198674743296,
+  "interconnect_intra_node": "NVLink 5",
+  "interconnect_inter_node": null,
+  "interconnect_inter_node_u_reason": "(U) single-GPU campaign on one tray; no inter-node path was exercised, so nothing about multi-node scaling is claimed here",
+  "node_exclusivity": "exclusive",
+  "driver_version": "580.126.09",
+  "compute_runtime_version": "CUDA 13.0",
+  "hbm_bandwidth_bytes_s": 8000000000000,
+  "dense_bf16_flops_per_s": 2500000000000000,
+  "cpu_model": "NVIDIA Grace (Arm Neoverse-V2)",
+  "cpu_cores": 144,
+  "system_ram_bytes": 1026841051136,
+  "storage_class": "WekaFS parallel filesystem, shared",
+  "model_load_path": "shared parallel filesystem, not node-local NVMe",
+  "notes": {
+    "cpu_cores": "144 is the machine's physical core count -- lscpu reports 2 sockets of 72 Neoverse-V2 cores -- not an allocation, and not what this deployment had to itself. The tray carries four GB200 GPUs against those two sockets, and this campaign used one GPU, so a fully loaded tray divides the same cores four ways. The serving process was not pinned or cgroup-limited: cpu.max is unset, and nproc inside the session reports 128, so 16 of the 144 are outside the default affinity mask.",
+    "cpu_is_on_the_critical_path_here_and_was_not_in_the_text_campaign": "The companion text run at ../gb200-gemma4-31b-tp1/ declared this core count without exercising it, because a text prompt reaches the GPU as token ids and the host does nothing but tokenize. A media run is different: every request carries roughly 4.19 base64 PNGs that the server must decode, resize and patchify on these Grace cores before the vision tower sees a tensor. How much of that host work the engine overlaps with other requests' prefill was not instrumented here: no host-side profile was taken, and nothing in this campaign separates decode time from GPU time inside ttft. The latency figures in this bundle are therefore end-to-end, and reading them as pure accelerator time would credit the GPU with work these cores did. Two consequences for a reader sizing from this bundle. First, the same GPU-side capacity numbers can be unreachable on a host with fewer cores per GPU, and this tray's ratio of 36 physical cores per GPU is generous; a 2-GPU-per-socket box would halve it. Second, the load generator ran on this same host, so client and server competed for the cores -- the corpus pre-encodes its media once at construct time rather than per request (131.1 s to build, 6,124,064,253 bytes resident) precisely so that base64 encoding is not repeatedly charged to the machine under test, but the JSON serialization of a roughly 1.9 MB request body still is. A deployment whose clients are remote does not pay that part.",
+    "system_ram_is_a_real_constraint_for_a_base64_media_run": "The corpus holds every encoded image in memory for the duration of the run so that no request waits on the filesystem, which is the only way the arrival times mean anything. At 3,256 records and 4.19 images each that is 6.1 GB against 1,026 GB of system RAM -- comfortable here, and worth stating because it does not stay comfortable: the same design on a 100,000-record corpus of larger images would not fit, which is what media_max_records in the bench config exists to bound."
+  }
+}

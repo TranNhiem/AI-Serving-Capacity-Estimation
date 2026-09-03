@@ -1,0 +1,213 @@
+{
+  "ascep_version": "0.1.0",
+  "application_type": "multi-image visual reasoning over charts, documents and photographs -- Qwen2.5-VL-32B-Instruct campaign on the same corpus as the gemma-4-31b multi-image bundle",
+  "daily_active_users": null,
+  "daily_active_users_u_reason": "(U) this campaign was specified directly in concurrent users, not DAU",
+  "concurrent_users": 200,
+  "sessions_per_user_per_day": null,
+  "sessions_per_user_per_day_u_reason": "(U) not applicable; specified as CCU",
+  "avg_session_seconds": null,
+  "avg_session_seconds_u_reason": "(U) not applicable; specified as CCU",
+  "peak_to_mean": null,
+  "peak_to_mean_u_reason": "(U) not applicable; CCU is already the peak figure",
+  "duty_cycle": 0.25,
+  "input_tokens_per_request": 39.5,
+  "output_tokens_per_request": 500,
+  "requests_per_session": null,
+  "requests_per_session_u_reason": "(U) the ladder issues independent requests rather than multi-turn sessions, so no per-session request count was declared",
+  "target_tok_s_per_user": 15.0,
+  "peak_concurrent_users": 200,
+  "active_sessions": 50.0,
+  "avg_context_tokens": 4488.21,
+  "avg_context_tokens_tag": "M",
+  "demand_tok_s": 750.0,
+  "images_per_request": 4.1904,
+  "image_resolution_mix": [
+    {
+      "width": 1700,
+      "height": 2200,
+      "fraction": 0.0103
+    },
+    {
+      "width": 1654,
+      "height": 2339,
+      "fraction": 0.0033
+    },
+    {
+      "width": 1000,
+      "height": 1000,
+      "fraction": 0.0022
+    },
+    {
+      "width": 1500,
+      "height": 1500,
+      "fraction": 0.0018
+    },
+    {
+      "width": 1024,
+      "height": 768,
+      "fraction": 0.0017
+    },
+    {
+      "width": 600,
+      "height": 600,
+      "fraction": 0.0016
+    },
+    {
+      "width": 500,
+      "height": 500,
+      "fraction": 0.0015
+    },
+    {
+      "width": 600,
+      "height": 400,
+      "fraction": 0.0015
+    },
+    {
+      "width": 800,
+      "height": 800,
+      "fraction": 0.0014
+    },
+    {
+      "width": 1568,
+      "height": 1130,
+      "fraction": 0.0014
+    },
+    {
+      "width": 900,
+      "height": 600,
+      "fraction": 0.0013
+    },
+    {
+      "width": 348,
+      "height": 348,
+      "fraction": 0.0012
+    },
+    {
+      "width": 1600,
+      "height": 1200,
+      "fraction": 0.0012
+    },
+    {
+      "width": 800,
+      "height": 600,
+      "fraction": 0.0011
+    },
+    {
+      "width": 2352,
+      "height": 1695,
+      "fraction": 0.0011
+    },
+    {
+      "width": 1568,
+      "height": 584,
+      "fraction": 0.001
+    },
+    {
+      "width": 750,
+      "height": 1000,
+      "fraction": 0.001
+    },
+    {
+      "width": 1200,
+      "height": 800,
+      "fraction": 0.001
+    },
+    {
+      "width": 1200,
+      "height": 900,
+      "fraction": 0.0009
+    },
+    {
+      "width": 1700,
+      "height": 1200,
+      "fraction": 0.0009
+    },
+    {
+      "width": 400,
+      "height": 300,
+      "fraction": 0.0008
+    },
+    {
+      "width": 600,
+      "height": 450,
+      "fraction": 0.0008
+    },
+    {
+      "width": 1700,
+      "height": 1400,
+      "fraction": 0.0008
+    },
+    {
+      "width": 1920,
+      "height": 1080,
+      "fraction": 0.0008
+    },
+    {
+      "width": 2352,
+      "height": 876,
+      "fraction": 0.0008
+    },
+    {
+      "width": 700,
+      "height": 1300,
+      "fraction": 0.0007
+    },
+    {
+      "width": 1200,
+      "height": 1600,
+      "fraction": 0.0007
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "fraction": 0.0007
+    },
+    {
+      "width": 1568,
+      "height": 536,
+      "fraction": 0.0007
+    },
+    {
+      "width": 640,
+      "height": 427,
+      "fraction": 0.0007
+    },
+    {
+      "width": 1080,
+      "height": 1080,
+      "fraction": 0.0007
+    },
+    {
+      "width": 320,
+      "height": 320,
+      "fraction": 0.0006
+    }
+  ],
+  "videos_per_request": 0,
+  "video_seconds_per_request": null,
+  "video_seconds_per_request_u_reason": "(U) no video is sent; this corpus is images only",
+  "video_sampling_fps": null,
+  "video_sampling_fps_u_reason": "(U) no video is sent",
+  "video_max_frames": null,
+  "video_max_frames_u_reason": "(U) no video is sent",
+  "media_tokens_per_request": 4198.71,
+  "reasoning_mode": "non-thinking",
+  "reasoning_share": null,
+  "reasoning_share_u_reason": "(U) reasoning_share is meaningful only for a mixed workload; no record in this corpus carries a reasoning turn, so the run is uniformly non-thinking",
+  "reasoning_tokens_per_request": 0,
+  "max_output_tokens": 500,
+  "archetypes": [
+    "image_grounded"
+  ],
+  "notes": {
+    "where_the_media_numbers_come_from": "media_tokens_per_request is 4,198.71, the corpus-exact figure: 13,644 image references across 3,256 records, 0 images missing dimensions, each reference priced by the measured per-image rule and summed, giving a per-image mean of 1,001.98 tokens and a per-record media mean of 4,198.71 (min 27, max 19,927). The declaration uses this corpus mean rather than the 300-draw sample mean of 4,205.13 because the image count is exact -- 4.1904 images per record, 13,644 over 3,256 -- and it was the per-image price that needed measuring; the 6.42-token gap between the two means is the sample drawing slightly image-heavy, at 4.2767 images per draw against the corpus's 4.1904. This is a pre-run declaration, so the run's own prompt-token total is an independent check on it, which is what media_token_cap_check exists for.",
+    "the_pricing_formula_was_measured_not_assumed": "The per-image price comes from the model's own smart_resize rule -- height and width each rounded to a multiple of 28, clamped into [3,136, 1,003,520] pixels, the image costing (h_bar / 28) x (w_bar / 28) + 2 tokens, the + 2 being the vision start/end pair the server adds around every image -- but the rule was checked against the live server before any of it was declared. It matched 14 synthetic resolutions, 28x28 through 2048x2048, square and non-square, with zero mismatches. It matched all 300 real multi-image draws rendered through the same corpus object the ladder uses with a residual of exactly zero (min 0, median 0, max 0), each draw sent twice, once with the image parts and once with the text part alone, so the difference is the server's own measured media cost with the chat template held constant. And it matched at both extremes directly: a 28x28 image costs 6 tokens measured and 6 predicted, a 1120x896 image at exactly 1,003,520 pixels and exactly 1,280 merged patches costs 1,282 measured and 1,282 predicted, and a 4000x3200 image also costs 1,282, confirming the cap binds rather than the input size. The wrong move this prevents is pricing a corpus from a preprocessor rule nobody confirmed: a rule like that is a model of the model, not a measurement of it.",
+    "how_this_workload_differs_from_the_gemma_sibling": "The gemma-4-31b campaign over this same corpus charged a flat 265 tokens per image; this model charges a mean of 1,001.98 and ranges from 18 to 1,282, so the media term per record is 4,198.71 here against 1,111.5 there -- a 3.8x heavier prompt over the same 3,256 records and the same 4.1904 images per record. The prompt is roughly 99.1 percent media by token, 4,198.71 of 4,238.21 prompt tokens, against gemma's 97 percent, so on this model anything that moves the image price moves essentially the whole prefill and KV story, and treating the two bundles as the same workload with a different checkpoint would be wrong by a factor of four on the dominant term.",
+    "the_cap_sets_half_the_cost_and_the_schema_has_nowhere_to_say_so": "7,572 of the 13,644 image references, 55.49 percent, are pinned at the serving-side max_pixels of 1,003,520, so more than half this workload's media cost is set by a vLLM launch flag rather than by the images. Raising or lowering that flag would move the whole prefill and KV story without changing one byte of the corpus or one field of this declaration. The serving schema has no field for it; model.image_tokens_max records the consequence, 1,282 tokens per image, but not the cause. That is a protocol gap this campaign found, recorded here rather than patched by inventing a field in an example -- the same precedent the gemma notes set for the resolution mix.",
+    "the_resolution_mix_is_truncated_and_this_time_the_warning_is_operative": "The mix is truncated for the same reason gemma's is: 11,916 distinct resolutions across 13,644 images, almost every image its own resolution, the 32 rows above the most common and covering 4.61 percent of the images, so the fractions sum to 0.046 and the schema's SHOULD is knowingly not met. The consequence is the opposite of gemma's, though. There every image cost about 265 tokens, so the truncation hid almost nothing; here a single mean resolution would hide a seventy-fold token spread, 18 to 1,282 tokens per image, so on this model the field's own warning about a mean hiding the spread is finally the operative one, and the mix is the only place a reader can see the distribution the mean summarizes.",
+    "input_tokens_per_request_is_the_text_that_is_left": "39.5 tokens is the mean server-reported prompt_tokens for the text part alone, chat template included, over the same 300 draws; the range was 25 to 112. It is not comparable to the gemma campaign's 33.5: same corpus, different tokenizer and different chat template, which is precisely why it was re-measured instead of carried over.",
+    "avg_context_tokens_composition": "4,488.21 is 39.5 text plus 4,198.71 media plus half of the 500 output tokens, tagged M because the prompt side is server-measured rather than forecast. The 250-token output half is the residency convention every ASCEP report uses -- a request holds its generated tokens for on average half the generation -- and is a model, not a measurement; it is stated here so a reader does not read the M as covering all three terms.",
+    "concurrent_users_and_duty_cycle_are_inherited_not_measured": "200 users at a 0.25 duty cycle and 15 tokens per second per user are carried over unchanged so this report differs from gemma-4-31b-multi-image only in the model and what the media costs under it; they describe a hypothetical deployment and nothing in the ladder measures them. The ladder itself is shared with the gemma campaign: concurrency 4, 8, 16, 32, 64, 128, 3 repetitions, 120 s windows, 500 output tokens with ignore_eos, think time 1.5 s, with SLO gates ttft_p95 2.5 s, itl_p95 0.0667 s, e2e_p95 120 s and a 1.0 percent error cap declared before the run."
+  }
+}

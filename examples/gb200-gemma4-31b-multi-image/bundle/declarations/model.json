@@ -1,0 +1,51 @@
+{
+  "ascep_version": "0.1.0",
+  "model_id": "gemma-4-31b-it",
+  "revision": null,
+  "revision_u_reason": "(U) served from a local checkpoint directory with no upstream commit recorded. Consequence: the architecture fields below are read from the checkpoint's own config.json and are exact for the bytes that were served, but a reader cannot pin the same bytes from a hub revision.",
+  "total_params": 31273088876,
+  "active_params": 31273088876,
+  "architecture": "dense",
+  "moe_experts": null,
+  "moe_experts_u_reason": "(U) not applicable: the model is dense, so there is no expert layout to declare",
+  "moe_top_k": null,
+  "moe_top_k_u_reason": "(U) not applicable: the model is dense",
+  "weight_precision": "bf16",
+  "kv_precision": "bf16",
+  "n_layers": 60,
+  "n_kv_heads": 16,
+  "head_dim": 256,
+  "attention_type": "hybrid",
+  "global_layer_frac": 0.16666666666666666,
+  "sliding_window_tokens": 1024,
+  "native_max_context_tokens": 262144,
+  "weight_bytes_on_disk": 62546177752,
+  "weight_bytes_tag": "M",
+  "licence": "Gemma Terms of Use",
+  "input_modalities": [
+    "text",
+    "image",
+    "video",
+    "audio"
+  ],
+  "reasoning_modes": [
+    "non-thinking"
+  ],
+  "image_token_policy": "fixed-grid",
+  "image_tokens_fixed": 265,
+  "video_frame_policy": "uniform-count",
+  "video_temporal_merge": null,
+  "video_temporal_merge_u_reason": "(U) the checkpoint's video_processor declares no temporal pooling: it samples 32 frames and prices each one independently at its own soft-token budget, so there is no divisor to declare. Consequence: frame count and token count are proportional on this model, and a reader cannot assume the halving that a temporally merged encoder would give.",
+  "vision_encoder_params": 569550384,
+  "vision_encoder_replicated_per_rank": null,
+  "vision_encoder_replicated_per_rank_u_reason": "(U) the campaign ran at tensor_parallel 1, where there is only one rank and replication is therefore unobservable. Consequence: the weights floor measured here must not be extrapolated to TP>1 without re-measuring, because a replicated 570 M-parameter tower costs 1.1 GiB on every added rank.",
+  "notes": {
+    "attention_layout": "Hybrid, 5:1 local:global. 50 of the 60 layers are sliding_attention with a 1,024-token window; 10 are full_attention, so global_layer_frac is 10/60.",
+    "kv_engine_prices_the_sliding_layers_at_full_length": "The engine's KV token count is the all-layers-full closed form, not the hybrid one. 2 * 2 bytes * 16 kv heads * 256 head_dim * 60 layers is 983,040 bytes per token; times the engine's 114,544 tokens is 104.868 GiB, against the 104.88 GiB it reports as 'Available KV cache memory' -- ascep.capacity.kv_bytes_per_token reproduces the engine to 0.011 percent. Adding --limit-mm-per-prompt image=16 to the launch did not move either figure: the multimodal encoder cache is a separate 8,192-token budget, so this campaign's KV pool is byte-identical to the text campaign it is meant to be compared against.",
+    "image_tokens_fixed_is_measured_here_not_transcribed": "The checkpoint's config.json declares vision_soft_tokens_per_image 280, and the text-only campaign in ../gb200-gemma4-31b-tp1/ transcribed that number into this field without exercising it. Serving it says otherwise. Sending one image and subtracting the same prompt without it, the cost is 256 to 274 tokens over 24 distinct resolutions, mean 265.1, and 280 is never charged. The cost does not depend on resolution at all: one picture resized from 32x32 to 2048x2048 square costs 260 tokens at every size, and six different pictures scaled to 512x512 all cost 260. It depends only on aspect ratio, and the mechanism is legible in the numbers -- the preprocessor lays the image on the integer patch grid R x C whose ratio best matches the image and whose product does not exceed the 280-token budget, then adds 4 wrapper tokens. A square takes 16x16 because 17x17 is 289 and overruns the budget, giving 256 + 4 = 260; a 4:3 image takes 14x19 = 266 + 4 = 270; a 2:1 image takes 11x23 = 253 + 4 = 257. So 280 is a ceiling the grid can approach but not reach, and declaring it as the charged cost overstates every image by about 5.6 percent. This field carries that mean rounded to the integer the schema takes. Three numbers for one price appear across this bundle and they do not disagree: 265.1 is the unweighted mean over the 24 synthetic resolutions probed here, 265.23 is the image-weighted mean over 300 draws from the corpus this ladder actually sends (workload.notes.where_the_media_numbers_come_from), and 265 is what this field can hold. One further fact fell out of probing whether the budget can be overridden per request: the engine's rejection message names the whole ladder of legal budgets, (70, 140, 280, 560, 1120). 280 is a chosen tier and not an architectural constant, 70 is the tier the video path uses, and a deployment that launched on 1120 would charge roughly four times as much per image with nothing in this file changing to say so -- which is why serving.media_preprocessing.image_pixel_budget_px, not this field, is where a reader should look for what an image cost on the day.",
+    "fixed_grid_is_the_right_policy_and_the_protocol_has_no_better_one": "fixed-grid is defensible here in the sense that matters for capacity -- the cost is independent of the image's size, so a corpus of 5-megapixel images costs the same as a corpus of thumbnails -- but it is not exactly right, because the cost still moves by up to 7 percent with aspect ratio. dynamic-resolution is worse: it models tokens as growing with pixel count, which this model does not do. declared-table is worse still, since it picks the smallest row covering the image's width and height and is therefore monotone in size. The protocol's three-value vocabulary has no term for an aspect-adaptive fixed budget, which is what this model and several current vision encoders implement, and this report declares fixed-grid with a measured constant rather than inventing a fourth value in an example.",
+    "parameter_split": "language_model 30,697,345,340; vision_tower 569,550,384; embed_vision projector 6,193,152. Summed from the safetensors headers, not from the model card.",
+    "video_is_declared_from_the_checkpoint_not_from_a_measurement": "The text campaign at ../gb200-gemma4-31b-tp1/ declared video_frame_policy n-a and left video out of input_modalities, and both were wrong. The checkpoint ships a Gemma4VideoProcessor with do_sample_frames true, num_frames 32 and max_soft_tokens 70, and the engine says so out loud at startup -- it sizes its encoder cache 'profiled with 3 video items of the maximum feature size' -- so this deployment accepts video and resamples every clip to a fixed 32 frames regardless of duration. That is uniform-count, not uniform-fps and certainly not n-a. The arithmetic that follows is worth stating because it is what a capacity model needs: 70 soft tokens per frame times 32 frames is 2,240 tokens per clip, flat, so on this model a 10-second clip and a 10-minute clip cost the same and the cost of video is entirely a question of how many clips are in flight. Three of them fill the 8,192-token encoder cache, which is why the engine profiled exactly three. None of this was measured here -- no video was sent -- so it is declared as the deployment's stated behaviour and campaign 1 on Qwen2.5-VL exists to measure the same fields on a model that samples by rate instead.",
+    "audio_is_accepted_and_the_protocol_still_cannot_price_it": "The checkpoint's config.json carries audio_token_id and an audio_config key, but audio_config is null in these weights and no audio tower is present, so audio is declared as an accepted modality and left unmeasured. The token model is nevertheless fully specified in processor_config.json and is worth recording, because it is the shape an ASCEP audio field would have to hold: audio_ms_per_token 40 and audio_seq_length 750 against a 16 kHz Gemma4AudioFeatureExtractor, which is 25 tokens per second of speech capped at 30 seconds, or 750 tokens for any clip at or beyond that length. So audio prices like video does here -- a flat ceiling rather than a rate -- and the cap is the thing an operator would get wrong. ASCEP cannot represent any of it: audio appears only as an input_modalities enum value, with no audios_per_request, no audio token model and no corpus support. That is a protocol gap this campaign is recording rather than patching, and the candidate model for closing it is Nemotron-3-Nano-Omni, which carries a real sound_config."
+  }
+}

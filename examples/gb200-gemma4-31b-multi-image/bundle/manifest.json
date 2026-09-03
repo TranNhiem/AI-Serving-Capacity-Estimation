@@ -1,0 +1,28 @@
+{
+  "sha256": {
+    "records.jsonl": "48d6b0e5114254e05e145430a74b36a8eb95f1cbf8bcea2fa441291e7a411923",
+    "run_configs.json": "70b85f5babdd277941ac26d30240105054d1226c049957aa3f9cadb7fd12df3b",
+    "environment.json": "f4250222894abb6eb9b738d8ae457c5173353cced6f71d047d18c066d3fb86cf",
+    "engine.log": "420dd76cb65a4294c17aae3b6aff4723716a9c5f9cc8ee3daf7eb9db218233d3",
+    "bench-config.json": "c08d01adf5f6ad43e1935629af4f522f16a7e46bb242ef87c6603d00a342285f",
+    "declarations/hardware.json": "65486c52ed97b604ae86d83635f4621139a52ce54a28604655f7babfd82017d2",
+    "declarations/model.json": "082110c90787e46794cb6f8558403d103629f28917fc8149b83aa7258166edbf",
+    "declarations/serving.json": "bd2619f2d6158114722c01b0817c7f569a630bc64b3b71abd031e9f2dafc8bd9",
+    "declarations/workload.json": "7ea76933f8c512df5522ae3de4dfb6bd4dd721bc30d62c302a0d4d3ab700b796"
+  },
+  "redactions": {
+    "engine.log": {
+      "sha256_original": "baa273531c1e8f7a6210c0365fc1abff082344dc379218295bc4cf46c2550df1",
+      "substitutions": [
+        {
+          "replacement": "/models/gemma-4-31b-it",
+          "occurrences": 6
+        },
+        {
+          "replacement": "REDACTED-NODE-IP",
+          "occurrences": 1
+        }
+      ]
+    }
+  }
+}
