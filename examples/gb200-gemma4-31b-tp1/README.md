@@ -15,6 +15,39 @@
 > silently), and this campaign is queued for re-measurement. Until it is re-run, treat every
 > 128-rung figure below as withdrawn and read the ladder as censored at 64.
 
+> **CORRECTION (2026-09-04): every throughput figure on this page was produced by a
+> phase-locked fleet and is unreliable in a direction this bundle cannot show.** The bench
+> driver ended warm-up at a barrier and stamped the window's start on the next line, so
+> every virtual user in a rung entered the measured window at the same instant. The workload
+> is deterministic — fixed output length, constant think time — so every user's
+> request-plus-think cycle has the same length, the fleet stays locked for the whole
+> window, and completions arrive in synchronised waves. The reducer credits a completion to
+> the window it finished in, so in these 120-second windows a locked fleet counts
+> floor(window / cycle) completions per user where a rate must divide by window / cycle:
+> the published throughput is a staircase, not a rate. The signature is in this campaign's
+> own numbers — completions per user land on exact integers at every rung but the last:
+> 4:12.00, 8:11.00, 16:9.00, 32:7.00, 64:4.00 — and the top rung resolves only 2.34
+> cycles per user, the coarsest count on the ladder, at exactly the rung the measured tier
+> is read from; an operator sizing from this curve would be sizing against artefacts. The
+> 128 rung is already withdrawn by the notice above on independent grounds; this defect
+> condemns it a second time, and that notice's 'stand exactly as measured' predates this
+> defect: it vouches for the load offered below it, not the rate counted. Two artefacts are
+> entangled in every one of these figures, and they pull in opposite directions: the
+> counting artefact, floor in place of ratio, biases the figure down, while a locked fleet
+> hands the engine perfectly aligned batches — cheaper to serve than the mixed-phase
+> traffic real users generate — which biases it up. In the de-phased re-run of the 26B
+> MoE ladder, the rung whose window fit 8.00 cycles almost exactly printed 2,301.0 and
+> 2,330.25 tok/s where the locked run printed 2,496.0 every time — about 7 percent
+> lower at the very rung the staircase had cost nothing. Which term dominates is per rung
+> and no rung's true value can be recovered from this bundle, so the published figures must
+> not be read as merely conservative. TTFT, ITL and end-to-end percentiles are per-request
+> measurements and are unaffected, so the SLO gate verdicts on this page stand. The bench
+> harness is fixed: de-phasing is on by default, and the interval is recorded per window in
+> run_configs.json, so any future bundle declares which regime it ran in. This campaign is
+> queued for re-measurement; until it is re-run, treat every throughput and
+> requests-per-second figure below as withdrawn, and read the latency figures and the SLO
+> verdicts as standing.
+
 This example answers that question by running the full ladder on real hardware rather than
 composing a forecast, and it is this repository's first campaign on NVIDIA's GB200 — one GPU
 of a four-GPU tray, started by hand off-scheduler, serving a dense 31B checkpoint at

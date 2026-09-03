@@ -324,6 +324,11 @@ def write_bundle(
                 "drain_deadline_s": run.drain_deadline_s,
                 "warmup_count": run.warmup_count,
                 "warmup_s_actual": run.warmup_s_actual,
+                # null means the fleet entered this window in lock-step. It has to ship,
+                # because a reviewer holding the bundle cannot otherwise tell whether a
+                # throughput plateau in the ladder is the server saturating or
+                # floor(window_s / cycle) stepping down by one for every user at once.
+                "dephase_s": run.dephase_s,
                 "policy": {
                     key: getattr(run.policy, key)
                     for key in (
@@ -333,6 +338,7 @@ def write_bundle(
                         "think_time_s",
                         "warmup_requests",
                         "warmup_s",
+                        "dephase",
                         "loop",
                         "repetition",
                     )

@@ -13,6 +13,9 @@ teaches contributors to re-run until green, which is worse than not testing it.
 """
 
 import asyncio
+import hashlib
+import random
+import statistics
 
 import pytest
 
@@ -383,8 +386,17 @@ def test_a_request_still_running_at_the_drain_deadline_is_cancelled_and_recorded
     requests that came back, which under overload is close to zero by construction.
     """
     adapter = _FakeAdapter(service_s=0.005, slow_after=6, slow_s=30.0)
+    # Lock-step is declared (dephase=False) rather than the expectations changed: this
+    # test audits the drain deadline, and with de-phasing the slow requests start
+    # inside the de-phasing interval, land out of window, and are cancelled there --
+    # breaking both assertions below for reasons that have nothing to do with the drain.
     run = asyncio.run(
-        run_window(adapter, _specs(), policy=_policy(drain_deadline_s=0.05), reset=no_reset)
+        run_window(
+            adapter,
+            _specs(),
+            policy=_policy(drain_deadline_s=0.05, dephase=False),
+            reset=no_reset,
+        )
     )
 
     cancelled = [r for r in run.records if r.outcome is Outcome.CANCELLED]
@@ -616,10 +628,21 @@ def test_a_session_the_window_cut_short_is_counted_as_started_but_not_completed(
     """
     stalls = _FakePlan(shapes=[_FakeShape([_FakeStep(0), _FakeStep(0, gap_s=30.0), _FakeStep(1)])])
 
+    # Lock-step is declared (dephase=False) rather than the expectation changed: this
+    # test audits truncation counting, and with de-phasing the single user starts its
+    # only session inside the de-phasing interval and parks in the 30 s gap, so
+    # sessions_started would read 0 -- correct accounting for a run whose window
+    # genuinely began no session, which is not what this fixture is about.
     run = asyncio.run(
         run_window(
             _FakeAdapter(service_s=0.002),
-            policy=_policy(concurrency=1, window_s=0.10, drain_deadline_s=0.05, warmup_requests=1),
+            policy=_policy(
+                concurrency=1,
+                window_s=0.10,
+                drain_deadline_s=0.05,
+                warmup_requests=1,
+                dephase=False,
+            ),
             reset=no_reset,
             session_plan=stalls,
         )
@@ -666,3 +689,278 @@ def test_a_step_cancelled_at_the_deadline_still_names_the_session_it_belonged_to
     assert cancelled, "the 30 s step should have been cancelled at the deadline"
     for record in cancelled:
         assert record.session_id is not None, "a sunk record lost its session identity"
+
+
+# --- de-phasing -----------------------------------------------------------------------
+
+
+def _dephase_offsets(concurrency, repetition, cycle_s):
+    """The driver's offset derivation, restated: seeded from the operating point, not the clock."""
+    digest = hashlib.blake2b(
+        f"dephase:{concurrency}:{repetition}".encode(), digest_size=8
+    ).digest()
+    rng = random.Random(int.from_bytes(digest, "big"))
+    return [rng.uniform(0.0, cycle_s) for _ in range(concurrency)]
+
+
+def test_the_measured_window_does_not_open_with_the_fleet_in_lock_step():
+    """A phase-locked fleet reports floor(W / C) completions per window, not N * W / C.
+
+    The steps of that staircase are the false plateaus a capacity report mistakes for
+    the saturation knee, so the first in-window issues must spread across a real
+    fraction of the cycle: if they still land within a whisker of one another, the
+    synchronised waves are back and so is the downward bias.
+    """
+    concurrency = 8
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.05),
+            _specs(),
+            policy=_policy(concurrency=concurrency, warmup_requests=concurrency),
+            reset=no_reset,
+        )
+    )
+
+    assert run.dephase_s is not None and run.dephase_s > 0.0, "the fixture must de-phase"
+    first_issues = sorted(r.issued_ts for r in run.records if r.in_window)[:concurrency]
+    assert len(first_issues) == concurrency
+    spread = first_issues[-1] - first_issues[0]
+    assert spread >= 0.2 * run.dephase_s, (
+        f"first in-window issues span {spread:.4f} s of a {run.dephase_s:.4f} s cycle; "
+        "the users are still starting together"
+    )
+
+
+def test_dephase_false_releases_the_fleet_in_lock_step_just_as_before():
+    """The escape hatch must be the old behaviour, or it reproduces nothing.
+
+    A reviewer re-running a suspect ladder with dephase=False asks exactly one
+    question: was that plateau floor(W / C)? A hatch that quietly de-phased anyway
+    would answer it for a benchmark nobody ran, so this asserts the old release
+    directly -- every user's first in-window issue within a fraction of one cycle
+    of every other's.
+    """
+    concurrency = 8
+    run = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.05),
+            _specs(),
+            policy=_policy(concurrency=concurrency, warmup_requests=concurrency, dephase=False),
+            reset=no_reset,
+        )
+    )
+
+    assert run.dephase_s is None
+    first_issues = sorted(r.issued_ts for r in run.records if r.in_window)[:concurrency]
+    assert len(first_issues) == concurrency
+    spread = first_issues[-1] - first_issues[0]
+    assert spread < 0.25 * 0.05, f"dephase=False still spread the starts over {spread:.4f} s"
+
+
+def test_the_dephasing_offsets_are_deterministic_for_a_given_operating_point():
+    """Offsets drawn from the clock would be a benchmark input nobody can replay.
+
+    Two runs of one config have to produce the same offsets, or "the same rung
+    measured twice" stops holding: a rate that depends on where the phases happened
+    to fall is a rate no reviewer can re-derive, which is precisely the property
+    the seeded derivation buys.
+    """
+    first = _dephase_offsets(16, 0, 35.0)
+    second = _dephase_offsets(16, 0, 35.0)
+    other_repetition = _dephase_offsets(16, 1, 35.0)
+
+    assert len(first) == 16, "one offset per virtual user, in user order"
+    assert all(0.0 <= offset < 35.0 for offset in first)
+    assert first == second
+    assert first != other_repetition, "the seed must feed the repetition, not relabel it"
+
+
+def test_dephasing_traffic_is_marked_out_of_window_and_never_counted_as_offered_load():
+    """The interval's requests exist to spread the fleet, not to load the window.
+
+    Counting them as offered demand would inflate both the user count and the
+    completion rate with traffic that was never part of the declared operating
+    point -- the pair of errors section 7.6 names -- so every record stamped
+    before t0 must be out of window and absent from the offered count.
+    """
+    run = asyncio.run(
+        run_window(_FakeAdapter(service_s=0.01), _specs(), policy=_policy(), reset=no_reset)
+    )
+
+    assert run.dephase_s is not None and run.dephase_s > 0.0, "the fixture must de-phase"
+    pre_window = [r for r in run.records if r.issued_ts < run.t0]
+    during_interval = [r for r in pre_window if r.issued_ts >= run.t0 - run.dephase_s]
+    assert during_interval, "no request was issued inside the de-phasing interval"
+    assert all(not r.in_window for r in pre_window)
+    assert run.boundary.warmup >= len(pre_window)
+    assert run.warmup_count >= len(pre_window), "de-phasing traffic left the warm-up count"
+
+
+def test_dephase_s_reports_the_interval_used_and_stays_none_when_it_is_skipped():
+    """None is a finding, not a missing value: it means the fleet entered in lock-step.
+
+    Folding the two states together (zero instead of None, say) would let a reader
+    compare a de-phased ladder against a lock-step one without knowing, and any
+    plateau in the second may be floor(W / C) stepping rather than saturation.
+    The distinction is the only thing in the bundle that says which was run.
+    """
+    dephased = asyncio.run(
+        run_window(_FakeAdapter(service_s=0.01), _specs(), policy=_policy(), reset=no_reset)
+    )
+    skipped = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=0.01),
+            _specs(),
+            policy=_policy(dephase=False),
+            reset=no_reset,
+        )
+    )
+
+    assert isinstance(dephased.dephase_s, float)
+    assert 0.0 < dephased.dephase_s <= dephased.policy.window_s, "the clamp must bound"
+    assert skipped.dephase_s is None
+
+
+def test_de_phasing_recovers_the_completions_a_lock_step_window_rounds_away():
+    """The whole point, stated as a number: N * W / C completions, not N * floor(W / C).
+
+    Everything above checks that the fleet is spread. This checks that the spreading
+    changes the published figure, because a de-phasing that left throughput on the same
+    staircase would be ceremony. The fixture runs 2.5 cycles per user, so a locked fleet
+    completes two per user and throws the half away, while a spread one collects the half
+    from the users whose phase happens to land in it. On a GB200 ladder this exact
+    rounding made concurrency 256 and 384 report an identical 7,488 tok/s -- a plateau
+    the report would have published as the saturation knee, with the true rates 8,554 and
+    9,984 tok/s and still climbing.
+
+    Both runs share one fixture and are compared against each other rather than against
+    an absolute count, so ordinary scheduling drift moves them together. If the drift is
+    bad enough to move W / C onto an integer the regime under test no longer exists, and
+    the test says so instead of failing for a reason that is not the code's.
+    """
+    concurrency = 24
+    fixture = dict(concurrency=concurrency, window_s=0.25, drain_deadline_s=0.30)
+    service_s = 0.10
+
+    locked = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=service_s),
+            _specs(),
+            policy=_policy(warmup_requests=concurrency, dephase=False, **fixture),
+            reset=no_reset,
+        )
+    )
+    spread = asyncio.run(
+        run_window(
+            _FakeAdapter(service_s=service_s),
+            _specs(),
+            policy=_policy(warmup_requests=concurrency, **fixture),
+            reset=no_reset,
+        )
+    )
+
+    # Measured, not assumed: asyncio.sleep overshoots, and the cycle this ran at is the
+    # only one the assertion may be scaled against.
+    served = [r.e2e_s for r in locked.records if r.in_window and r.e2e_s is not None]
+    cycle_s = statistics.median(served)
+    cycles = fixture["window_s"] / cycle_s
+    if abs(cycles - round(cycles)) < 0.15:
+        pytest.skip(
+            f"timing drift put this machine at {cycles:.2f} cycles per user, too close to "
+            "a whole number for the rounding this test exists to observe"
+        )
+
+    per_user_locked = locked.boundary.completed_in_window / concurrency
+    per_user_spread = spread.boundary.completed_in_window / concurrency
+    assert per_user_locked == pytest.approx(float(int(cycles)), abs=0.2), (
+        f"the locked fleet completed {per_user_locked:.2f} per user at {cycles:.2f} "
+        "cycles: it was not on the staircase, so this fixture proves nothing"
+    )
+    assert per_user_spread > per_user_locked + 0.15, (
+        f"de-phased {per_user_spread:.2f} completions per user against a locked "
+        f"{per_user_locked:.2f} at {cycles:.2f} cycles: the fraction is still being lost"
+    )
+
+
+class _NonYieldingAdapter(Adapter):
+    """Answers every request without awaiting anything, and reports a latency it never spent.
+
+    Adapters that talk to a server await a socket, so every request hands control back to
+    the event loop. An in-process one need not, and several fakes in this repository's own
+    suite do not: they fabricate the timestamps and return. That makes this the fixture for
+    a driver that assumes it will be rescheduled -- and the fabricated e2e matters as much
+    as the missing await, because a zero-latency fake estimates a zero cycle and skips
+    de-phasing altogether, which is the path that never broke.
+
+    The runaway is caught here rather than with asyncio.wait_for, and the reason is the
+    defect itself: a coroutine that never suspends starves the event loop, so no timer the
+    loop owns can fire. The only code a runaway loop keeps executing is this method, so the
+    budget is checked in it, on the driver's own clock.
+    """
+
+    def __init__(self, reported_e2e_s=0.05, budget_s=1.0):
+        self.reported_e2e_s = reported_e2e_s
+        self.budget_s = budget_s
+        self.started = None
+        self.issued = 0
+
+    @property
+    def name(self):
+        return "non-yielding"
+
+    async def issue(self, spec, *, clock, sink=None):
+        now = clock()
+        if self.started is None:
+            self.started = now
+        self.issued += 1
+        if now - self.started > self.budget_s:
+            raise AssertionError(
+                f"still issuing {self.issued} requests {now - self.started:.2f} s into a "
+                f"window declared at {self.budget_s:.2f} s of total budget: the loop's end "
+                "never became finite, which is the hang this fixture exists to turn into a "
+                "failure"
+            )
+        return RequestRecord(
+            request_id=spec.request_id,
+            issued_ts=now,
+            outcome=Outcome.OK,
+            first_token_ts=now + 0.001,
+            end_ts=now + self.reported_e2e_s,
+            output_tokens=10,
+        )
+
+
+def test_the_window_closes_even_when_the_adapter_never_yields_to_the_event_loop():
+    """The window's end must be a number the driver knows before it launches anyone.
+
+    De-phasing first shipped with the close left at infinity until the main coroutine woke
+    from the de-phasing wait and assigned it. Every adapter that awaits a socket yields, so
+    every run against a real server set it and the ladder on the GB200 measured correctly;
+    an adapter that answers in-process never yields, the main coroutine was never
+    rescheduled, and the first virtual user looped on an infinite bound appending a record
+    per iteration until the process was killed at 32 GB of resident memory. It took out the
+    whole suite, not one test, because the runaway held the interpreter.
+
+    The interval is known before it is waited out, so there was never anything to observe:
+    t0 and the close are arithmetic on t_launch. This test pins that they are computed
+    rather than stamped, and it must stay cheap -- a non-yielding adapter spins hot for the
+    whole window, so the window here is milliseconds.
+    """
+    adapter = _NonYieldingAdapter(reported_e2e_s=0.05, budget_s=1.0)
+
+    run = asyncio.run(
+        run_window(
+            adapter,
+            _specs(),
+            policy=_policy(window_s=0.05, drain_deadline_s=0.05, warmup_requests=4),
+            reset=no_reset,
+        )
+    )
+
+    assert run.dephase_s == pytest.approx(0.05, abs=0.02), (
+        f"dephase_s was {run.dephase_s!r}: de-phasing has to be engaged for this fixture to "
+        "cover the regression, and a skipped interval reproduces the old release order"
+    )
+    assert any(record.in_window for record in run.records), (
+        "the window opened and closed without offering anything, so returning proves nothing"
+    )

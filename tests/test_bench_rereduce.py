@@ -269,6 +269,7 @@ def _window_runs(specs):
                 drain_deadline_s=spec["drain_deadline_s"],
                 warmup_count=spec["warmup_count"],
                 warmup_s_actual=spec["warmup_s_actual"],
+                dephase_s=spec.get("dephase_s"),
                 boundary=Boundary(**spec["boundary"]),
             )
         )

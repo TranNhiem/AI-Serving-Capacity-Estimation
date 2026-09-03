@@ -136,7 +136,13 @@ def load_window_runs(bundle_dir) -> list[WindowRun]:
     runs: list[WindowRun] = []
     for index, window in enumerate(windows):
         try:
-            policy = WindowPolicy(**window["policy"])
+            # Bundles written before de-phasing existed carry no `dephase` key, and the
+            # dataclass default is True -- which would reconstruct a lock-step window as a
+            # de-phased one and answer "was that plateau floor(W / C)?" with the wrong
+            # word. An absent key is the pre-fix harness, so it reconstructs as False.
+            policy_fields = dict(window["policy"])
+            policy_fields.setdefault("dephase", False)
+            policy = WindowPolicy(**policy_fields)
             boundary = Boundary(
                 **{k: v for k, v in window["boundary"].items() if k in _BOUNDARY_FIELDS}
             )
@@ -145,6 +151,9 @@ def load_window_runs(bundle_dir) -> list[WindowRun]:
             drain_deadline_s = window["drain_deadline_s"]
             warmup_count = window["warmup_count"]
             warmup_s_actual = window["warmup_s_actual"]
+            # .get, not [], for the same reason: an older bundle simply has no interval to
+            # report, and None already means "entered in lock-step" downstream.
+            dephase_s = window.get("dephase_s")
         except (KeyError, TypeError) as exc:
             raise ReduceError(
                 f"window {index} in {bundle_dir / 'run_configs.json'} is missing fields "
@@ -177,6 +186,7 @@ def load_window_runs(bundle_dir) -> list[WindowRun]:
                 drain_deadline_s=drain_deadline_s,
                 warmup_count=warmup_count,
                 warmup_s_actual=warmup_s_actual,
+                dephase_s=dephase_s,
                 boundary=boundary,
                 sessions_started=started,
                 sessions_completed=completed,

@@ -1077,6 +1077,27 @@ async def _run_ladder(adapter, workload_obj, config, gates, policy, state, err):
                         "Check both limits before believing this rung as a capacity boundary",
                         file=err,
                     )
+                completed = summary.n_completed
+                # Fewer than three completions per user leaves the rate coarsely resolved:
+                # over users whose cycles are near-identical the count is an integer, so
+                # a rate estimated from k of them per user quantises in steps of about
+                # 1/k. De-phasing removes the systematic bias of a phase-locked fleet;
+                # it cannot sharpen what one window resolves.
+                if (
+                    completed is not None
+                    and int(concurrency) > 0
+                    and completed / int(concurrency) < 3.0
+                ):
+                    print(
+                        f"ascep bench: WARNING: completions per user at this rung is "
+                        f"{completed / int(concurrency):.2f} ({completed} completed at "
+                        f"concurrency={concurrency}): a rate estimated from k cycles per "
+                        "user quantises in steps of about 1/k, and de-phasing removes "
+                        "the systematic bias of a phase-locked fleet but not this coarse "
+                        "resolution. The remedy is a longer window_s (or a shorter "
+                        "declared output length), not a re-read of this number",
+                        file=err,
+                    )
         await _confirm_boundary(adapter, workload_obj, config, gates, policy, state, err)
     finally:
         # The adapter's HTTP client belongs to this loop; closing it anywhere else risks a

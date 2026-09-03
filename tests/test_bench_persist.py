@@ -68,6 +68,7 @@ def _run(rep, n=5, t0=0.0):
         drain_deadline_s=5.0,
         warmup_count=8,
         warmup_s_actual=12.4,
+        dephase_s=3.5,
         boundary=boundary,
     )
 

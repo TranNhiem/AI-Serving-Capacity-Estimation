@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import random
+import statistics
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -54,6 +56,16 @@ class WindowPolicy:
     think_time_s: float
     warmup_requests: int = 0
     warmup_s: float = 0.0
+    # De-phase the fleet before the window opens: the warm-up gather is a barrier, and
+    # with a deterministic workload (fixed output length, constant think time) users
+    # released together stay phase-locked, so completions arrive in synchronised waves
+    # and the ladder collapses to floor(window_s / cycle) completions per user. The
+    # steps of that staircase are what a capacity report reads as the saturation knee
+    # -- the false plateau this field exists to prevent. It defaults on rather than
+    # being required because switching it off is the choice that moves a published
+    # number in the flattering-looking direction (a cleaner, integer-valued curve),
+    # so off is the thing a caller must ask for by name.
+    dephase: bool = True
     loop: str = "closed"
     repetition: int = 0
     poll_interval_s: float = 0.005
@@ -194,6 +206,13 @@ class WindowRun:
     drain_deadline_s: float
     warmup_count: int
     warmup_s_actual: float
+    #: The de-phasing interval inserted between warm-up and t0. None when it was
+    #: skipped -- dephase=False, or warm-up yielded no usable latency sample -- and
+    #: None means the fleet entered the window in lock-step: any throughput plateau
+    #: in that ladder may be floor(window_s / cycle) stepping per user rather than
+    #: the server saturating, which is why the state is recorded instead of folded
+    #: into 0.0.
+    dephase_s: float | None
     boundary: Boundary
     #: Sessions begun, and sessions that reached their last step before the window closed.
     #: Both stay zero for a request-at-a-time run, which has no sessions to count.
@@ -373,21 +392,82 @@ async def run_window(
 
     warm = warm_session_user if session_plan is not None else warm_user
     await asyncio.gather(*(warm() for _ in range(policy.concurrency)))
-    warmup_count = next_index - warmup_index_base
-    warmup_s_actual = clock() - warmup_started
-    # The session counters cover the measured window only, matching boundary.offered.
-    # Warm-up ends the moment its request quota is met, which is almost always mid-session,
-    # so counting those sessions would report a truncation rate the window never had. The
-    # ordinal itself keeps climbing -- it has to, or a measured session would reuse a
-    # warm-up session's label and its already-cached prompts.
-    warmup_sessions = next_session
-    sessions_completed = 0
 
-    t0 = clock()
+    # The warm-up gather above is a barrier: every virtual user leaves warm-up at the
+    # same instant, and a deterministic workload (fixed output length, constant think
+    # time) assigns them all the same request-plus-think cycle, so the fleet stays
+    # phase-locked and completions arrive in synchronised waves. A window of length W
+    # then collects floor(W / cycle) completions per user -- a step function of the
+    # cycle length whose steps a capacity report reads as the saturation knee, which
+    # is the single number the report exists to publish. Spreading the phases over
+    # one cycle before the window opens makes completions arrive at a stationary
+    # rate, so E[completions] = N * W / cycle for any W.
+    #
+    # Any skip -- dephase declared False, no finished warm-up request to measure, or
+    # a non-positive estimate -- leaves cycle_est at zero, and zero reproduces the
+    # old lock-step release exactly: the tasks wait on t_launch itself and t0 is
+    # stamped at once. dephase=False must be the old behaviour, or the escape hatch
+    # replays nothing.
+    offsets: list[float] = [0.0] * policy.concurrency
+    dephase_s: float | None = None
+    warm_e2e = [
+        record.e2e_s
+        for record in records
+        if record.outcome is Outcome.OK and record.e2e_s is not None
+    ]
+    cycle_est = 0.0
+    if policy.dephase and warm_e2e:
+        # Session mode forbids think_time_s, so this adds zero there and thereby
+        # under-estimates a multi-step session's cycle -- the median e2e is one
+        # step's latency, not a session's. A partial de-phase is strictly better
+        # than a lock, and a made-up multiplier would be a number nobody chose.
+        cycle_est = statistics.median(warm_e2e) + policy.think_time_s
+    if cycle_est > 0:
+        # Clamped to the window being measured: an unbounded estimate drawn from
+        # one pathological warm-up request would stall the whole ladder for longer
+        # than the rung it delays.
+        cycle_est = min(cycle_est, policy.window_s)
+        dephase_s = cycle_est
+        # Seeded from the operating point, never from the clock: two runs of the
+        # same config must draw the same offsets, or a repetition cannot be
+        # reproduced. The blake2b-to-int derivation mirrors session_base above.
+        rng = random.Random(
+            int.from_bytes(
+                hashlib.blake2b(
+                    f"dephase:{policy.concurrency}:{policy.repetition}".encode(),
+                    digest_size=8,
+                ).digest(),
+                "big",
+            )
+        )
+        offsets = [rng.uniform(0.0, cycle_est) for _ in range(policy.concurrency)]
+
+    t_launch = clock()
+    # Computed here, before a single user task exists, rather than stamped from clock()
+    # once the de-phasing interval has been waited out. The interval is known before it
+    # is waited, so predicting the instant is exact and nothing is lost -- while a t1
+    # that only becomes finite when the main coroutine is next scheduled makes the
+    # window's end depend on the user tasks yielding to the event loop, and an adapter
+    # that answers without awaiting anything (an in-process fake, a stub, a cache hit)
+    # never yields. The first such user would then loop on an infinite bound, the
+    # window would never open, and the run would hang with records accumulating until
+    # the process died. The tasks are still created BEFORE the wait, on purpose: they
+    # must already be running, and ideally mid-request, when the window opens, or the
+    # warm-up barrier is merely replaced by a second, cleaner one.
+    t0 = t_launch + cycle_est
     t1 = t0 + policy.window_s
     deadline = t1 + policy.drain_deadline_s
 
-    async def user() -> None:
+    async def wait_until(target: float) -> None:
+        # Polls on clock() rather than asyncio.sleep(target - clock()): the target
+        # is measured on the injected clock while sleep()'s duration is measured on
+        # the event loop's, and a test that injects a fake clock must move every
+        # wait with it -- the same reason the deadline poll below polls clock().
+        while clock() < target:
+            await asyncio.sleep(policy.poll_interval_s)
+
+    async def user(offset: float) -> None:
+        await wait_until(t_launch + offset)
         # The loop runs to the declared close and no earlier. A guard band that stopped
         # issuing a millisecond early would shorten the offered-load window by an amount
         # nobody declared, which is the same class of error as stretching the denominator
@@ -401,14 +481,35 @@ async def run_window(
             if policy.think_time_s:
                 await asyncio.sleep(policy.think_time_s)
 
-    async def session_user() -> None:
+    async def session_user(offset: float) -> None:
+        await wait_until(t_launch + offset)
         # Same rule as above, one level up: a user starts another session while the clock
         # reads before close, and the step loop stops issuing at the same instant.
         while clock() < t1:
             await run_one_session(lambda: clock() >= t1)
 
     body = session_user if session_plan is not None else user
-    tasks = [asyncio.create_task(body()) for _ in range(policy.concurrency)]
+    tasks = [asyncio.create_task(body(offset)) for offset in offsets]
+    await wait_until(t0)
+
+    # The warm-up counters are taken only now, after the interval, because the
+    # traffic that spread the fleet IS warm-up: snapshotting at the gather would
+    # drop those requests from warmup_count and count sessions begun mid-spread as
+    # measured ones (double-counting them in sessions_started once their steps land
+    # inside the window). apply_boundary_rules needs no help, and must get none:
+    # issued before t0 already marks a record out of window there. But a de-phasing
+    # request that FINISHES inside the window is still a completion of it, by the
+    # finished_here rule in metrics.py -- counting those landings is exactly what
+    # makes the de-phased steady state's completion rate unbiased. Do not "fix" it.
+    warmup_count = next_index - warmup_index_base
+    warmup_s_actual = clock() - warmup_started
+    # The session counters cover the measured window only, matching boundary.offered.
+    # Warm-up ends the moment its request quota is met, which is almost always mid-session,
+    # so counting those sessions would report a truncation rate the window never had. The
+    # ordinal itself keeps climbing -- it has to, or a measured session would reuse a
+    # warm-up session's label and its already-cached prompts.
+    warmup_sessions = next_session
+    sessions_completed = 0
     # Poll on clock() rather than asyncio.wait(timeout=...): the deadline is measured on
     # the injected clock, while wait()'s timeout is measured on the event loop's, and a
     # test that injects a fake clock must move the deadline with it.
@@ -457,6 +558,7 @@ async def run_window(
         drain_deadline_s=policy.drain_deadline_s,
         warmup_count=warmup_count,
         warmup_s_actual=warmup_s_actual,
+        dephase_s=dephase_s,
         boundary=boundary,
         sessions_started=next_session - warmup_sessions,
         sessions_completed=sessions_completed,
