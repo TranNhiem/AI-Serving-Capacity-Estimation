@@ -19,6 +19,7 @@ import pytest
 from ascep.bench.adapters.base import RequestSpec
 from ascep.bench.workloads import (
     _FILLER_WORDS,
+    _RESOLUTION_MIX_MAX,
     CACHE_POLICIES,
     CappedOutput,
     FixedOutput,
@@ -653,8 +654,89 @@ def test_media_shape_reports_absent_video_as_zero_never_as_null(tmp_path):
             {"width": 768, "height": 432, "share": 0.5},
             {"width": 1920, "height": 1080, "share": 0.5},
         ],
+        "image_resolution_mix_distinct": 2,
+        "image_resolution_mix_listed_share": 1.0,
+        "image_resolution_mix_coverage": 1.0,
         "media_bytes_resident": expected_resident,
     }
+
+
+def test_a_multi_image_record_sizes_each_image_from_the_parallel_width_and_height_lists(
+    tmp_path,
+):
+    """A multi-image corpus states one resolution per image, as parallel lists. Reading
+    only the scalar form drops every one of them, and the resolution mix then comes back
+    empty for a corpus that sized every image -- indistinguishable, in the report, from a
+    corpus that stated no resolutions at all."""
+    record = _mm_record("images/a.jpg", [1920, 768], [1080, 432], rid="r1")
+    record["image"] = ["images/a.jpg", "images/b.png"]
+    record["conversations"][0]["value"] = "<image>\n<image>\nWhat is happening?"
+    path, root = _mm_corpus(
+        tmp_path, [record], media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)]
+    )
+    shape = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64").media_shape()
+    assert shape["images_per_request"] == 2.0
+    assert shape["image_resolution_mix"] == [
+        {"width": 768, "height": 432, "share": 0.5},
+        {"width": 1920, "height": 1080, "share": 0.5},
+    ]
+    assert shape["image_resolution_mix_coverage"] == 1.0
+
+
+def test_a_resolution_list_shorter_than_the_image_list_leaves_every_image_unsized(tmp_path):
+    """Aligning a two-entry list against three images by position would attribute two real
+    resolutions to the wrong images and invent nothing for the third, which is worse than
+    admitting the record is unsized. Coverage says so in a field rather than by an empty
+    mix a reader could read either way."""
+    record = _mm_record("images/a.jpg", [1920], [1080], rid="r1")
+    record["image"] = ["images/a.jpg", "images/b.png"]
+    record["conversations"][0]["value"] = "<image>\n<image>\nWhat is happening?"
+    path, root = _mm_corpus(
+        tmp_path, [record], media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)]
+    )
+    shape = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64").media_shape()
+    assert shape["image_resolution_mix"] == []
+    assert shape["image_resolution_mix_coverage"] == 0.0
+
+
+def test_the_resolution_mix_declares_how_much_of_the_corpus_it_covers(tmp_path):
+    """The shares are computed over sized images only, so on a half-sized corpus the mix
+    reads as a description of the whole. Coverage is what stops a reader taking a mix
+    measured on one image in four as the corpus's resolution distribution."""
+    sized = _mm_record("images/a.jpg", 1920, 1080, rid="r1")
+    unsized = _mm_record("images/b.png", None, None, rid="r2")
+    path, root = _mm_corpus(
+        tmp_path, [sized, unsized], media=[("images/a.jpg", _JPEG), ("images/b.png", _PNG)]
+    )
+    shape = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64").media_shape()
+    assert shape["image_resolution_mix"] == [{"width": 1920, "height": 1080, "share": 1.0}]
+    assert shape["image_resolution_mix_coverage"] == 0.5
+
+
+def test_a_corpus_with_more_resolutions_than_the_cap_lists_some_and_declares_the_rest(
+    tmp_path,
+):
+    """A natural image corpus has thousands of distinct resolutions -- one measured here had
+    11,916 across 13,644 images -- and one row each makes the workload manifest longer than
+    everything else in the bundle combined, with every row past the first few carrying a
+    share that rounds to zero. The list is capped, and the two fields beside it are what
+    stop the cap from reading as the whole distribution: without them the shares simply do
+    not sum to 1 and nothing says why."""
+    records = []
+    for i in range(_RESOLUTION_MIX_MAX + 8):
+        record = _mm_record("images/a.jpg", 100 + i, 100 + i, rid=f"r{i}")
+        records.append(record)
+    path, root = _mm_corpus(tmp_path, records, media=[("images/a.jpg", _JPEG)])
+    shape = MultimodalJsonlCorpus(path=path, media_root=root, transport="base64").media_shape()
+    assert len(shape["image_resolution_mix"]) == _RESOLUTION_MIX_MAX
+    assert shape["image_resolution_mix_distinct"] == _RESOLUTION_MIX_MAX + 8
+    assert shape["image_resolution_mix_listed_share"] == round(
+        _RESOLUTION_MIX_MAX / (_RESOLUTION_MIX_MAX + 8), 4
+    )
+    # Every image was sized, so the cap is a listing choice and not a measurement gap. The
+    # two fields have to stay distinguishable: conflating them would let a truncated list
+    # excuse itself as unmeasured data.
+    assert shape["image_resolution_mix_coverage"] == 1.0
 
 
 def test_a_record_whose_markers_and_media_disagree_is_refused_with_counts_and_line(tmp_path):
@@ -693,6 +775,34 @@ def test_a_missing_media_file_is_refused_with_its_path_and_line(tmp_path):
     message = str(exc.value)
     assert "gone.jpg" in message
     assert "line 2" in message
+
+
+def test_a_corpus_naming_its_media_by_absolute_path_is_refused(tmp_path):
+    """Path("/root") / "/elsewhere/a.jpg" is "/elsewhere/a.jpg", so an absolute path makes
+    media_root dead configuration: the run reads the file, every check passes, and the
+    bundle is silently pinned to the one machine whose filesystem the corpus describes.
+    Moving it elsewhere then fails with a missing file while the corpus digest still
+    matches, which reads as a broken bundle rather than an unportable one."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "a.jpg").write_bytes(_JPEG)
+    path, root = _mm_corpus(tmp_path, [_mm_record(str(outside / "a.jpg"), 1920, 1080)])
+    with pytest.raises(ValueError) as exc:
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    message = str(exc.value)
+    assert "line 1" in message
+    assert "media_root" in message
+
+
+def test_a_corpus_climbing_out_of_media_root_with_dot_dot_is_refused(tmp_path):
+    """The same escape by another spelling. media_root is the bound on what the load
+    generator will open and base64 into a request body, and a relative path that climbs
+    above it reads a file the declaration does not cover."""
+    (tmp_path / "secret.jpg").write_bytes(_JPEG)
+    path, root = _mm_corpus(tmp_path, [_mm_record("../secret.jpg", 1920, 1080)])
+    with pytest.raises(ValueError) as exc:
+        MultimodalJsonlCorpus(path=path, media_root=root, transport="base64")
+    assert "outside media_root" in str(exc.value)
 
 
 def test_an_unknown_transport_is_refused(tmp_path):

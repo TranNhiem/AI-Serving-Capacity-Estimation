@@ -68,6 +68,12 @@ MEDIA_PLACEHOLDER = re.compile(r"<\s*/?\s*(image|img|video|audio|vision)[^>]*>",
 _IMAGE_MARKER = re.compile(r"<\s*/?\s*(image|img)[^>]*>", re.IGNORECASE)
 _VIDEO_MARKER = re.compile(r"<\s*/?\s*video[^>]*>", re.IGNORECASE)
 
+#: How many resolutions media_shape lists before it stops and declares the remainder.
+#: A natural image corpus measured here had 11,916 distinct resolutions across 13,644
+#: images, so the untruncated list is longer than the rest of the manifest put together
+#: and every row after the first few carries a share that rounds to zero.
+_RESOLUTION_MIX_MAX = 32
+
 
 @dataclass(frozen=True)
 class FixedOutput:
@@ -387,6 +393,41 @@ def _media_list(record: dict, key: str, lineno: int) -> list[str]:
     )
 
 
+def _image_sizes(record: dict, n_images: int) -> list[tuple[int | None, int | None]]:
+    """Pair each image in a record with the resolution the corpus declares for it.
+
+    Single-image corpora write scalar ``width`` and ``height``; multi-image corpora write
+    parallel lists, one entry per image. Reading only the scalar form throws the geometry
+    of every multi-image record away, and media_shape then reports an empty resolution
+    histogram for a corpus that stated every resolution -- which reads as "the corpus does
+    not say" when the truth is "the reader did not look". A list whose length disagrees
+    with the image count is left unsized rather than aligned by position, because guessing
+    which image a stray entry belongs to would attribute a real resolution to the wrong
+    image.
+    """
+    width = record.get("width")
+    height = record.get("height")
+    if _is_size(width) and _is_size(height):
+        return [(width, height)] * n_images
+    if (
+        isinstance(width, list)
+        and isinstance(height, list)
+        and len(width) == len(height) == n_images
+        and all(_is_size(w) for w in width)
+        and all(_is_size(h) for h in height)
+    ):
+        return list(zip(width, height, strict=True))
+    # Unsized media is a reporting gap, not a corpus error: media_shape declares the
+    # share of images it could size, so the run says so rather than refusing to start.
+    return [(None, None)] * n_images
+
+
+def _is_size(value: object) -> bool:
+    # bool is an int in Python, and a width of True would sail into the resolution
+    # histogram as the pixel count 1.
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 @dataclass(frozen=True)
 class _MediaRef:
     """One media reference with the geometry the corpus declares inline for it. The token
@@ -433,7 +474,10 @@ class MultimodalJsonlCorpus(PromptSource):
 
     path: Path
     #: The corpus references its media relative to this root; without one the paths in
-    #: the file resolve against whatever directory the driver happened to start in.
+    #: the file resolve against whatever directory the driver happened to start in. It is
+    #: also a boundary, not just a prefix: a record whose path resolves outside it is
+    #: refused, because an absolute path would discard the root and pin the corpus to the
+    #: one machine whose filesystem it happens to describe.
     media_root: Path
     #: How the media reaches the server, mirroring the serving layer's
     #: image_input_transport: the bytes inline as a data URL, or a URL the server fetches.
@@ -475,6 +519,9 @@ class MultimodalJsonlCorpus(PromptSource):
             )
         self.path = Path(self.path)
         self.media_root = Path(self.media_root)
+        # Resolved once, because the containment check in _parse_record runs per media file
+        # and resolve() touches the filesystem.
+        self._media_root_resolved = self.media_root.resolve()
         data = self.path.read_bytes()
         # The digest covers what the server receives, not only what is on disk: the same
         # file over a different transport, or truncated to a different max_records, is a
@@ -578,14 +625,28 @@ class MultimodalJsonlCorpus(PromptSource):
                 "reference(s); a record whose markers and media disagree sends a prompt "
                 "the model cannot align, and the resulting token count is meaningless"
             )
-        width = record.get("width")
-        height = record.get("height")
-        if not isinstance(width, int) or not isinstance(height, int):
-            width = height = None
+        sizes = _image_sizes(record, len(images))
         media: list[_MediaRef] = []
         for kind, rel_paths in (("image", images), ("video", videos)):
-            for rel in rel_paths:
+            for index, rel in enumerate(rel_paths):
                 resolved = self.media_root / rel
+                if not resolved.resolve().is_relative_to(self._media_root_resolved):
+                    # An absolute path in the corpus makes media_root dead configuration:
+                    # Path("/root") / "/elsewhere/x.png" is "/elsewhere/x.png", so the
+                    # declared root is silently discarded and the run reads whatever the
+                    # corpus names. Two things break. The bundle stops being portable --
+                    # moving it to another machine changes nothing that can be pointed at
+                    # the media, so the corpus digest matches while the files do not exist
+                    # -- and the root stops bounding what the load generator will open and
+                    # base64 into a request body. The same applies to a ".." that climbs
+                    # out. Refusing here is what makes media_root mean something.
+                    raise ValueError(
+                        f"line {lineno}: media path {rel!r} resolves to {resolved.resolve()}, "
+                        f"outside media_root {self._media_root_resolved}. Corpus media paths "
+                        "must be relative to media_root; an absolute path ignores the root "
+                        "entirely and the corpus can then only be run on the machine that "
+                        "built it"
+                    )
                 if not resolved.is_file():
                     # Refusing at load is cheaper than discovering the substitution in a
                     # report: a skipped record is a media benchmark quietly becoming a
@@ -596,13 +657,9 @@ class MultimodalJsonlCorpus(PromptSource):
                     # Under "url" nothing is read: no file bytes, no encoding, no
                     # resident cost -- the server fetches from url_prefix instead.
                     self._encode_once(resolved, lineno)
+                size = sizes[index] if kind == "image" else (None, None)
                 media.append(
-                    _MediaRef(
-                        kind=kind,
-                        rel_path=rel,
-                        width=width if kind == "image" else None,
-                        height=height if kind == "image" else None,
-                    )
+                    _MediaRef(kind=kind, rel_path=rel, width=size[0], height=size[1])
                 )
         return _MmRecord(
             text=MEDIA_PLACEHOLDER.sub(" ", text).strip(),
@@ -703,14 +760,33 @@ class MultimodalJsonlCorpus(PromptSource):
                     key = (m.width, m.height)
                     resolutions[key] = resolutions.get(key, 0) + 1
         total_sized = sum(resolutions.values())
+        ranked = sorted(resolutions.items(), key=lambda kv: (-kv[1], kv[0]))
         mix = [
             {"width": w, "height": h, "share": round(count / total_sized, 4)}
-            for (w, h), count in sorted(resolutions.items(), key=lambda kv: (-kv[1], kv[0]))
+            for (w, h), count in ranked[:_RESOLUTION_MIX_MAX]
         ]
+        listed = sum(count for _, count in ranked[:_RESOLUTION_MIX_MAX])
         return {
             "images_per_request": total_images / n,
             "videos_per_request": total_videos / n,
             "image_resolution_mix": mix,
+            # A curated corpus has a handful of resolutions and this is all of them. A
+            # corpus of web images has thousands, and emitting one row each turns the
+            # workload manifest into a listing nobody reads and no operator can
+            # transcribe into a declaration. The list is the most common
+            # _RESOLUTION_MIX_MAX; the two fields below are what stop that truncation
+            # from reading as the whole distribution.
+            "image_resolution_mix_distinct": len(resolutions),
+            "image_resolution_mix_listed_share": (
+                round(listed / total_sized, 4) if total_sized else 0.0
+            ),
+            # The shares above are computed over the images the corpus sized, so on a
+            # corpus that sizes only some of them the mix describes a subset while
+            # reading as if it described the whole. This is that subset's size: 1.0 when
+            # every image is sized, 0.0 when none is and the mix is empty.
+            "image_resolution_mix_coverage": (
+                round(total_sized / total_images, 4) if total_images else 0.0
+            ),
             "records": n,
             "records_with_reasoning": sum(1 for r in self._records if r.has_reasoning),
             "media_bytes_resident": self._media_bytes_resident,
