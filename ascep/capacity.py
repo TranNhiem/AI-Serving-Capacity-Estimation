@@ -1059,6 +1059,19 @@ def capacity_at(
     """
     if headroom < 1.0:
         raise ValueError("headroom must be >= 1.0")
+    # A negative supply is not a small supply. Each of these three divides straight into a
+    # floor, so a negative one produces a negative floor, min() picks it because it is the
+    # smallest, and the report says the cluster serves -412 users and is KV-bound -- a number
+    # no reader treats as a capacity and every downstream comparison treats as one. Zero is
+    # legal and stays legal: kv_pool_bytes() clamps to it when the weights do not fit, and
+    # "this configuration serves nobody, on the KV axis" is a real finding worth publishing.
+    for name, supply in (
+        ("kv_tokens", kv_tokens),
+        ("throughput_tok_s", throughput_tok_s),
+        ("prefill_tok_s", prefill_tok_s),
+    ):
+        if supply is not None and supply < 0:
+            raise ValueError(f"{name} must be >= 0, got {supply!r}")
     ctx = workload.avg_context_tokens()
     if ctx <= 0:
         raise ValueError("workload context length must be > 0")
@@ -1157,13 +1170,24 @@ def gpus_required(
     headroom: float = 1.15,
     gpus_per_replica: int = 1,
     max_gpus: int = 4096,
+    prefill_tok_s_per_gpu: float | None = None,
 ) -> Capacity:
     """Smallest GPU count meeting ``workload``, rounded up to whole replicas.
 
     ``gpus_per_replica`` is the tensor-parallel width: capacity is bought in whole replicas,
-    so a deployment needing 3 GPUs at TP=2 must provision 4. Both per-GPU inputs must come
+    so a deployment needing 3 GPUs at TP=2 must provision 4. All per-GPU inputs must come
     from a measurement **at this same TP width** — per-GPU KV is not a constant across
     topologies (see :func:`kv_heads_per_rank`).
+
+    ``prefill_tok_s_per_gpu`` is passed straight through to :func:`capacity_at`'s fourth
+    floor and should be supplied whenever it was measured. Sizing is the one caller where
+    omitting it is not merely an unpriced axis but a wrong purchase order: this function
+    returns the first replica count that clears the floors it was given, so leaving prefill
+    out buys the cluster the output-only floors describe. On an input-heavy workload that is
+    the smaller cluster, and on a reranker or embedding service — ``output_tokens_per_request``
+    of zero, so the throughput floor is infinite and only KV binds — it is a cluster sized by
+    memory for a service that is entirely compute-bound. Left None the answer is unchanged
+    from v0.4.0, and C11 flags the report as published on an unpriced axis.
     """
     if gpus_per_replica < 1:
         raise ValueError("gpus_per_replica must be >= 1")
@@ -1176,6 +1200,11 @@ def gpus_required(
             workload=workload,
             tier=Tier.RECOMMENDED,
             headroom=headroom,
+            # Scaled linearly per GPU, on exactly the assumption the other two supplies are
+            # already scaled on -- and it is an assumption, not an identity. scaling_efficiency
+            # is the tool for checking it, and a sizing built on a per-GPU rate measured at one
+            # width and spent at another should say so in the report.
+            prefill_tok_s=(None if prefill_tok_s_per_gpu is None else prefill_tok_s_per_gpu * n),
         )
         if cap.max_concurrent_users >= workload.peak_concurrent_users():
             return cap

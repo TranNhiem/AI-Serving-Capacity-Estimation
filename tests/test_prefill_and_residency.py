@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from ascep.capacity import Constraint, Workload, capacity_at
+from ascep.capacity import Constraint, Workload, capacity_at, gpus_required
 
 # A direct user count keeps every demand branch independent of Little's-law arithmetic.
 # These values are illustrative: the properties under test are exact identities and
@@ -351,3 +351,84 @@ def test_kv_residency_below_duty_cycle_raises_before_the_kv_floor_can_pass_it():
 
     with pytest.raises(ValueError, match="kv_residency must be >= duty_cycle"):
         capacity_at(n_gpus=1, kv_tokens=1_000, throughput_tok_s=1_000, workload=workload)
+
+
+@pytest.mark.parametrize(
+    ("supply", "value"),
+    [
+        ("kv_tokens", -1.0),
+        ("throughput_tok_s", -1.0),
+        ("prefill_tok_s", -1.0),
+    ],
+)
+def test_a_negative_supply_is_refused_rather_than_reported_as_a_capacity(supply, value):
+    """A negative supply is not a small supply.
+
+    Each of the three divides straight into a floor, min() then picks the negative one
+    because it is the smallest, and the result is a Capacity announcing that the cluster
+    serves minus four hundred users and is KV-bound. No reader treats that as a capacity;
+    every downstream comparison does -- gpus_required's loop, the tier table, the report's
+    binding_constraint field. Refusing at the door is the only place the sign is still
+    attached to the input that carried it.
+    """
+    supplies = {"kv_tokens": 1_000_000.0, "throughput_tok_s": 5_000.0, "prefill_tok_s": 5_000.0}
+    supplies[supply] = value
+    with pytest.raises(ValueError, match=f"{supply} must be >= 0"):
+        capacity_at(n_gpus=1, workload=BASE_PROMPT_WORKLOAD, **supplies)
+
+
+def test_zero_kv_stays_a_measurable_answer_rather_than_an_error():
+    """Zero is the honest report for weights that do not fit: kv_pool_bytes clamps to it.
+
+    Folded into the negative guard it would become an exception, and a configuration that
+    genuinely serves nobody would raise where it should publish a zero on the KV axis.
+    """
+    result = capacity_at(
+        n_gpus=1, kv_tokens=0.0, throughput_tok_s=5_000.0, workload=BASE_PROMPT_WORKLOAD
+    )
+    assert result.max_concurrent_users == 0.0
+    assert result.binding_constraint is Constraint.KV
+
+
+def test_sizing_a_reranker_without_its_prefill_rate_buys_a_tenth_of_the_cluster():
+    """gpus_required returns the first replica count that clears the floors it was handed,
+    so an axis omitted there is not an unpriced axis -- it is a wrong purchase order.
+
+    The reranker is the sharpest case because it is the one the fourth floor was added for:
+    output_tokens_per_request is zero, so the throughput floor is infinite and only KV binds.
+    Sized blind, 500 concurrent users fit on one GPU whose memory could hold them; sized with
+    the measured input rate beside it, the same workload needs ten, and the constraint the
+    report names changes from memory to compute. Both answers claim 500 users. Only one of
+    them can serve 4,000 prompt tokens apiece at the rate the declaration asks for.
+    """
+    reranker = Workload(
+        concurrent_users=500,
+        duty_cycle=1.0,
+        avg_session_seconds=10,
+        input_tokens_per_request=4_000,
+        output_tokens_per_request=0,
+        requests_per_session=1,
+    )
+    per_gpu = {"kv_tokens_per_gpu": 2_000_000.0, "throughput_tok_s_per_gpu": 10_000.0}
+
+    blind = gpus_required(reranker, headroom=1.0, **per_gpu)
+    priced = gpus_required(reranker, headroom=1.0, prefill_tok_s_per_gpu=20_000.0, **per_gpu)
+
+    assert blind.n_gpus == 1
+    assert blind.binding_constraint is Constraint.KV
+    assert priced.n_gpus == 10
+    assert priced.binding_constraint is Constraint.PREFILL
+
+
+def test_sizing_without_the_new_argument_is_byte_identical_to_the_v040_answer():
+    """The pass-through has to be inert when nothing was measured, for the same reason
+    capacity_at's fourth floor is: a sizing that moved on upgrade would silently rewrite
+    every cluster recommendation already published, and C11 -- not a changed number -- is
+    the protocol's way of saying an axis went unpriced."""
+    per_gpu = {"kv_tokens_per_gpu": 500_000.0, "throughput_tok_s_per_gpu": 4_000.0}
+
+    default = gpus_required(BASE_PROMPT_WORKLOAD, **per_gpu)
+    explicit_none = gpus_required(BASE_PROMPT_WORKLOAD, prefill_tok_s_per_gpu=None, **per_gpu)
+
+    assert default == explicit_none
+    assert list(default.detail) == DETAIL_KEYS_V040
