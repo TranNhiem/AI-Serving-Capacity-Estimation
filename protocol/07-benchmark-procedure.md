@@ -198,7 +198,7 @@ The reproduction bundle MUST include:
 
 `ascep bench` (implemented in `ascep/bench/run.py`) is one implementation of this chapter, not the chapter itself. §1–§9 specify the procedure; a conforming harness MAY be anyone's, provided it honours them. The reference harness exists because this command produces evidence rather than grading it, so its contract is inverted relative to the rest of the toolkit: refuse to run rather than run under-specified, never invent a value the operator did not declare, and never grade its own output.
 
-The config is a single JSON object with exactly seven sections. Every section and every key is required; the declarations in §1 have no honest defaults. A worked config with its four declaration documents lives at [`examples/bench-config/`](../examples/bench-config/) and is not repeated here.
+The config is a single JSON object with exactly seven sections. Every section and every key below is required; the declarations in §1 have no honest defaults. A second, smaller table of optional keys follows it. A worked config with its four declaration documents lives at [`examples/bench-config/`](../examples/bench-config/) and is not repeated here.
 
 | Section | Key | Type | Declares |
 |---|---|---|---|
@@ -206,7 +206,7 @@ The config is a single JSON object with exactly seven sections. Every section an
 | `endpoint` | `model` | string | The model identifier to request. |
 | `endpoint` | `timeout_s` | number, > 0 | Per-request timeout. |
 | `declarations` | `hardware`, `model`, `serving`, `workload` | string | Paths to the four layer documents the run is bound to (**C3**). Each MUST parse and pass schema validation. |
-| `workload` | `corpus` | string | `"synthetic"`, or a path to a JSONL corpus replayed from its `messages` field. |
+| `workload` | `corpus` | string | `"synthetic"`, a path to a JSONL prompt corpus, or — with `replay_sessions` — a path to a shapes file. The prompt is read from the record's `prompt_field`, which defaults to `conversations`. |
 | `workload` | `input_tokens` | integer > 1, or `null` | Target input length per request (§2). Sizes the synthetic corpus, and MUST be `null` whenever `corpus` names a file: the corpus's own records fix the prompt length, so a number here would be a claim nothing checks. |
 | `workload` | `output_tokens` | integer > 1, or `null` | Output length per request (§2). Under `ignore_eos: true` it is the exact decoded length; under `false` it is a ceiling; `null` means no length on the wire at all. |
 | `workload` | `ignore_eos` | boolean | Whether the output length is fixed (`true`) or the model may stop at EOS (`false`) (§2). The pair encodes three modes: **fixed** (`true` with a length), **capped** (`false` with a length — EOS honoured, the length a ceiling), and **uncapped** (`false` with `null`). `true` with `null` is refused: it asks the server to generate until the context limit on every request. |
@@ -227,6 +227,18 @@ The config is a single JSON object with exactly seven sections. Every section an
 | `output` | `report_path` | string | Draft report destination. |
 | `output` | `engine_logs_path` | string | The engine's own log, hashed into the bundle (**C8**). |
 | `output` | `container_digest` | string or null | Serving container digest. |
+
+Seven further `workload` keys are accepted and not required. They are a separate table rather than rows above because a protocol that grows capabilities cannot make each new key a breaking change to every operator's config: adding these to the required set would invalidate every published bench config overnight, including configs whose runs are already cited by a report. The loader still refuses any key outside the union of the two tables by name, so a misspelling is a refusal and not a silent default.
+
+| Key | Type | Default | Declares |
+|---|---|---|---|
+| `media_root` | string or null | `null` | Directory the corpus's relative media paths resolve against. **Its presence is what selects the multimodal corpus** — there is no other switch, and no inference from the corpus's contents (§9). Refused alongside `corpus: "synthetic"`, which has no media to point at, and refused when it does not name an existing directory: a run that cannot find its images would otherwise measure a text workload under a media label. |
+| `image_input_transport` | string | `"base64"` | `"base64"` or `"url"`, mirroring the serving layer's `image_input_transport` (§9). |
+| `media_url_prefix` | string or null | `null` | Base URL the server fetches media from. Required when the transport is `"url"` and refused when it is not — a URL prefix under base64 transport describes a fetch that never happens. |
+| `media_max_records` | integer or null | `null` (no cap) | Cap on records read from the corpus, for a smoke run. Size it against the corpus's `media_bytes_resident`, not against its record count. |
+| `prompt_field` | string | `"conversations"` | Where the prompt text lives in each corpus record. Read by both corpus readers, so it selects the same turn whether or not `media_root` is set. |
+| `strip_media_placeholders` | boolean | `false` | Send a media-bearing corpus as its text-only variant, with `<image>` markers removed. Refused alongside `media_root` or the synthetic corpus: the key declares the text-only variant of a media corpus, so accepting it on a run that sends every image would let the report claim a stripping that never happened. |
+| `replay_sessions` | boolean | `false` | The `corpus` is a shapes file from `ascep agent-profile --shapes` rather than a prompt corpus, and the ladder replays whole captured sessions (§10.8). An explicit switch and not something inferred from the file, because the two modes measure different traffic and a config that fell into the wrong one would publish agent numbers for independent requests with nothing in the report saying so. Refused alongside the synthetic corpus, a `media_root`, an `output_tokens`, a non-zero `think_time_s`, and a `cache_policy` of `unique-prefix` — each is a claim about traffic the capture already decides. |
 
 Every relative path in a bench config resolves against the directory holding the config file itself — the `declarations.*` documents, a file-backed `workload.corpus`, the optional `workload.media_root`, and the three `output.*` paths alike. A config is self-contained: it and everything it names move between machines together, and the directory a command happens to be invoked from never participates in what a run reads or writes. An absolute path is always honoured verbatim, and is the supported way to send one config's results somewhere other than beside itself.
 
