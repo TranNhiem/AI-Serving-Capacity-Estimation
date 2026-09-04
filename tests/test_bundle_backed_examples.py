@@ -65,6 +65,26 @@ _REPRODUCTION_PATHS = (
     "environment_capture_path",
 )
 
+#: The rung figures each manifest-declared elision makes irreproducible, by the key the
+#: manifest declares it under. With the per-token arrival stamps gone the inter-token
+#: family cannot be recomputed at all, and comparing it anyway would report a wrong
+#: selection rule where there is only an honestly declared gap. ``slo_pass`` is
+#: deliberately NOT in this set: exempting it alongside the rest would let an elision
+#: launder a rung the records grade as failing into a published pass, so it gets the
+#: direction-checked comparison in ``_rung_mismatches`` instead.
+_ELISION_DEPENDENTS = {
+    "records.jsonl:token_ts": frozenset(
+        {
+            "itl_p50_s",
+            "itl_p95_s",
+            "itl_population",
+            "tokens_per_stream_chunk",
+            "stream_chunk_gap_p50_s",
+            "stream_chunk_gap_p95_s",
+        }
+    ),
+}
+
 
 class _Bundle(NamedTuple):
     example_dir: pathlib.Path
@@ -72,10 +92,25 @@ class _Bundle(NamedTuple):
     bundle_dir: pathlib.Path
     records: list[RequestRecord]
     run_configs: dict
+    elisions: dict[str, str]
 
 
 def _load(path: pathlib.Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _elisions(bundle_dir: pathlib.Path) -> dict[str, str]:
+    """The manifest's declared elisions, or none when the manifest declares none.
+
+    An absent manifest yields an empty mapping rather than an error: a bundle with no
+    manifest fails verify_bundle in the test that owns that check, and treating "no
+    manifest" as "no elisions" keeps the recomputation from either crashing here or
+    excusing a gap nobody declared.
+    """
+    manifest_path = bundle_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return {}
+    return _load(manifest_path).get("elisions", {})
 
 
 def _find_bundle_backed_reports() -> list[pathlib.Path]:
@@ -146,6 +181,7 @@ def bundle(report_path) -> _Bundle:
         bundle_dir=records_path.parent,
         records=records,
         run_configs=_load(example_dir / reproduction["run_configs_path"]),
+        elisions=_elisions(records_path.parent),
     )
 
 
@@ -282,6 +318,10 @@ def _rung_mismatches(bundle: _Bundle) -> list[str]:
     traffic is not pre-filtered: the bundle retains it and ``reduce_window`` excludes it
     itself, exactly as the harness's own reduction did. Declaration order is execution order
     for these windows, so the stable sort breaks ties the way the harness's does.
+
+    One exception to exact comparison: a figure the manifest declares elided is skipped,
+    because no recomputation can reach it. ``slo_pass`` is never skipped -- with the ITL
+    family elided it may differ only toward strictness, never toward leniency.
     """
     run = bundle.report["run"]
     gate_block = run["slo_gates"]
@@ -305,6 +345,14 @@ def _rung_mismatches(bundle: _Bundle) -> list[str]:
     # carrying a different seed would start disagreeing the day an interval joins the row.
     seed = int(bundle.run_configs["workload"]["seed"])
     windows = bundle.run_configs["windows"]
+    # Only a declared elision excuses a figure, and only the figures its key is known to
+    # make irreproducible: an undeclared empty token_ts still produces an ITL-family
+    # mismatch below, which is what keeps a quietly trimmed records file from reading as a
+    # verified one.
+    elided_figures = {
+        figure for key in bundle.elisions for figure in _ELISION_DEPENDENTS.get(key, ())
+    }
+    token_ts_elided = "records.jsonl:token_ts" in bundle.elisions
     mismatches = []
     for row in run["results"]:
         concurrency = row["concurrency"]
@@ -336,14 +384,24 @@ def _rung_mismatches(bundle: _Bundle) -> list[str]:
                 # schema-required, so an absent one fails test_report_validates before it
                 # could be waved through here.
                 continue
+            if key in elided_figures:
+                continue
             published = row[key]
             actual = getattr(median, key)
-            if not _same_figure(published, actual):
-                mismatches.append(
-                    f"concurrency {concurrency} {key}: the report publishes {published!r} "
-                    "but the lower-median counted repetition of the bundled records "
-                    f"reduces to {actual!r}"
-                )
+            if _same_figure(published, actual):
+                continue
+            if key == "slo_pass" and token_ts_elided and published is False and actual is True:
+                # Permission to differ runs one way only: published False beside a
+                # recomputed True is the report holding itself to a stricter grade than
+                # the elided records can confirm. The reverse -- published True beside a
+                # recomputed False -- is the elision selling a rung the records grade as
+                # failing as a gated pass, and falls through to the mismatch list.
+                continue
+            mismatches.append(
+                f"concurrency {concurrency} {key}: the report publishes {published!r} "
+                "but the lower-median counted repetition of the bundled records "
+                f"reduces to {actual!r}"
+            )
     return mismatches
 
 
@@ -413,7 +471,52 @@ def test_the_recomputation_agrees_with_a_bundle_the_harness_has_just_written(tmp
             bundle_dir=bundle_dir,
             records=records,
             run_configs=run_configs,
+            elisions=_elisions(bundle_dir),
         )
+    )
+
+
+def test_the_token_ts_elision_declaration_matches_exactly_what_the_records_carry(bundle):
+    """A declaration is a license to skip figures, so it must be exactly true.
+
+    The recomputation above trusts the manifest when it elides ``records.jsonl:token_ts``,
+    and that trust is what this test grades. One record that kept its arrival stamps means
+    the stream was cut unevenly -- a partial elision, which is a corruption wearing a
+    justification, because the published ITL figures may then rest on records nobody can
+    distinguish from the ones still carrying stamps. Conversely a bundle that declares no
+    elision must still have stamps somewhere: one that dropped them all quietly would fail
+    the re-reduction as an unexplained absence, and this test makes that failure say what
+    actually happened.
+    """
+    stamped = sum(1 for record in bundle.records if record.token_ts)
+    if "records.jsonl:token_ts" in bundle.elisions:
+        assert stamped == 0, (
+            "the manifest declares records.jsonl:token_ts elided but "
+            f"{stamped:,} of {len(bundle.records):,} records still carry arrival stamps; "
+            "a partially elided stream is a silent corruption, not an elision, and the ITL "
+            "figures it half-supports are re-derivable by nobody"
+        )
+    else:
+        assert stamped > 0, (
+            "no record in this bundle carries a single token arrival stamp, yet the "
+            "manifest declares no elision; an absence this total must be confessed in the "
+            "manifest rather than surfacing downstream as an unexplained mismatch"
+        )
+
+
+def test_a_declared_elision_key_is_one_the_checks_know_how_to_honour(bundle):
+    """An unknown elision key must fail loudly, on the first bundle that declares one.
+
+    The honouring in ``_rung_mismatches`` works by explicit table, so a key nobody listed
+    is either a typo or a new kind of gap the checks were never taught to excuse. Waved
+    through, it exempts nothing while telling every reader the gap is handled -- or worse,
+    teaches later code to treat the elisions mapping as a general license, where any
+    reason-shaped string silences any figure.
+    """
+    unknown = sorted(set(bundle.elisions) - _ELISION_DEPENDENTS.keys())
+    assert not unknown, (
+        "the manifest declares elisions these tests do not know how to honour; add the "
+        "dependent figures to _ELISION_DEPENDENTS or remove the declaration: " + ", ".join(unknown)
     )
 
 
