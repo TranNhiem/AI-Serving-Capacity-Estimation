@@ -11,6 +11,7 @@ import pytest
 
 from ascep.capacity import (
     Workload,
+    capacity_at,
     image_tokens,
     media_arrival_check,
     media_token_cap_check,
@@ -318,3 +319,51 @@ def test_reasoning_mode_multiplies_the_throughput_floor_by_over_50x():
     thinking = replace(visible, reasoning_tokens_per_request=33_709)
     ratio = thinking.demand_tok_s() / visible.demand_tok_s()
     assert ratio > 50, f"reasoning mode must multiply demand by over 50x, got {ratio:.1f}x"
+
+
+def test_a_request_is_priced_at_every_token_it_generates_including_the_reasoning_ones():
+    """The requests/s denominator must count the same tokens the numerator does.
+
+    ``capacity_at`` derives requests/s by dividing generated tokens/s by tokens per request,
+    and the numerator comes from ``demand_tok_s()``, which counts reasoning as output. Pricing
+    the request at its visible tokens alone therefore divides a thinking-mode rate by a
+    non-thinking-mode request, and the quotient is not requests/s at all -- it is requests/s
+    times the reasoning ratio, 282x on this checkpoint. The error is invisible in review
+    because every term is individually right, and it inflates ``daily_requests()`` in the
+    direction that makes a cluster look like it can serve traffic it cannot.
+    """
+    thinking = replace(
+        CHATBOT_10K_DAU, output_tokens_per_request=120, reasoning_tokens_per_request=33_709
+    )
+    capacity = capacity_at(
+        n_gpus=1, kv_tokens=40_000_000, throughput_tok_s=200_000.0, workload=thinking
+    )
+    generated_per_request = (
+        thinking.output_tokens_per_request + thinking.reasoning_tokens_per_request
+    )
+    expected = capacity.max_tokens_per_s / generated_per_request
+    assert capacity.max_requests_per_s == pytest.approx(expected), (
+        f"requests/s must be generated tok/s over generated tokens per request: "
+        f"{capacity.max_requests_per_s} vs {expected}"
+    )
+    # The visible-only divisor is what shipped, so name the number it produced: a test that
+    # only checked the identity above would still pass if the two terms drifted together.
+    visible_only = capacity.max_tokens_per_s / thinking.output_tokens_per_request
+    assert capacity.max_requests_per_s < visible_only / 280, (
+        f"the visible-output divisor overstates requests/s by ~282x and must not return: "
+        f"{capacity.max_requests_per_s} vs {visible_only}"
+    )
+
+
+def test_a_workload_that_declares_no_reasoning_keeps_the_requests_per_second_it_published():
+    """The denominator fix must be inert wherever reasoning is zero.
+
+    Every capacity report published before this change declared no reasoning tokens, so if
+    the corrected divisor moved those numbers the fix would silently restate history as well
+    as correct it.
+    """
+    capacity = capacity_at(
+        n_gpus=1, kv_tokens=40_000_000, throughput_tok_s=200_000.0, workload=CHATBOT_10K_DAU
+    )
+    expected = capacity.max_tokens_per_s / CHATBOT_10K_DAU.output_tokens_per_request
+    assert capacity.max_requests_per_s == pytest.approx(expected)

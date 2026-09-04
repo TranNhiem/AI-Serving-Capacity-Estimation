@@ -1105,7 +1105,13 @@ def capacity_at(
     if not slo_pass:
         constraint = Constraint.SLO
 
-    out_tokens = workload.output_tokens_per_request or 1.0
+    # Reasoning tokens belong in this denominator because they are already in the numerator:
+    # per_user comes from Workload.demand_tok_s(), which counts them as generated output. A
+    # visible-output-only divisor therefore prices each request at a fraction of the tokens it
+    # actually cost, inflating requests/s -- and daily_requests() with it -- by exactly
+    # (output + reasoning) / output. That is 282x on the thinking-mode checkpoint demand_tok_s()
+    # already cites, in the direction that makes a cluster look like it can serve more.
+    out_tokens = (workload.output_tokens_per_request + workload.reasoning_tokens_per_request) or 1.0
     if per_user > 0:
         requests_per_s = (users * per_user) / out_tokens
     elif per_user_prefill > 0:
