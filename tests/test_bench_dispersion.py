@@ -16,7 +16,7 @@ import jsonschema
 
 from ascep.bench.ladder import RepetitionResult
 from ascep.bench.metrics import WindowSummary
-from ascep.bench.run import _counted, _dispersion, _measured
+from ascep.bench.report import _counted, _dispersion, _measured
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "run.schema.json"
 

@@ -38,6 +38,7 @@ import pytest
 
 from ascep import conformance
 from ascep.bench import ladder
+from ascep.bench import report as bench_report
 from ascep.bench import run as bench_run
 from ascep.cli import main
 
@@ -933,7 +934,7 @@ def test_a_media_run_carries_the_measured_media_shape_in_its_manifest(tmp_path):
     derived from the rendered request itself, so the assertion stays exact without
     pinning a number that depends on the fixture's encoding."""
     workload = _media_workload(tmp_path)
-    assert type(workload).__name__ == "_MediaShapeWorkload"
+    assert type(workload).__name__ == "MediaShapeWorkload"
     assert type(workload.source).__name__ == "MultimodalJsonlCorpus"
     content = workload.for_repetition(0)(0).messages[0]["content"]
     image_part = next(part for part in content if part["type"] == "image_url")
@@ -1378,7 +1379,7 @@ def test_a_gated_failure_above_the_tier_labels_the_constraint_slo():
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
     )
-    assert bench_run._boundary_constraint(result, 4) == "slo"
+    assert bench_report._boundary_constraint(result, 4) == "slo"
 
 
 def test_a_failure_that_delivered_nothing_labels_the_constraint_throughput():
@@ -1389,7 +1390,7 @@ def test_a_failure_that_delivered_nothing_labels_the_constraint_throughput():
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
-    assert bench_run._boundary_constraint(result, 4) == "throughput"
+    assert bench_report._boundary_constraint(result, 4) == "throughput"
 
 
 def test_the_lowest_failing_rung_above_the_tier_is_the_boundary_that_labels_it():
@@ -1401,7 +1402,7 @@ def test_the_lowest_failing_rung_above_the_tier_is_the_boundary_that_labels_it()
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
         ladder.RungResult(concurrency=16, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
-    assert bench_run._boundary_constraint(result, 4) == "slo"
+    assert bench_report._boundary_constraint(result, 4) == "slo"
 
 
 def test_no_failing_rung_above_the_tier_means_no_constraint_is_named():
@@ -1413,17 +1414,17 @@ def test_no_failing_rung_above_the_tier_means_no_constraint_is_named():
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.COMPLETE),
     )
-    assert bench_run._boundary_constraint(exhausted, 4) is None
+    assert bench_report._boundary_constraint(exhausted, 4) is None
     aborted_above = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.ABORTED),
     )
-    assert bench_run._boundary_constraint(aborted_above, 4) is None
+    assert bench_report._boundary_constraint(aborted_above, 4) is None
     failed_below = _hand_built_ladder(
         ladder.RungResult(concurrency=2, outcome=ladder.RungOutcome.FAILED),
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
     )
-    assert bench_run._boundary_constraint(failed_below, 4) is None
+    assert bench_report._boundary_constraint(failed_below, 4) is None
 
 
 def test_an_exhausted_ladder_leaves_the_constraint_unknown_beside_a_filled_tier(
@@ -1467,12 +1468,12 @@ def test_rung_means_that_differ_only_by_sampling_noise_are_one_context_length():
         {"context_tokens": length}
         for length in (2043.65, 2043.94, 2045.28, 2045.46, 2045.48, 2046.50)
     ]
-    assert bench_run._distinct_context_lengths(noise) == 1
+    assert bench_report._distinct_context_lengths(noise) == 1
 
     # And the tolerance must not swallow a curve: these are three shapes a report could
     # legitimately interpolate over, and collapsing them would suppress the opposite error.
     curve = [{"context_tokens": length} for length in (1500.0, 4000.0, 16000.0)]
-    assert bench_run._distinct_context_lengths(curve) == 3
+    assert bench_report._distinct_context_lengths(curve) == 3
 
 
 def test_the_emitted_draft_carries_no_null_it_cannot_justify(tmp_path, monkeypatch):
@@ -1491,7 +1492,7 @@ def test_a_decidable_boundary_reaches_both_filled_tiers(tmp_path, monkeypatch):
     while the tier it should label is still emitted null, which is the C5 error the operator
     cannot fix. The offline ladder never fails a rung, so the boundary is stubbed here --
     what is under test is the wiring, not the rule the tests above cover directly."""
-    monkeypatch.setattr(bench_run, "_boundary_constraint", lambda result, concurrency: "slo")
+    monkeypatch.setattr(bench_report, "_boundary_constraint", lambda result, concurrency: "slo")
     tiers = _offline_report(tmp_path, monkeypatch)["capacity_tiers"]
     for name in ("measured", "sustainable"):
         assert tiers[name]["binding_constraint"] == "slo", f"{name} dropped the label"
@@ -1517,7 +1518,7 @@ def test_a_bench_draft_can_be_graded_up_by_the_command_its_note_names(tmp_path, 
     The boundary is stubbed for the same reason as the wiring test above: the offline ladder
     never fails a rung, so its C5 errors stand and it grades `non-conforming` honestly. A
     real ladder that found its boundary is the case this promise is made to."""
-    monkeypatch.setattr(bench_run, "_boundary_constraint", lambda result, concurrency: "slo")
+    monkeypatch.setattr(bench_report, "_boundary_constraint", lambda result, concurrency: "slo")
     path = _write(tmp_path, _config(tmp_path))
     _run_offline(monkeypatch)
     assert main(["bench", path]) == 0
@@ -1633,12 +1634,12 @@ def test_a_failed_top_rung_names_the_floor_it_observed():
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
     )
-    assert bench_run._observed_constraint(missed_gate, 8) == "slo"
+    assert bench_report._observed_constraint(missed_gate, 8) == "slo"
     collapsed = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED, zero_completions=True),
     )
-    assert bench_run._observed_constraint(collapsed, 8) == "throughput"
+    assert bench_report._observed_constraint(collapsed, 8) == "throughput"
 
 
 def test_reading_the_floor_off_a_rung_does_not_shadow_the_search_above_it():
@@ -1652,12 +1653,12 @@ def test_reading_the_floor_off_a_rung_does_not_shadow_the_search_above_it():
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.FAILED),
     )
-    assert bench_run._observed_constraint(failure_above, 4) == "slo"
+    assert bench_report._observed_constraint(failure_above, 4) == "slo"
     exhausted = _hand_built_ladder(
         ladder.RungResult(concurrency=4, outcome=ladder.RungOutcome.COMPLETE),
         ladder.RungResult(concurrency=8, outcome=ladder.RungOutcome.COMPLETE),
     )
-    assert bench_run._observed_constraint(exhausted, 4) is None
+    assert bench_report._observed_constraint(exhausted, 4) is None
 
 
 # --- a captured agent session, replayed (section 10.8) --------------------------------

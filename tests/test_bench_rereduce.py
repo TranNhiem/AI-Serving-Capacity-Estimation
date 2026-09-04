@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from ascep import conformance
-from ascep.bench import persist, run
+from ascep.bench import persist, report, run
 from ascep.bench.driver import Boundary, WindowPolicy, WindowRun
 from ascep.bench.ladder import RepetitionResult, grade_ladder
 from ascep.bench.metrics import reduce_window
@@ -280,7 +280,7 @@ def _original_report(bundle_dir: Path, runs):
         layer: _read_json(bundle_dir / "declarations" / f"{layer}.json")
         for layer in ("hardware", "model", "serving", "workload")
     }
-    gates, policy = run._ladder_policy(config)
+    gates, policy = run.ladder_policy(config)
     repetitions = {}
     for window_run in runs:
         summary = reduce_window(
@@ -306,7 +306,7 @@ def _original_report(bundle_dir: Path, runs):
         "environment_capture_path": f"{bundle_dir.name}/environment.json",
         "container_digest": "sha256:" + "0" * 64,
     }
-    return run._build_report(config, declarations, runs, repetitions, result, reproduction, None)
+    return report.build_report(config, declarations, runs, repetitions, result, reproduction, None)
 
 
 def _copy_bundle(bundle_dir: Path, tmp_path: Path) -> Path:
@@ -330,7 +330,7 @@ def built_bundle(tmp_path_factory):
     _write_bundle(bundle_dir, specs)
     report = _original_report(bundle_dir, _window_runs(specs))
     # Play a report written before today's reduction: it carries none of the figures
-    # the new rule newly emits. The rows live under "run", where _build_report puts them --
+    # the new rule newly emits. The rows live under "run", where build_report puts them --
     # a fixture reaching for a top-level "results" would be damaging a report shape the
     # harness has never written, and its refusal tests would fire on the wrong key.
     for row in report["run"]["results"]:

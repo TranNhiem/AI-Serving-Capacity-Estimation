@@ -7,11 +7,12 @@ to re-measure or to re-reduce. Re-measuring burns the GPU hours again; re-reduci
 possible at all only because the bundle pins every byte the reduction reads. This module
 is the second path: a bundle must be sufficient to regenerate the report it backs.
 
-The assembly is not reimplemented here. ``run.load_config``, ``run._ladder_policy`` and
-``run._build_report`` are private names and are imported anyway, deliberately: a second
-copy of the assembly would drift from the harness the first time either was edited, and
-a rebuilt report that differs from a freshly measured one in anything but its
-measurements is worse than no rebuild at all.
+The assembly is not reimplemented here. ``run.load_config``, ``run.ladder_policy`` and
+``report.build_report`` are called directly, deliberately: a second copy of the assembly
+would drift from the harness the first time either was edited, and a rebuilt report that
+differs from a freshly measured one in anything but its measurements is worse than no
+rebuild at all. Those three are public for this reason and no other -- they are the
+seam, and a seam two modules stand on should not be spelt with a leading underscore.
 
 Nothing in this module writes to the bundle. A reducer that modified the evidence while
 deriving from it would make the manifest's promise -- these are the bytes that ran --
@@ -25,7 +26,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from ascep.bench import persist, run
+from ascep.bench import persist, report, run
 from ascep.bench.driver import Boundary, WindowPolicy, WindowRun
 from ascep.bench.ladder import RepetitionResult, grade_ladder
 from ascep.bench.metrics import reduce_window
@@ -48,7 +49,7 @@ _DECLARATION_LAYERS = ("hardware", "model", "serving", "workload")
 #: previous report rather than recomputed: the one that can be checked against the
 #: bundle (raw_records_path) is checked before this mapping is built, and the other
 #: four describe the same bundle. A missing key becomes None, which is how
-#: _build_report reads them.
+#: build_report reads them.
 _C8_REPRODUCTION_KEYS = (
     "run_configs_path",
     "raw_records_path",
@@ -378,7 +379,7 @@ def _derive_report(bundle_dir, *, previous_report: dict) -> dict:
         raise ReduceError(f"the bundle's pinned bench config does not load: {exc}") from exc
 
     declarations = _load_declarations(bundle_dir)
-    gates, policy = run._ladder_policy(config)
+    gates, policy = run.ladder_policy(config)
 
     run_configs = _read_run_configs(bundle_dir)
     try:
@@ -418,7 +419,7 @@ def _derive_report(bundle_dir, *, previous_report: dict) -> dict:
     result = grade_ladder(repetitions, policy, censoring_cause=None)
 
     c8 = {key: reproduction.get(key) for key in _C8_REPRODUCTION_KEYS}
-    return run._build_report(config, declarations, runs, repetitions, result, c8, None)
+    return report.build_report(config, declarations, runs, repetitions, result, c8, None)
 
 
 @dataclass(frozen=True)

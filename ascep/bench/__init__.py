@@ -9,10 +9,11 @@ extra (``pip install ascep[run]``) and nothing in the analytic half imports this
 
 The whole analytic path through this package -- :mod:`ascep.bench.records`,
 :mod:`ascep.bench.metrics`, :mod:`ascep.bench.ladder`, :mod:`ascep.bench.driver`,
-:mod:`ascep.bench.workloads` and :mod:`ascep.bench.persist` -- is itself stdlib-only and stays
-that way: reading someone else's published records to re-derive their percentiles, re-grade
-their rungs, re-rule their window boundaries, rebuild the prompts those records came from and
-check the downloaded bundle against its own digests must not require our HTTP client. Only the
+:mod:`ascep.bench.workloads`, :mod:`ascep.bench.persist` and :mod:`ascep.bench.report` -- is
+itself stdlib-only and stays that way: reading someone else's published records to re-derive
+their percentiles, re-grade their rungs, re-rule their window boundaries, rebuild the prompts
+those records came from, reassemble the report those rows belong to, and check the downloaded
+bundle against its own digests must not require our HTTP client. Only the
 adapters need it, which is why this initialiser deliberately re-exports nothing from them.
 """
 

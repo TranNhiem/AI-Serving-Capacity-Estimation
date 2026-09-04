@@ -965,3 +965,67 @@ class Workload:
         if self.cache_policy == "unknown":
             m["cache_policy_u_reason"] = self.unknown_cache_reason
         return m
+
+
+class MediaShapeWorkload(Workload):
+    """A Workload whose manifest also carries the corpus's measured media shape.
+
+    C4 requires images_per_request, videos_per_request and their kin beside any throughput
+    figure, and the only version of those numbers that is not someone's recollection is the
+    one measured off the corpus itself. Text workloads keep the plain manifest with the key
+    absent entirely: an absent key and a zeroed one say different things, and a run that
+    carried no media has no media shape to declare.
+    """
+
+    def manifest(self):
+        return {**super().manifest(), "media_shape": self.source.media_shape()}
+
+
+class SessionWorkload(Workload):
+    """A Workload whose traffic is a captured agent session rather than independent requests.
+
+    ``source`` holds a :class:`ascep.bench.sessions.SessionPlan` instead of a PromptSource.
+    The two are not interchangeable -- a plan renders a step of a named session, a source
+    renders one standalone prompt -- so this class overrides the two places where it shows
+    and leaves everything else alone. Sharing the field rather than adding one keeps a
+    single answer to "what produced these prompts" in the dataclass and in the bundle.
+
+    for_repetition raises: the request-at-a-time generator would silently drop the session
+    structure, and a run that lost it would look like an ordinary text ladder with unusual
+    prompt lengths. The driver refuses the pairing too, but a workload that can hand out a
+    next_spec is a workload someone will eventually hand to one.
+    """
+
+    def for_repetition(self, repetition, *, concurrency=None):
+        raise TypeError(
+            "a session workload has no request-at-a-time generator: its prompts are steps "
+            "of a named session and only mean anything in order. Pass session_plan= to "
+            "run_window instead of a next_spec"
+        )
+
+    def manifest(self):
+        # Not super().manifest() plus a key. Most of that dict describes a PromptSource
+        # (field_path, media_placeholders_stripped, absorbs_prefix) or a single declared
+        # output length, and none of those exist here: the lengths come from the capture,
+        # one per step. Publishing the base manifest with those fields filled in from
+        # defaults would state things about this run that are not true, which is worse
+        # than the fields being absent.
+        plan = self.source
+        return {
+            "run_label": self.run_label,
+            "seed": self.seed,
+            "cache_policy": self.cache_policy,
+            # Zero by construction: the capture already carries the measured gap after
+            # every step, so this run added no idle time of its own. The key stays present
+            # because a reader comparing an agent run against a text run needs to see that
+            # the think time went somewhere, not that it was forgotten.
+            "think_time_s": self.think_time_s,
+            # A fourth value beside fixed/capped/model-decided, for the same reason the
+            # third was added: how the output length was decided is the axis this key
+            # names, and "the capture decided it, per step" is a distinct answer. A replay
+            # that reported "fixed" would invite a reader to look for the number.
+            "output_basis": "captured-per-step",
+            "ignore_eos": True,
+            "temperature": self.temperature,
+            "session_plan": plan.manifest(),
+        }
