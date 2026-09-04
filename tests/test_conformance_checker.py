@@ -525,14 +525,19 @@ def test_a_note_on_a_declared_value_is_not_flagged_as_stale(report):
 
 
 def _declare_image_input(report: dict) -> dict:
-    """Turn the text-only example into a schema-valid image report with cores declared.
+    """Turn the text-only example into a schema-valid image *run* with cores declared.
 
     The published example leaves cpu_cores null with a (U) reason, which is the one shape
     the note rule deliberately stays out of, so a test that only flipped input_modalities
     would pass while measuring nothing. Declaring image also pulls in the model layer's
     vision gates; without them the report is schema-invalid and every C1 finding is the
     schema error, not the rule under test.
+
+    The workload count is set here too, because the note rule gates on media the run
+    actually sent rather than media the checkpoint accepts. A helper that declared only the
+    modality would build the one report shape the rule is now specified NOT to fire on.
     """
+    report["workload"]["images_per_request"] = 2
     report["model"]["input_modalities"] = ["text", "image"]
     report["model"]["image_token_policy"] = "fixed-grid"
     report["model"]["image_tokens_fixed"] = 256
@@ -595,6 +600,17 @@ def test_a_text_only_report_needs_no_cpu_cores_note(report):
     assert report["model"]["input_modalities"] == ["text"]
     errors = {f.path for f in check(report).errors if f.rule == "C1"}
     assert "hardware.cpu_cores" not in errors
+
+
+def test_a_text_only_run_on_a_multimodal_model_needs_no_cpu_cores_note(report):
+    """The gate is what the run sent, not what the checkpoint accepts. Keying it off the
+    declared modalities failed every text-only ladder on a multimodal model with a message
+    asserting the host decoded images the run never sent, and a rule whose stated reason the
+    reader can see is untrue teaches them to route around the grade rather than fix it."""
+    _declare_image_input(report)
+    report["workload"]["images_per_request"] = 0
+    findings = {f.path: f.message for f in check(report).errors if f.rule == "C1"}
+    assert "hardware.cpu_cores" not in findings, findings.get("hardware.cpu_cores")
 
 
 # --- C1: a null value_used in section 7 is the justification, not a gap -----------------

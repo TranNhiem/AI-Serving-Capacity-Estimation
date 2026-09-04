@@ -263,6 +263,30 @@ def _report_declares_media(report: dict) -> bool:
     return "image" in modalities or "video" in modalities
 
 
+def _workload_carries_media(report: dict) -> bool:
+    """Whether the requests actually carried media, as opposed to the model accepting it.
+
+    Capability and actuality are different gates and only one of them is about this run. A
+    text-only ladder against a multimodal checkpoint declares image input and sends none, so a
+    rule that keys off the model fires on a report where no image was ever decoded -- and its
+    message then asserts a premise the workload contradicts. Rules about what the run *did*
+    (host decode cost, preprocessing declarations, archetype agreement) belong here; rules
+    about what the declaration must *say* stay on :func:`_report_declares_media`, because
+    there 0 and null are the distinction being enforced and both are non-media.
+
+    Positive counts only: null is "not reported", which C4 already refuses on a media-capable
+    model, and treating it as media here would report one unanswered question as two findings.
+    ``media_tokens_per_request`` is deliberately not consulted -- it prices prompt bytes, not
+    the image decode this predicate's callers charge for.
+    """
+    workload = _get(report, "workload")
+    if not isinstance(workload, dict):
+        return False
+    images = workload.get("images_per_request")
+    videos = workload.get("videos_per_request")
+    return (_is_number(images) and images > 0) or (_is_number(videos) and videos > 0)
+
+
 # ----------------------------------------------------------------------- C1 completeness
 
 
@@ -456,8 +480,13 @@ def _check_c1_cpu_cores_note(report: dict, findings: list[Finding]) -> None:
     omission. Without a note saying whether the number is the machine's core count or an
     allocation's, the report publishes a ceiling no reader can attribute to the GPU or the
     host.
+
+    The gate is the workload, not the model. Keying it off declared modalities made every
+    text-only ladder against a multimodal checkpoint non-conforming on a false premise --
+    the message says the host decodes every image for a run that sent none -- and a rule
+    whose stated reason a reader can see is untrue teaches them to route around the grade.
     """
-    if not _report_declares_media(report):
+    if not _workload_carries_media(report):
         return
     hardware = _get(report, "hardware")
     if not isinstance(hardware, dict) or hardware.get("cpu_cores") is None:
@@ -852,7 +881,7 @@ def _check_c4_media_and_reasoning(report: dict, findings: list[Finding]) -> None
                     ),
                 )
             )
-    carries_media = (_is_number(images) and images > 0) or (_is_number(videos) and videos > 0)
+    carries_media = _workload_carries_media(report)
     if carries_media and not isinstance(_get(serving, "media_preprocessing"), dict):
         findings.append(
             Finding(
@@ -1191,7 +1220,7 @@ def _check_c9(report: dict, findings: list[Finding]) -> None:
             if "image_grounded" in archetypes
             else "workload.videos_per_request"
         )
-        if not ((_is_number(images) and images > 0) or (_is_number(videos) and videos > 0)):
+        if not _workload_carries_media(report):
             findings.append(
                 Finding(
                     rule="C9",
