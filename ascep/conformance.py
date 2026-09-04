@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import numbers
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -145,19 +145,9 @@ def check(report: dict) -> Verdict:
         )
         return Verdict(claimed="", level="non-conforming", findings=findings)
     findings: list[Finding] = []
-    _check_c1(report, findings)
-    _check_c2(report, findings)
-    _check_c3(report, findings)
-    _check_c4(report, findings)
-    _check_c5(report, findings)
-    _check_c6(report, findings)
-    _check_c7(report, findings)
-    _check_c8(report, findings)
-    _check_c9(report, findings)
-    _check_c10(report, findings)
-    _check_c11(report, findings)
-    _check_c12(report, findings)
-    ordered = tuple(sorted(findings, key=lambda f: (f.rule, f.path)))
+    for rule in _RULES:
+        rule.check(report, findings)
+    ordered = tuple(sorted(findings, key=lambda f: (_rule_order(f.rule), f.path)))
     claimed = report.get("conformance")
     return Verdict(
         claimed=claimed if isinstance(claimed, str) else "",
@@ -168,11 +158,28 @@ def check(report: dict) -> Verdict:
 
 def _compute_level(findings: tuple[Finding, ...]) -> str:
     errors = [f for f in findings if f.severity == "error"]
-    if any(f.rule in ("C1", "C2", "C3", "C4", "C5") for f in errors):
+    if any(f.rule in _FATAL_RULES for f in errors):
         return "non-conforming"
     if errors or findings:
         return "partial"
     return "conforming"
+
+
+def _rule_order(rule: str) -> tuple[int, str]:
+    """Sort key placing a finding where its rule sits in :data:`_RULES`.
+
+    Findings were sorted by the rule id as text, which puts C10, C11 and C12 between C1 and
+    C2. A reader scanning a long verdict reads it as a list in rule order and stops at the
+    first block they recognise, so the three newest rules -- the media, archetype and
+    dispersion ones, the ones a reader is least likely to know -- were the three most likely
+    to be scrolled past. Unknown rules sort last rather than raising: a verdict is a report
+    about someone else's report, and refusing to print it because a rule id was unexpected
+    loses the eleven findings that were fine.
+    """
+    for index, entry in enumerate(_RULES):
+        if entry.rule == rule:
+            return (index, "")
+    return (len(_RULES), rule)
 
 
 def raise_claim(report: dict, verdict: Verdict) -> bool:
@@ -1675,3 +1682,40 @@ def _check_c12(report: dict, findings: list[Finding]) -> None:
                         ),
                     )
                 )
+
+
+@dataclass(frozen=True)
+class _Rule:
+    """One conformance rule: its id, the function that grades it, and whether it is fatal."""
+
+    rule: str
+    check: Callable[[dict, list[Finding]], None]
+    fatal: bool
+
+
+#: The rules, in the order a verdict lists them. This is the only place a rule is registered:
+#: :func:`check` walks it, :func:`_rule_order` sorts by it, and ``_FATAL_RULES`` below derives
+#: the C1-C5 band from the ``fatal`` column. Those were three separate literals -- twelve
+#: hand-written calls, an implicit sort on the id text, and a hardcoded ``("C1".."C5")`` tuple
+#: -- and three lists that must agree about a set of rules are three chances to add C13 to two
+#: of them. The failure is silent in both directions: a rule left out of the walk never fires,
+#: and a fatal rule left out of the band downgrades a non-conforming report to partial.
+#:
+#: ``fatal`` is chapter 8's grading arithmetic and SPEC.md's boundary, not a severity: a rule
+#: is fatal because of which group it is in, not because of how badly a report failed it.
+_RULES: tuple[_Rule, ...] = (
+    _Rule("C1", _check_c1, True),
+    _Rule("C2", _check_c2, True),
+    _Rule("C3", _check_c3, True),
+    _Rule("C4", _check_c4, True),
+    _Rule("C5", _check_c5, True),
+    _Rule("C6", _check_c6, False),
+    _Rule("C7", _check_c7, False),
+    _Rule("C8", _check_c8, False),
+    _Rule("C9", _check_c9, False),
+    _Rule("C10", _check_c10, False),
+    _Rule("C11", _check_c11, False),
+    _Rule("C12", _check_c12, False),
+)
+
+_FATAL_RULES = frozenset(entry.rule for entry in _RULES if entry.fatal)

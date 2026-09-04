@@ -17,6 +17,7 @@ import pathlib
 
 import pytest
 
+from ascep import conformance
 from ascep.conformance import Finding, Verdict, check
 
 ROOT = pathlib.Path(__file__).parent.parent
@@ -31,6 +32,61 @@ def report() -> dict:
 
 def _rules(findings, severity=None) -> set:
     return {f.rule for f in findings if severity is None or f.severity == severity}
+
+
+# --- the rule registry ------------------------------------------------------------------
+
+
+def test_every_rule_function_in_the_module_is_registered():
+    """A checker nobody calls is a rule nobody enforces, and it fails silently.
+
+    The registry replaced twelve hand-written calls, so the way to break it is now to write
+    C13's checker and not add its row -- which looks exactly like a rule that never finds
+    anything. Discovering the functions by name rather than listing them here means this
+    test cannot be satisfied by editing it to match.
+    """
+    discovered = {
+        name
+        for name in vars(conformance)
+        if name.startswith("_check_c") and callable(getattr(conformance, name))
+    }
+    # The sub-checks a parent rule delegates to are not rules; they carry their parent's id.
+    discovered -= {"_check_c1_cpu_cores_note", "_check_c4_media_and_reasoning"}
+    registered = {entry.check.__name__ for entry in conformance._RULES}
+    assert discovered == registered, (
+        "a rule function exists that check() never calls, or the registry names one that no "
+        f"longer exists: {discovered ^ registered}"
+    )
+    ids = [entry.rule for entry in conformance._RULES]
+    assert len(set(ids)) == len(ids), f"a rule id is registered twice: {ids}"
+
+
+def test_the_fatal_band_is_the_one_the_spec_publishes():
+    """C1-C5 fatal, C6-C12 not. The split is the whole of the conformance boundary, so it is
+    pinned against the specification rather than against whatever the table currently says --
+    a table that drifted would otherwise redefine the grade and agree with itself."""
+    assert conformance._FATAL_RULES == {"C1", "C2", "C3", "C4", "C5"}
+    assert {e.rule for e in conformance._RULES if not e.fatal} == {
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10",
+        "C11",
+        "C12",
+    }
+
+
+def test_findings_are_listed_in_rule_order_not_alphabetical_order():
+    """Sorted as text, C10 to C12 land between C1 and C2. A reader scans a verdict in rule
+    order and stops at the first block they recognise, so the three newest rules -- the ones
+    a reader is least likely to know -- were the three most likely to be skipped."""
+    order = [conformance._rule_order(f"C{n}") for n in range(1, 13)]
+    assert order == sorted(order), "C10 sorts before C2 again"
+    assert conformance._rule_order("C99") > conformance._rule_order("C12"), (
+        "an unrecognised rule must sort last, not raise: a verdict about someone else's "
+        "report is worth printing even when one of its rule ids is unexpected"
+    )
 
 
 # --- the published example ------------------------------------------------------------
