@@ -15,10 +15,15 @@ Two layers:
    deliberately NOT committed: a scanner that ships your internal hostnames in a public repo
    has leaked the very thing it was written to protect.
 
+The deny-list is found relative to this checkout, not to whatever tree is being scanned, so
+pointing ``--path`` at a subdirectory or a staged export does not quietly drop half the rules.
+
 Usage::
 
-    python tools/check_no_secrets.py           # scan the repo, exit 1 on any finding
-    python tools/check_no_secrets.py --path X  # scan a specific tree
+    python tools/check_no_secrets.py            # scan the repo, exit 1 on any finding
+    python tools/check_no_secrets.py --path X   # scan a specific tree, or a single file
+    python tools/check_no_secrets.py --cache    # skip bytes already cleared under these rules
+    python tools/check_no_secrets.py --jobs 8   # one process per file
 
 Exit code 0 means clean. It does not mean safe — no scanner is a substitute for reading the
 diff before you push.
@@ -27,6 +32,10 @@ diff before you push.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import hashlib
+import json
+import os
 import pathlib
 import re
 import sys
@@ -114,27 +123,52 @@ SKIP_SUFFIXES = {
 # in a test.
 SELF = {pathlib.Path(__file__).name, ".ascep-denylist", "test_redact_bundle.py"}
 
+#: Where the operator's deny-list lives. It belongs to the checkout, not to whatever tree is
+#: being scanned: the terms in it are the operator's, and they are just as forbidden in a
+#: subdirectory, a staged export or an unpacked bundle as they are at the repo root.
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def denylist_paths(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every ``.ascep-denylist`` that applies to a scan of ``root``.
+
+    Both the checkout's and the scanned tree's, because resolving it from the scan target
+    alone is how the site-specific half of this gate goes missing. Scan a subdirectory, a
+    ``git archive`` export or a bundle staged under /tmp and there is no deny-list beside it,
+    so every operator hostname, codename and customer name stops being checked -- and the run
+    still prints OK and exits 0. A gate that silently loses half its rules and reports success
+    is worse than no gate, because it is believed.
+    """
+    here = root if root.is_dir() else root.parent
+    return [
+        p
+        for p in dict.fromkeys([REPO_ROOT / ".ascep-denylist", here / ".ascep-denylist"])
+        if p.exists()
+    ]
+
 
 def load_denylist(root: pathlib.Path) -> list[tuple[str, str, str]]:
-    f = root / ".ascep-denylist"
-    if not f.exists():
-        return []
     out = []
-    for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        try:
-            re.compile(line)
-        except re.error as exc:
-            print(f"  .ascep-denylist:{i}: invalid regex ({exc}) — skipped", file=sys.stderr)
-            continue
-        out.append((f"denylist:{i}", line, "site-specific term from .ascep-denylist"))
+    for f in denylist_paths(root):
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                re.compile(line)
+            except re.error as exc:
+                print(f"  {f}:{i}: invalid regex ({exc}) — skipped", file=sys.stderr)
+                continue
+            out.append((f"denylist:{i}", line, "site-specific term from .ascep-denylist"))
     return out
 
 
 def iter_files(root: pathlib.Path):
-    for p in root.rglob("*"):
+    # A file root yields itself. rglob("*") on a file yields nothing, so without this branch
+    # `--path some/report.md` scans zero files and prints "OK: no findings" -- a clean bill of
+    # health for a document nobody looked at.
+    candidates = [root] if root.is_file() else root.rglob("*")
+    for p in candidates:
         if not p.is_file() or p.name in SELF:
             continue
         if any(part in SKIP_DIRS for part in p.parts):
@@ -144,43 +178,154 @@ def iter_files(root: pathlib.Path):
         yield p
 
 
-def scan(root: pathlib.Path) -> int:
-    patterns = [(n, re.compile(p), why) for n, p, why in GENERIC_PATTERNS + load_denylist(root)]
-    findings = 0
-    for path in iter_files(root):
+#: Content digests of files that scanned clean, filed under the digest of the rules that
+#: cleared them. This gate is CPU-bound at roughly 5 MB/s per pattern and it re-reads every
+#: published bundle on every run, so its cost grows with the archive the project exists to
+#: accumulate -- a full scan is already tens of minutes and only gets worse. A published
+#: bundle is immutable, so re-deriving its verdict is pure waste. Filing under the rule
+#: digest is what keeps this honest: add one deny-list term and every entry is void, because
+#: "clean" is only ever a claim about a specific set of rules.
+CACHE_NAME = ".ascep-secretscan-cache.json"
+
+
+def ruleset_digest(patterns: list[tuple[str, str, str]]) -> str:
+    joined = "\n".join(f"{n}\t{p}" for n, p, _ in patterns)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _scan_text(text: str, patterns) -> list[tuple[int, str, str, str]]:
+    out = []
+    for lineno, line in enumerate(text.splitlines(), 1):
+        for name, rx, why in patterns:
+            m = rx.search(line)
+            if not m:
+                continue
+            hit = m.group(0)
+            shown = hit[:8] + "…" if len(hit) > 12 else hit  # never echo a full secret
+            out.append((lineno, name, why, shown))
+    return out
+
+
+_WORKER: dict = {}
+
+
+def _worker_init(raw: list[tuple[str, str, str]]) -> None:
+    _WORKER["patterns"] = [(n, re.compile(p), why) for n, p, why in raw]
+
+
+def _worker_scan(path_s: str):
+    """Returns (path, content digest, findings). Digest is None when the file was unreadable.
+
+    Hashing costs a read the scan already pays for, and runs orders of magnitude faster than
+    the patterns do, so it is free relative to what it saves on the next run.
+    """
+    path = pathlib.Path(path_s)
+    try:
+        data = path.read_bytes()
+        text = data.decode("utf-8")
+    except (UnicodeDecodeError, OSError):
+        return path_s, None, []
+    return path_s, hashlib.sha256(data).hexdigest(), _scan_text(text, _WORKER["patterns"])
+
+
+def scan(root: pathlib.Path, jobs: int = 1, use_cache: bool = False) -> int:
+    """Scan ``root``; returns the number of findings and prints one line per finding.
+
+    ``jobs`` defaults to 1, not to the CPU count, because a pool has to re-import this module
+    in every child. That works for the CLI and fails for a caller that loaded the file by path
+    -- tools/redact_bundle.py and the tests both do. The command line opts in; a library call
+    stays serial and stays working.
+    """
+    raw = GENERIC_PATTERNS + load_denylist(root)
+    digest = ruleset_digest(raw)
+    cache_file = REPO_ROOT / CACHE_NAME
+    known: set[str] = set()
+    if use_cache and cache_file.exists():
         try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        for lineno, line in enumerate(text.splitlines(), 1):
-            for name, rx, why in patterns:
-                m = rx.search(line)
-                if not m:
-                    continue
-                findings += 1
-                hit = m.group(0)
-                shown = hit[:8] + "…" if len(hit) > 12 else hit  # never echo a full secret
-                rel = path.relative_to(root)
-                print(f"{rel}:{lineno}: [{name}] {why} — matched {shown!r}")
+            blob = json.loads(cache_file.read_text(encoding="utf-8"))
+            if blob.get("ruleset") == digest:
+                known = set(blob.get("clean", []))
+        except (json.JSONDecodeError, OSError):
+            known = set()  # an unreadable cache means scan everything, never means clean
+
+    paths = [str(p) for p in iter_files(root)]
+    base = root if root.is_dir() else root.parent
+
+    # Hashing has to happen in the worker or the parent re-reads every file to check the
+    # cache, which on this tree is most of the wall clock the cache was meant to remove.
+    # So the cache is applied inside the worker and skipped files return no findings.
+    if known:
+        _worker_init(raw)
+
+        def prescreen(path_s: str) -> bool:
+            try:
+                return hashlib.sha256(pathlib.Path(path_s).read_bytes()).hexdigest() in known
+            except OSError:
+                return False
+
+        paths = [p for p in paths if not prescreen(p)]
+
+    results = []
+    if jobs > 1 and len(paths) > 1:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=jobs, initializer=_worker_init, initargs=(raw,)
+        ) as pool:
+            results = list(pool.map(_worker_scan, paths, chunksize=1))
+    else:
+        _worker_init(raw)
+        results = [_worker_scan(p) for p in paths]
+
+    findings = 0
+    clean_now = set(known)
+    # Sorted so two runs over the same tree print the same report; a pool hands results back
+    # in whatever order the workers finish.
+    for path_s, sha, hits in sorted(results):
+        rel = pathlib.Path(path_s).relative_to(base)
+        for lineno, name, why, shown in hits:
+            findings += 1
+            print(f"{rel}:{lineno}: [{name}] {why} — matched {shown!r}")
+        if sha is not None and not hits:
+            clean_now.add(sha)
+
+    if use_cache:
+        try:
+            cache_file.write_text(
+                json.dumps({"ruleset": digest, "clean": sorted(clean_now)}), encoding="utf-8"
+            )
+        except OSError:
+            pass  # a cache that cannot be written costs time, never correctness
     return findings
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--path", default=str(pathlib.Path(__file__).resolve().parent.parent))
+    ap.add_argument(
+        "--jobs", type=int, default=None, help="parallel workers (default: one per CPU)"
+    )
+    ap.add_argument(
+        "--cache",
+        action="store_true",
+        help="skip files whose bytes already scanned clean under these exact rules. Local "
+        "convenience for repeated runs over a tree of immutable published bundles; the "
+        "gate in CI runs without it so every publication is checked from scratch.",
+    )
     args = ap.parse_args()
     root = pathlib.Path(args.path).resolve()
 
-    n = scan(root)
+    n = scan(root, jobs=args.jobs or (os.cpu_count() or 1), use_cache=args.cache)
     if n:
         print(f"\nFAIL: {n} finding(s). Nothing is published until this is clean.", file=sys.stderr)
         return 1
-    has_deny = (root / ".ascep-denylist").exists()
+    used = denylist_paths(root)
+    # Say which rules actually ran. "OK" from generic patterns alone and "OK" from generic
+    # patterns plus the operator's 40 site terms are very different claims, and the operator
+    # is the only one who can tell whether the weaker one was the intended check.
     print(
         f"OK: no findings in {root}"
         + (
-            ""
-            if has_deny
+            "\nChecked against: generic patterns + " + ", ".join(str(p) for p in used)
+            if used
             else "\nNote: no .ascep-denylist present — generic patterns only. Add one with your "
             "own hostnames and project names before publishing."
         )
