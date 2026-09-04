@@ -129,14 +129,18 @@ def test_every_pattern_that_should_fire_does(tmp_path, monkeypatch):
 
     tree = tmp_path / "tree"
     tree.mkdir()
+    # Every match here is assembled from pieces, for the same reason FAKE_PAT is. A fixture
+    # that spells a pattern out in the source makes THIS file trip the gate, and a gate that
+    # fails on its own tests every run is one an operator learns to skip -- which is the
+    # false pass the whole module is about, arrived at from the other side.
     (tree / "a.md").write_text(
         "\n".join(
             [
                 "a wholly ordinary line",
                 f"a leaked {FAKE_PAT} token",
                 "we ran it on Codename-Alpha",
-                "reachable at 10.1.2.3 from secret-cluster-42",
-                "/home/operator/ckpt and AKIA" + "B" * 16,
+                "reachable at 10.1" + ".2.3 from secret-cluster-42",
+                "/home" + "/operator/ckpt and AKIA" + "B" * 16,
             ]
         )
         + "\n",
@@ -152,6 +156,26 @@ def test_every_pattern_that_should_fire_does(tmp_path, monkeypatch):
     )
     assert expected >= 6, "the fixture has to trip several rules or this proves nothing"
     assert cns.scan(tree) == expected
+
+
+def test_this_module_trips_none_of_the_patterns_it_exercises():
+    """The fixtures above have to look like secrets without being findable in this file.
+
+    Written as a rule rather than a one-off repair because the repair is invisible: a new
+    fixture spelt out in full still passes its own test, and the only symptom is that
+    ``python tools/check_no_secrets.py`` -- the command CI runs and the command the PR
+    template asks a contributor to run before pushing -- now reports findings in the test
+    suite forever. That is how a publication gate stops being read. Generic patterns only:
+    the site deny-list is gitignored, so a checkout without one must reach the same verdict.
+    """
+    source = pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
+    hits = [
+        f"{name} on line {lineno}: {match.group(0)[:24]}"
+        for lineno, line in enumerate(source, 1)
+        for name, pattern, _ in cns.GENERIC_PATTERNS
+        if (match := re.search(pattern, line))
+    ]
+    assert not hits, "assemble the fixture from pieces the way FAKE_PAT is:\n  " + "\n  ".join(hits)
 
 
 def test_the_cache_skips_bytes_it_has_already_cleared(tmp_path, monkeypatch):
