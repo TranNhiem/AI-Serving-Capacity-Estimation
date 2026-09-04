@@ -116,6 +116,50 @@ def kv_heads_per_rank(n_kv_heads: int, tensor_parallel: int) -> int:
     return max(1, math.ceil(n_kv_heads / tensor_parallel))
 
 
+def effective_layer_frac(
+    global_layer_frac: float,
+    sliding_window_tokens: float,
+    avg_context_tokens: float,
+) -> float:
+    """The share of full-length-equivalent KV a hybrid stack actually holds at this context.
+
+    ``global_layer_frac`` on its own is the **asymptote**, not the answer. A local layer is
+    capped at ``sliding_window_tokens``, so it holds ``min(context, window)`` tokens — which is
+    the *whole* context until the context outgrows the window, and only then starts saving
+    anything. Averaged over a sequence of ``avg_context_tokens``:
+
+        frac = global_layer_frac + (1 - global_layer_frac) × min(context, window) / context
+
+    It equals 1.0 while the context fits the window, decays as the context grows past it, and
+    approaches ``global_layer_frac`` only as context goes to infinity.
+
+    **The failure this prevents.** Declaring the asymptote at every context under-reports KV by
+    up to ``1 / global_layer_frac``. On the hybrid 26B MoE in ``examples/gb200-moe-26b-tp1`` —
+    30 layers, 5 of them global, a 1,024-token window, and an average context of 903 tokens —
+    the asymptote 1/6 says 20,480 bytes per token when every one of the 25 local layers is
+    holding the full context and the truth is 122,880. That is a **6× understatement**, and it
+    is the dangerous direction: it inflates KV capacity, so it over-promises concurrent
+    sessions on hardware that cannot hold them. Chapter 2 warns that the 1.0 default is
+    pessimistic and therefore harmless; the asymptote is the opposite of both.
+
+    It is also visible before deployment, which is the point of computing it. Against that
+    model's engine-reported 492,000 KV tokens, the asymptote predicts 6,210,713 — 12.6× the
+    engine — while the context-aware fraction predicts 1,035,119, or 2.1×, which is ordinary
+    workspace-and-fragmentation territory that :func:`calibrate_memory_utilization` absorbs.
+    A 12.6× disagreement is the protocol's own signal that ``global_layer_frac`` is wrong.
+    """
+    if not 0.0 < global_layer_frac <= 1.0:
+        raise ValueError("global_layer_frac must be in (0, 1]")
+    if sliding_window_tokens <= 0:
+        raise ValueError("sliding_window_tokens must be > 0")
+    # A zero-length context has no per-token cost to average over, and dividing by it would
+    # return inf -- a KV capacity of zero tokens, reported as though it had been computed.
+    if avg_context_tokens <= 0:
+        raise ValueError("avg_context_tokens must be > 0 to average a windowed layer over it")
+    local_share = min(avg_context_tokens, sliding_window_tokens) / avg_context_tokens
+    return global_layer_frac + (1.0 - global_layer_frac) * local_share
+
+
 def kv_bytes_per_token(
     n_layers: int,
     n_kv_heads: int,
@@ -123,6 +167,8 @@ def kv_bytes_per_token(
     kv_precision: str = "bf16",
     tensor_parallel: int = 1,
     global_layer_frac: float = 1.0,
+    sliding_window_tokens: float | None = None,
+    avg_context_tokens: float | None = None,
 ) -> float:
     """Cluster-wide KV bytes for one token of context, for **standard MHA/GQA/MQA** attention.
 
@@ -130,9 +176,17 @@ def kv_bytes_per_token(
 
     ``global_layer_frac`` is the fraction of layers holding full-length KV. Models with
     sliding-window or hybrid attention only keep full context on their *global* layers; the
-    local layers are capped at the window and contribute far less. Set it to
-    ``n_global_layers / n_layers`` for those, or leave 1.0 for uniform full attention.
-    Report the value you used — it moves KV capacity by several times.
+    local layers are capped at the window. Set it to ``n_global_layers / n_layers`` for those,
+    or leave 1.0 for uniform full attention. Report the value you used — it moves KV capacity
+    by several times.
+
+    For a windowed or hybrid model, also pass ``sliding_window_tokens`` and
+    ``avg_context_tokens``. ``global_layer_frac`` alone is the limit the cost approaches as
+    context grows without bound; below and around the window the local layers are holding the
+    full context and saving nothing, so the bare fraction under-reports KV by up to
+    ``1 / global_layer_frac``. :func:`effective_layer_frac` computes what the stack holds at a
+    stated context. Omit both and the fraction is used as given, which is exactly right for
+    uniform attention and is what every full-attention report published so far assumed.
 
     **Do not use this for MLA** (DeepSeek-style multi-head latent attention), which caches a
     compressed latent instead of per-head K and V — this function overstates its KV by an
@@ -142,6 +196,22 @@ def kv_bytes_per_token(
     """
     if not 0.0 < global_layer_frac <= 1.0:
         raise ValueError("global_layer_frac must be in (0, 1]")
+    window_geometry = (sliding_window_tokens, avg_context_tokens)
+    # One of the two alone cannot be honoured, and honouring neither is the silent failure:
+    # the caller said the model is windowed, got the asymptote anyway, and the inflated KV
+    # capacity it returns over-promises sessions on hardware that cannot hold them.
+    if any(v is not None for v in window_geometry) and any(v is None for v in window_geometry):
+        raise ValueError(
+            "the windowed KV cost needs sliding_window_tokens and avg_context_tokens "
+            "together: the saving is the ratio between them. Pass both, or neither to use "
+            f"global_layer_frac as given. Got sliding_window_tokens={sliding_window_tokens}, "
+            f"avg_context_tokens={avg_context_tokens}"
+        )
+    if sliding_window_tokens is not None:
+        assert avg_context_tokens is not None  # narrowed by the check above
+        global_layer_frac = effective_layer_frac(
+            global_layer_frac, sliding_window_tokens, avg_context_tokens
+        )
     effective_kv_heads = kv_heads_per_rank(n_kv_heads, tensor_parallel) * tensor_parallel
     return (
         2.0

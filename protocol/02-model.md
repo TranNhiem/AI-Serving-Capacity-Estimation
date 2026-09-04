@@ -85,6 +85,16 @@ Models with sliding-window or hybrid attention keep full-length KV only on their
 
 `kv_bytes_per_token()` multiplies by this fraction. **Failure prevented:** leaving `global_layer_frac` at the 1.0 default for a hybrid model over-reports KV bytes per token by several times — pessimistic, so harmless to buyers, but it corrupts cross-model comparison. The dangerous direction is assuming the *small* footprint of a sliding-window model and then serving contexts longer than the window without declaring it. If `calibrate_memory_utilization()` returns a value above 1.0 against your analytic model, a wrong `global_layer_frac` is the first suspect named by the protocol.
 
+**`global_layer_frac` is the asymptote, not the cost — and this is the second required declaration.** A local layer is capped at `sliding_window_tokens`, so it holds `min(context, window)` tokens: the *whole* context until the context outgrows the window, and only then anything less. The share of full-length-equivalent KV a hybrid stack actually holds is therefore context-dependent, and `effective_layer_frac()` computes it:
+
+```
+frac = global_layer_frac + (1 − global_layer_frac) × min(avg_context_tokens, sliding_window_tokens) / avg_context_tokens
+```
+
+It is 1.0 while the context fits the window, decays as the context grows past it, and reaches `global_layer_frac` only in the limit. Declaring the bare fraction at every context under-reports KV by up to `1 / global_layer_frac`, and that is the over-promising direction: it inflates KV capacity and so inflates concurrent sessions. On the hybrid MoE in `examples/gb200-moe-26b-tp1` — 30 layers, 5 global, a 1,024-token window, an average context of 903 tokens — the bare 1/6 gives 20,480 bytes per token while all 25 local layers are holding the full context and the truth is 122,880: a **6× understatement**, at the shortest contexts, where the model looks most comfortably deployable.
+
+It is detectable before deployment, which is why the protocol prefers an engine-reported KV size. Against that model's engine-reported 492,000 tokens the bare fraction predicts 6,210,713 — 12.6× — while the context-aware fraction predicts 1,035,119, or 2.1×, which is ordinary workspace-and-fragmentation territory. **Normative:** a report for a `sliding-window` or `hybrid` model MUST pass `sliding_window_tokens` and `avg_context_tokens` to `kv_bytes_per_token()` alongside `global_layer_frac`, and MUST state the context the KV figure was computed at, since for these models it is not one number. Passing one of the two is an error, not a fallback. Uniform-attention models pass neither and are unaffected.
+
 ## Attention families: the declaration that selects the KV formula
 
 `attention_type` MUST be one of the following. It is not descriptive metadata — it decides
@@ -94,7 +104,7 @@ rounding one.
 | `attention_type` | additionally required | KV scales with | function |
 |---|---|---|---|
 | `full`, `gqa`, `mqa` | `n_kv_heads`, `head_dim` | tokens × heads | `kv_bytes_per_token()` |
-| `sliding-window`, `hybrid` | the above + `global_layer_frac` | tokens × heads × global frac | `kv_bytes_per_token()` |
+| `sliding-window`, `hybrid` | the above + `global_layer_frac`, `sliding_window_tokens`, `avg_context_tokens` | tokens × heads × `effective_layer_frac()` | `kv_bytes_per_token()` |
 | `mla` | `kv_lora_rank`, `qk_rope_head_dim` | tokens only | `kv_bytes_per_token_mla()` |
 | `linear`, `ssm`, `hybrid-recurrent` | `kv_bytes_per_sequence` | sequences only | `kv_capacity_sessions()` |
 

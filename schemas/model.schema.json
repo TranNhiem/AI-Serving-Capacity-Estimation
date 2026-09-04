@@ -206,7 +206,7 @@
       ],
       "exclusiveMinimum": 0,
       "maximum": 1,
-      "description": "Fraction of layers holding full-length KV, n_global_layers / n_layers; 1.0 for uniform full attention. Input to ascep.capacity.kv_bytes_per_token. Report the value used \u2014 it moves KV capacity by several times and is a common source of analytic/measured disagreement (see calibrate_memory_utilization)."
+      "description": "Fraction of layers holding full-length KV, n_global_layers / n_layers; 1.0 for uniform full attention. Input to ascep.capacity.kv_bytes_per_token. Report the value used \u2014 it moves KV capacity by several times and is a common source of analytic/measured disagreement (see calibrate_memory_utilization). This is the ASYMPTOTE, not the cost at a stated context: a local layer holds min(context, sliding_window_tokens) tokens, so it saves nothing until the context outgrows the window. Pass sliding_window_tokens and the workload's avg_context_tokens to kv_bytes_per_token so it applies effective_layer_frac; using the bare fraction under-reports KV by up to 1 / global_layer_frac, which inflates KV capacity and over-promises concurrent sessions."
     },
     "global_layer_frac_u_reason": {
       "type": "string",
@@ -338,7 +338,7 @@
         "null"
       ],
       "exclusiveMinimum": 0,
-      "description": "Attention window in tokens for sliding-window layers. KV for those layers stops growing past this length, so a model served beyond its window has a flat KV floor that the token-linear formula would overstate."
+      "description": "Attention window in tokens for sliding-window layers. KV for those layers stops growing past this length, so a model served beyond its window has a flat KV floor that the token-linear formula would overstate. REQUIRED alongside global_layer_frac when attention_type is sliding-window or hybrid: kv_bytes_per_token needs it and avg_context_tokens together to compute what the stack holds at the context actually served, and rejects one without the other."
     },
     "sliding_window_tokens_u_reason": {
       "type": "string",
