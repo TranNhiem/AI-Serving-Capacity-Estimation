@@ -305,6 +305,61 @@ def fits(
 # ------------------------------------------------------------------------ roofline (compute)
 
 
+def moe_decode_weight_params(
+    active_params: float,
+    total_params: float,
+    moe_experts: int,
+    moe_top_k: int,
+    batch_size: int,
+) -> float:
+    """Parameters an MoE reads from HBM in one decode step at ``batch_size``.
+
+    ``active_params`` is a *per-token* figure, and a decode step does not process one token —
+    it processes ``batch_size`` of them, each routed to its own ``top_k`` experts. The step must
+    read the union of everything they picked, not one token's share of it. Each token routes
+    independently, so an expert escapes being read only if all ``batch_size`` tokens miss it:
+
+        expected_experts = moe_experts * (1 - (1 - moe_top_k / moe_experts) ** batch_size)
+
+    The union saturates fast. At 128 experts and top-8, batch 1 touches 8, batch 32 touches
+    112, and by batch 192 essentially all 128 are read every step — so a large-batch MoE streams
+    close to its *total* parameters per step, not its active ones.
+
+    **The failure this prevents.** Pricing every step at ``active_params`` treats batching as
+    free for the weight term, which is true for a dense model and false for this one. On a
+    26B/3.8B MoE at batch 476 it understates weight traffic 6.8x, and since the roofline sits in
+    the denominator of ``roofline_efficiency`` the error lands there inverted: a server running
+    at a real 0.16 of its bound is published at 0.04, and the C6 rule that reads an efficiency
+    near 1.0 as evidence of measurement error is left checking a number too small to trip it.
+
+    Assumes tokens route independently and uniformly. Trained routers are pushed toward balance,
+    which spreads tokens across *more* distinct experts than chance would, so this is a floor on
+    the parameters read and therefore keeps the enclosing throughput figure an upper bound.
+    """
+    if not 0 < moe_top_k <= moe_experts:
+        raise ValueError(
+            f"moe_top_k must be in (0, moe_experts]; got top_k={moe_top_k}, experts={moe_experts}"
+        )
+    # Below the trunk there is nothing to route: a model whose total equals its active count has
+    # no expert bank, and the per-expert size solved for below would come out zero or negative
+    # and quietly shrink the step's weight read as the batch grew.
+    if total_params < active_params:
+        raise ValueError(
+            f"total_params ({total_params:,.0f}) is below active_params ({active_params:,.0f}); "
+            "an MoE stores every expert and runs top_k of them, so total is never the smaller"
+        )
+    if moe_experts == moe_top_k:
+        # Every token already routes to every expert, so there is no union to compute and
+        # active_params is exact. Solving for the per-expert size here would divide by zero.
+        return active_params
+    per_expert = (total_params - active_params) / (moe_experts - moe_top_k)
+    trunk = active_params - moe_top_k * per_expert
+    if batch_size < 1:
+        return active_params
+    touched = moe_experts * (1.0 - (1.0 - moe_top_k / moe_experts) ** batch_size)
+    return trunk + touched * per_expert
+
+
 def roofline_decode_tok_s(
     active_params: float,
     precision: str,
@@ -313,11 +368,14 @@ def roofline_decode_tok_s(
     avg_context_tokens: float = 0.0,
     kv_per_token: float = 0.0,
     efficiency: float = 1.0,
+    total_params: float | None = None,
+    moe_experts: int | None = None,
+    moe_top_k: int | None = None,
 ) -> float:
     """Upper bound on decode throughput, from memory bandwidth.
 
-    Autoregressive decode is bandwidth-bound, not FLOP-bound: each step streams the active
-    weights once and re-reads the KV cache for every sequence in the batch. Batching amortizes
+    Autoregressive decode is bandwidth-bound, not FLOP-bound: each step streams the weights it
+    needs once and re-reads the KV cache for every sequence in the batch. Batching amortizes
     the weight read across ``batch_size`` tokens, which is why throughput rises with
     concurrency until KV traffic takes over.
 
@@ -325,10 +383,35 @@ def roofline_decode_tok_s(
     ``top_k`` experts, **not** total params. The gap between this bound and measurement is the
     protocol's ``roofline_efficiency`` and is a required reporting field: real servers land far
     below 1.0, and a value near or above 1.0 indicates the measurement is wrong.
+
+    For an MoE, also pass ``total_params``, ``moe_experts`` and ``moe_top_k``. Per-token active
+    params price the weight read correctly only at ``batch_size`` 1; above it the step reads the
+    union of the experts the whole batch selected, which
+    :func:`moe_decode_weight_params` computes and which approaches total params well before a
+    production batch size. Omit all three and the weight read is ``active_params`` flat, which
+    is exactly right for a dense model and is what every dense report published so far assumed.
     """
     if hbm_bandwidth_bytes_s <= 0:
         raise ValueError("hbm_bandwidth_bytes_s must be > 0")
-    weight_read = active_params * dtype_bytes(precision)
+    moe_geometry = (total_params, moe_experts, moe_top_k)
+    # Silently falling back to the dense path on a partial declaration is the dangerous
+    # outcome: the caller asked for the expert-union model, got the flat one, and the
+    # understated roofline it returns looks like an ordinary number rather than a mistake.
+    if any(v is not None for v in moe_geometry) and any(v is None for v in moe_geometry):
+        raise ValueError(
+            "the MoE weight read needs total_params, moe_experts and moe_top_k together: the "
+            "expert-union size is solved from all three. Pass all of them, or none for a dense "
+            f"model. Got total_params={total_params}, moe_experts={moe_experts}, "
+            f"moe_top_k={moe_top_k}"
+        )
+    if total_params is None:
+        weight_params = active_params
+    else:
+        assert moe_experts is not None and moe_top_k is not None  # narrowed by the check above
+        weight_params = moe_decode_weight_params(
+            active_params, total_params, moe_experts, moe_top_k, batch_size
+        )
+    weight_read = weight_params * dtype_bytes(precision)
     kv_read = batch_size * avg_context_tokens * kv_per_token
     bytes_per_step = weight_read + kv_read
     if bytes_per_step <= 0:

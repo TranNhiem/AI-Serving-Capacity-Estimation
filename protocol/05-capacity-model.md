@@ -79,13 +79,18 @@ effective_utilization = (measured_kv_tokens × kv_bytes_per_token + weights_byte
 Decode is bandwidth-bound, not FLOP-bound. Each autoregressive step performs ~2 FLOPs per active parameter but must *read* every active weight once: at bf16 that is 1 FLOP per byte streamed, far below any accelerator's FLOP-per-byte ridge point. The step time is therefore set by HBM bandwidth:
 
 ```
-bytes_per_step  = active_params × dtype_bytes(precision)
+weight_params   = active_params                                    # dense
+                | moe_decode_weight_params(active_params, total_params,
+                                           moe_experts, moe_top_k, batch_size)   # MoE
+bytes_per_step  = weight_params × dtype_bytes(precision)
                 + batch_size × avg_context_tokens × kv_bytes_per_token
 steps_per_s     = hbm_bandwidth_bytes_s / bytes_per_step
 throughput      = steps_per_s * batch_size * efficiency
 ```
 
-Two structural facts follow. First, **batching amortizes the weight read**: the weight term is paid once per step regardless of `batch_size`, so throughput rises with concurrency until the KV-read term dominates — which is exactly the throughput-vs-context-length crossover of §5.3. Second, the KV term grows with both batch and context, so this roofline is context-dependent; quoting a single theoretical decode rate without its `avg_context_tokens` violates C4 in spirit even for **(T)** numbers. For MoE, `active_params` is the shared trunk plus `top_k` experts, never total params.
+Two structural facts follow. First, **batching amortizes the weight read**: for a dense model the weight term is paid once per step regardless of `batch_size`, so throughput rises with concurrency until the KV-read term dominates — which is exactly the throughput-vs-context-length crossover of §5.3. Second, the KV term grows with both batch and context, so this roofline is context-dependent; quoting a single theoretical decode rate without its `avg_context_tokens` violates C4 in spirit even for **(T)** numbers.
+
+**MoE amortizes far less than it appears to.** `active_params` is a per-token figure — the shared trunk plus `top_k` experts — and it prices the weight read correctly only at `batch_size` 1. A step with more tokens in it reads the union of every expert they routed to, which `moe_decode_weight_params` computes as `moe_experts × (1 − (1 − moe_top_k / moe_experts) ^ batch_size)` experts over the trunk. That union saturates at a batch size production serving passes immediately: 128 experts and top-8 reach ~87% of the checkpoint by batch 32 and effectively 100% by batch 192. The consequence is that a batched MoE gets the KV-amortization benefit of batching but almost none of the weight-amortization benefit, and a roofline that assumes otherwise is too high by up to `total_params / active_params` — 6.75× on the model in `examples/gb200-moe-26b-tp1`. [Chapter 2](02-model.md) states the normative rule and the reporting consequence.
 
 ### Prefill: `roofline_prefill_ttft_s`
 
