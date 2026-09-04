@@ -19,8 +19,22 @@ results/
 # local, never committed — see tools/check_no_secrets.py
 .ascep-denylist
 
+# Graphify knowledge-graph working files. GRAPH_REPORT.md is un-ignored below so the map of
+# the project is versioned alongside the code it describes and its diffs are readable in
+# review. graph.json and graph.html are not: they are rebuildable indexes of 5 MB each that
+# rewrite wholesale on every sync, so versioning them would grow history by megabytes per
+# commit while adding nothing a reviewer can read. Rebuild with `graphify` -- the extraction
+# cache under graphify-out/cache/ means a rebuild re-reads, it does not re-pay for the LLM.
+# The pattern must glob the contents rather than name the directory: git does not descend
+# into an excluded directory, so `!` on a file inside one never takes effect.
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
+
 # Campaign working files: a 54 MB third-party corpus index and a symlink into the
 # cluster image tree. The corpus is pinned in the report by name and digest, not by
 # being republished here.
 examples/*/corpus.jsonl
 examples/*/media
+
+# local scan cache for tools/check_no_secrets.py -- content digests, no content
+.ascep-secretscan-cache.json
