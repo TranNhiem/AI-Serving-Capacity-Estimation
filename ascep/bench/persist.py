@@ -424,6 +424,42 @@ def write_bundle(
     }
 
 
+def load_elisions(bundle_dir) -> dict[str, str]:
+    """Return the field removals the manifest declares for this bundle.
+
+    An elision is a declared, deliberate removal of a field from the published bundle. Each
+    key names the affected field as ``"file:field"``, and each value is the publisher's
+    reason. The declaration exists so an empty field is not misread as evidence that the
+    figure it backs was never measured.
+
+    Anything that is not a mapping of strings to strings is not an elision declaration.
+    Returning ``{}`` instead of raising keeps malformed metadata from crashing a reduction
+    mid-flight and making an otherwise readable bundle look unreducable; ``verify_bundle``
+    owns the refusal for a missing or unreadable manifest.
+    """
+    try:
+        manifest_file = Path(bundle_dir) / _MANIFEST_NAME
+        manifest = json.loads(manifest_file.read_text())
+    except (OSError, TypeError, ValueError):
+        return {}
+
+    if not isinstance(manifest, dict):
+        return {}
+
+    elisions = manifest.get("elisions")
+    if not isinstance(elisions, dict):
+        return {}
+    # A malformed entry is dropped by itself, never together with the entries beside it:
+    # a discarded declaration is an undeclared elision, and an undeclared elision is
+    # exactly what lets a rebuild re-grade a ladder against substituted evidence. One
+    # unreadable reason string must not buy back the permissive rebuild.
+    return {
+        field: reason
+        for field, reason in elisions.items()
+        if isinstance(field, str) and isinstance(reason, str)
+    }
+
+
 def verify_bundle(bundle_dir) -> list[str]:
     """Recompute the bundle's manifest digests; return one message per problem found.
 

@@ -352,7 +352,7 @@ def _cmd_reduce(args: argparse.Namespace) -> int:
     to re-learn what the bundle already pins.
     """
     from ascep import validation
-    from ascep.bench.rereduce import ReduceError, rebuild_report
+    from ascep.bench.rereduce import ReduceError, check_report, rebuild_report
 
     bundle_dir = pathlib.Path(args.bundle_dir)
     report_path = pathlib.Path(args.report) if args.report else bundle_dir.parent / "report.json"
@@ -365,6 +365,48 @@ def _cmd_reduce(args: argparse.Namespace) -> int:
     if not isinstance(previous_report, dict):
         _eprint(f"error: {report_path} is not a JSON object")
         return 2
+    if args.check:
+        # The check must branch before rebuild_report: a bundle whose elisions back graded
+        # figures refuses the write path outright, while the check path is exactly the one
+        # that can still run, because it compares only what the bundle still reproduces.
+        try:
+            check = check_report(bundle_dir, previous_report=previous_report)
+        except ReduceError as exc:
+            _eprint(f"error: {exc}")
+            return 2
+        if check.differing:
+            _eprint(f"rebuilt report differs from {report_path} at:")
+            for path in check.differing:
+                _eprint(f"  {path}")
+            if check.skipped:
+                # The skipped figures neither convict nor exonerate the diff above -- they
+                # are listed so the differing set is not misread as the whole comparison.
+                _eprint("figures not compared, because the bundle no longer backs them:")
+                _print_skipped_figures(check.skipped)
+            return 1
+        if not check.skipped:
+            _eprint(
+                f"rebuilt report matches {report_path} (report_generated_utc and the "
+                "conformance grade excluded; the grade is recomputed from the figures by "
+                "`ascep conformance`, and the figures are what matched)"
+            )
+            return 0
+        # The full-match message above must never print on an elided bundle: a pass that
+        # reads as total would upgrade strictly less evidence into the same claim the
+        # published report earned from the full stream.
+        _eprint(
+            f"rebuilt report matches {report_path} on every figure this bundle can still "
+            "reproduce (report_generated_utc and the conformance grade excluded, as in a "
+            "full check). The figures below were NOT compared -- the manifest declares "
+            "their backing data elided, so a rebuilt value would come from a substituted "
+            "population and a match there would prove nothing:"
+        )
+        _print_skipped_figures(check.skipped)
+        _eprint(
+            f"partial check: {len(check.skipped)} figure(s) skipped on declared elision; "
+            "passing here is NOT a full re-derivation of the published report"
+        )
+        return 0
     try:
         rebuilt = rebuild_report(bundle_dir, previous_report=previous_report)
     except ReduceError as exc:
@@ -382,19 +424,6 @@ def _cmd_reduce(args: argparse.Namespace) -> int:
         for problem in problems:
             _eprint(f"  {problem}")
         return 2
-    if args.check:
-        differing = _report_top_level_diffs(previous_report, rebuilt)
-        if not differing:
-            _eprint(
-                f"rebuilt report matches {report_path} (report_generated_utc and the "
-                "conformance grade excluded; the grade is recomputed from the figures by "
-                "`ascep conformance`, and the figures are what matched)"
-            )
-            return 0
-        _eprint(f"rebuilt report differs from {report_path} at:")
-        for path in differing:
-            _eprint(f"  {path}")
-        return 1
     try:
         out_path.write_text(json.dumps(rebuilt, indent=2) + "\n", encoding="utf-8")
     except OSError as exc:
@@ -425,43 +454,20 @@ _ABSENT = object()
 _CHANGE_LINE_CAP = 40
 
 
-def _ungraded(report: dict) -> dict:
-    """A copy of ``report`` with the grade folded back to how `ascep bench` writes it.
+def _print_skipped_figures(skipped: dict[str, str]) -> None:
+    """List the uncheckable figures grouped under the declared reason they share.
 
-    A rebuild is an ungraded draft by construction, so every graded report differs from its
-    own rebuild at `conformance` and at the note's opening paragraph -- which would make
-    --check report a difference on every published example in this repository and teach
-    operators that a failing --check is normal. The grade is not a figure: it is computed
-    from the figures by a different command, so if the figures match, re-grading reproduces
-    it. Folding rather than skipping keeps the rest of the note in the comparison, because
-    everything after the opening paragraph is written by the run and is a figure.
+    One elision typically backs every figure in the list, so printing the manifest's
+    reason once per figure repeats a paragraph a dozen times and buries the only part
+    that varies -- which figure. An operator who cannot skim the list does not read it,
+    and the list is the whole disclosure.
     """
-    from ascep.conformance import DRAFT_NOTE, GRADED_NOTE
-
-    folded = dict(report)
-    folded.pop("conformance", None)
-    note = folded.get("conformance_note")
-    if isinstance(note, str) and note.startswith(GRADED_NOTE):
-        folded["conformance_note"] = DRAFT_NOTE + note[len(GRADED_NOTE) :]
-    return folded
-
-
-def _report_top_level_diffs(old: dict, new: dict) -> list[str]:
-    """Top-level keys whose values differ, excluding the generation timestamp and the grade.
-
-    report_generated_utc is excluded because a rebuild is genuinely generated at a new
-    time; comparing it would make --check fail by construction. `conformance` is excluded
-    for the same reason and reported by _ungraded's fold instead. Nothing else is excluded,
-    because anything else that differs is the point of the check.
-    """
-    old, new = _ungraded(old), _ungraded(new)
-    diffs = []
-    for key in list(old) + [k for k in new if k not in old]:
-        if key == "report_generated_utc":
-            continue
-        if old.get(key) != new.get(key):
-            diffs.append(key)
-    return diffs
+    by_reason: dict[str, list[str]] = {}
+    for figure, reason in sorted(skipped.items()):
+        by_reason.setdefault(reason, []).append(figure)
+    for reason, figures in by_reason.items():
+        _eprint(f"  {', '.join(figures)}")
+        _eprint(f"    declared reason: {reason}")
 
 
 def _figure_diffs(old: Any, new: Any, path: str, out: list) -> None:
