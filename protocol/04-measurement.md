@@ -40,7 +40,7 @@ The evidence comes from the H100 rehearsal these rules were written from: Qwen3-
 | 64 | 3.54 | 0.2374 s | 0.0196 s | per-request-mean |
 | 128 | 6.65 | 0.2953 s | 0.0247 s | per-request-mean |
 
-Read as pooled gaps, every rung above 16 breaches the 0.05 s ITL gate, sustainable capacity is concurrency 16 at 1,180 output tok/s, and the binding constraint is reported as ITL. Read per request, every rung passes the ITL gate and concurrency 128 fails on TTFT instead (9.670 s against a 4.0 s gate), so sustainable capacity is concurrency 64 at 2,503 output tok/s and the binding constraint is TTFT. That is 2.1× on capacity and a different named constraint, decided entirely by which distribution the word ITL denoted. The corrected reading is also the physically sensible one: measured throughput across the ladder runs 93, 184, 354, 660, 1,180, 1,876, 2,503, 2,643 tok/s, so the knee is genuinely at 64 and the pooled reading placed the boundary three rungs early.
+Read as pooled gaps, every rung above 16 breaches the 0.05 s ITL gate, sustainable capacity is concurrency 16 at 1,180 output tok/s, and the binding constraint is reported as ITL. Read per request, every rung passes the ITL gate and concurrency 128 fails on TTFT instead (9.670 s against a 4.0 s gate), so sustainable capacity is concurrency 64 at 2,503 output tok/s and the binding constraint is TTFT. That is 4× on sustainable concurrency, 2.1× on the output throughput that concurrency delivers, and a different named constraint — decided entirely by which distribution the word ITL denoted. The corrected reading is also the physically sensible one: measured throughput across the ladder runs 93, 184, 354, 660, 1,180, 1,876, 2,503, 2,643 tok/s, so the knee is genuinely at 64 and the pooled reading placed the boundary two rungs early.
 
 The rules follow.
 
@@ -55,7 +55,7 @@ Two properties of the table are worth stating because they are what make the rul
 
 A reader can settle the diagnosis rather than infer it. A harness whose client parses SSE can log that one delta carried the text of several tokens, which distinguishes server-side coalescing from client-side buffering: no transport layer can synthesise token text. A run **SHOULD** record that observation per request, and the reference driver does so in the record's `error` field.
 
-**Failure prevented:** pooled chunk gaps at concurrency 32 and above read as p95 ITL of 0.11–0.30 s, breach a 0.05 s gate that the decoder never actually breached, and cap sustainable capacity at concurrency 16 — 2.1× below the real knee at 64 — while naming ITL as the binding constraint when the true one is TTFT.
+**Failure prevented:** pooled chunk gaps at concurrency 32 and above read as p95 ITL of 0.11–0.30 s, breach a 0.05 s gate that the decoder never actually breached, and cap sustainable capacity at concurrency 16 — 4× below the real knee at 64, and 2.1× below it in output throughput — while naming ITL as the binding constraint when the true one is TTFT.
 
 ## 4.2 Throughput definitions
 

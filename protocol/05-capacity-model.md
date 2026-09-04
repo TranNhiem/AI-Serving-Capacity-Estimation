@@ -16,14 +16,21 @@ The argument is **total** parameters, not active. For a Mixture-of-Experts model
 
 ```
 kv_heads_per_rank = max(1, ceil(n_kv_heads / tensor_parallel))
-kv_bytes_per_token = 2 × n_layers × global_layer_frac
+kv_bytes_per_token = 2 × n_layers × layer_frac
                      × kv_heads_per_rank × tensor_parallel
                      × head_dim × dtype_bytes(kv_precision)
+
+layer_frac = global_layer_frac                                   # uniform attention
+layer_frac = effective_layer_frac(global_layer_frac,             # sliding-window, hybrid
+                                  sliding_window_tokens,
+                                  avg_context_tokens)
 ```
 
-The factor 2 counts K and V. The topology term is the part most reports get wrong: when `tensor_parallel > n_kv_heads`, the heads cannot split further and runtimes **replicate** them, so total KV memory *grows* with TP width. A grouped-query model with 2 KV heads at TP=4 materializes 4 heads' worth of KV, twice the TP=2 figure — the wider deployment holds *fewer* tokens. This is why conformance rule C3 forbids presenting per-GPU KV as topology-independent: extrapolating a TP=1 or TP=2 measurement to TP=8 can be wrong by an integer multiple, in the pessimistic direction.
+The factor 2 counts K and V. The topology term is the part most reports get wrong: when `tensor_parallel > n_kv_heads`, the heads cannot split further and runtimes **replicate** them, so total KV memory *grows* with TP width. A grouped-query model with 2 KV heads at TP=4 materializes 4 heads' worth of KV, twice the TP=2 figure — the wider deployment holds *fewer* tokens. This is why conformance rule C3 forbids presenting per-GPU KV as topology-independent: extrapolating a TP=1 or TP=2 measurement to TP=8 can be wrong by an integer multiple, in the over-promising direction — it overstates the KV pool and so the session count, exactly as chapter 2's replication table and chapter 3's R2 describe for the same operation.
 
 `global_layer_frac` is the fraction of layers holding full-length KV. Models with sliding-window or hybrid attention keep full context only on their global layers. Leaving it at 1.0 for such a model understates KV capacity by several times — a wrong procurement in the expensive direction. Reports MUST declare the value used; `calibrate_memory_utilization` below will expose a wrong one.
+
+For those same models `global_layer_frac` is the **asymptote, not the cost**, so it is not the multiplier: a local layer holds `min(context, window)` tokens, which is the whole context until the context outgrows the window. KV per token is therefore context-dependent, and the multiplier above is `effective_layer_frac()` — chapter 2 §"`global_layer_frac` is the asymptote" derives it and works the arithmetic. Substituting the bare fraction under-reports KV by up to `1 / global_layer_frac` and does so worst at short contexts, where the model looks most deployable; that is the over-promising direction, not the expensive one, and it is the opposite error to leaving the value at 1.0. **Normative:** a `sliding-window` or `hybrid` report MUST pass `sliding_window_tokens` and `avg_context_tokens` alongside `global_layer_frac`, and MUST state the context its KV figure was computed at. Passing one of the two is an error, not a fallback. Uniform-attention models pass neither and are unaffected.
 
 ### Attention families: choosing the right KV formula at all
 

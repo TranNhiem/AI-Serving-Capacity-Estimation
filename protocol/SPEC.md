@@ -74,8 +74,10 @@ and a throughput figure quoted without its truncation rate counts tokens that we
 but never delivered. See §9.
 
 **C5 — Binding constraint.** Every capacity figure MUST name which floor binds it —
-`weights`, `kv`, `throughput` or `slo`. A capacity number without its constraint does not
-say what to buy and is not actionable.
+`weights`, `kv`, `prefill` or `throughput`, or `slo` where the floors are met but a latency
+gate is not. A capacity number without its constraint does not say what to buy and is not
+actionable. Chapter 8's C5 row is the normative enumeration; when a floor is added it is
+added there, and this paragraph follows.
 
 **C6 — Four tiers.** Capacity MUST be reported as theoretical, measured, sustainable and
 recommended (§5). Reporting only one tier is non-conforming, because the four differ by
@@ -92,8 +94,14 @@ only one of them is supported (§5.5).
 **C8 — Reproduction bundle.** Run configs, per-request raw records, engine version and
 container digest, and the environment capture MUST be published with the report.
 
-A report meeting C1-C5 but not C6-C8 MAY be labelled **partial**. Anything less is
-**non-conforming** and MUST NOT be compared against conforming reports.
+The rules above define C1-C8. Chapters 9 and 10 add C9-C12 — media and reasoning
+declarations, workload archetypes, and the dispersion a single published window hides — and
+chapter 8 owns their operational tests and the grading arithmetic.
+
+A report meeting C1-C5 but failing any of C6-C12 MAY be labelled **partial**. Anything less
+is **non-conforming** and MUST NOT be compared against conforming reports. The C1-C5 / C6-C12
+split is the whole of the boundary: a rule is fatal because it is in the first group, not
+because of how badly it failed.
 
 ## The five layers
 

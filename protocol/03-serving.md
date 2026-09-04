@@ -149,7 +149,8 @@ for a media-bearing workload that includes R6's last row: a figure whose real co
 media in flight rather than tokens in flight describes a different system the moment the
 soft-token tier moves. Remember C5: the binding constraint of every capacity figure in later
 chapters will have been set by the knobs declared here — this chapter is where `weights`,
-`kv`, `throughput` and `slo` outcomes are manufactured. One caveat, measured and recorded in
-§9.2: on an engine with a multimodal encoder cache there is a fifth bound that none of those
-four names, so for a media-dense workload C5's answer is the binding floor *among the ones
-the model prices*, and the report has to say so.
+`kv`, `prefill` and `throughput` outcomes are manufactured, and where the `slo` label that
+overrides them is decided. One caveat, measured and recorded in §9.2: on an engine with a
+multimodal encoder cache there is a further bound that none of those four floors names, so
+for a media-dense workload C5's answer is the binding floor *among the ones the model
+prices*, and the report has to say so.

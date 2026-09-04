@@ -300,7 +300,7 @@ The spread is often the figure most likely to change a reader's mind, and it is 
 - [ ] The largest selected Sustainable window passed every SLO gate for its full duration.
 - [ ] The bundle contains per-request records and environment material sufficient for reproduction (**C8**).
 - [ ] Measured ÷ theoretical roofline efficiency was calculated and any value at or above 1.0 was investigated rather than published as a performance win.
-- [ ] Every reported capacity names `weights`, `kv`, `throughput` or `slo` as its binding floor (**C5**), and theoretical, measured, sustainable and recommended values remain distinct (**C6**).
+- [ ] Every reported capacity names `weights`, `kv`, `prefill`, `throughput` or `slo` as its binding floor (**C5**), and theoretical, measured, sustainable and recommended values remain distinct (**C6**).
 - [ ] Every ladder rung carries exactly one declared outcome — COMPLETE, FAILED, INVALID or ABORTED — and a true capacity limit retains the FAILED label rather than being softened into INVALID.
 - [ ] A window with zero completions or a collapsed throughput rung terminated the run per the declared abort conditions, rather than letting the ladder climb past the collapsed rung.
 - [ ] Observability of every abort condition and SLO gate was demonstrated during warm-up, before the first steady-state window; mid-run telemetry loss invalidated the affected rung.
