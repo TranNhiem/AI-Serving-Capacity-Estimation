@@ -97,9 +97,7 @@ def _load_declarations(bundle_dir: Path) -> dict[str, Any]:
             raise ReduceError(f"{path} is not valid JSON: {exc}") from exc
         problems = validate(layer, doc)
         if problems:
-            raise ReduceError(
-                f"{path} does not satisfy the {layer} schema: " + "; ".join(problems)
-            )
+            raise ReduceError(f"{path} does not satisfy the {layer} schema: " + "; ".join(problems))
         declarations[layer] = doc
     return declarations
 

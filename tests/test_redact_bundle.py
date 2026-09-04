@@ -97,8 +97,10 @@ def test_a_redaction_rewrites_the_artifact_and_leaves_a_bundle_that_still_verifi
     bundle = _bundle(tmp_path)
     result = _run(
         bundle,
-        "--replace", f"{INTERNAL_PATH}=>{REDACTED_PATH}",
-        "--replace", f"{INTERNAL_IP}=>{REDACTED_IP}",
+        "--replace",
+        f"{INTERNAL_PATH}=>{REDACTED_PATH}",
+        "--replace",
+        f"{INTERNAL_IP}=>{REDACTED_IP}",
     )
     assert result.returncode == 0, result.stderr
     log = (bundle / "engine.log").read_text(encoding="utf-8")
@@ -116,8 +118,10 @@ def test_the_record_keeps_the_original_digest_and_count_but_never_the_redacted_s
     run_digest = _sha256(bundle / "engine.log")
     result = _run(
         bundle,
-        "--replace", f"{INTERNAL_PATH}=>{REDACTED_PATH}",
-        "--replace", f"{INTERNAL_IP}=>{REDACTED_IP}",
+        "--replace",
+        f"{INTERNAL_PATH}=>{REDACTED_PATH}",
+        "--replace",
+        f"{INTERNAL_IP}=>{REDACTED_IP}",
     )
     assert result.returncode == 0, result.stderr
     raw = (bundle / "manifest.json").read_text(encoding="utf-8")
@@ -180,8 +184,10 @@ def test_dry_run_reports_what_would_change_and_writes_nothing(tmp_path):
     manifest_bytes = (bundle / "manifest.json").read_bytes()
     result = _run(
         bundle,
-        "--replace", f"{INTERNAL_PATH}=>{REDACTED_PATH}",
-        "--replace", f"{INTERNAL_IP}=>{REDACTED_IP}",
+        "--replace",
+        f"{INTERNAL_PATH}=>{REDACTED_PATH}",
+        "--replace",
+        f"{INTERNAL_IP}=>{REDACTED_IP}",
         "--dry-run",
     )
     assert result.returncode == 0, result.stderr
@@ -218,8 +224,10 @@ def test_a_second_pass_keeps_the_first_original_digest_and_appends(tmp_path):
     run_digest = _sha256(bundle / "engine.log")
     first = _run(
         bundle,
-        "--replace", f"{INTERNAL_PATH}=>{REDACTED_PATH}",
-        "--replace", f"{INTERNAL_IP}=>{REDACTED_IP}",
+        "--replace",
+        f"{INTERNAL_PATH}=>{REDACTED_PATH}",
+        "--replace",
+        f"{INTERNAL_IP}=>{REDACTED_IP}",
     )
     assert first.returncode == 0, first.stderr
     second = _run(bundle, "--replace", f"{NODE_NAME}=>node")
@@ -240,8 +248,10 @@ def test_an_artifact_named_through_dot_dot_in_the_manifest_is_reached_and_redact
     bundle = _bundle(tmp_path, outside_log=True)
     result = _run(
         bundle,
-        "--replace", f"{INTERNAL_PATH}=>{REDACTED_PATH}",
-        "--replace", f"{INTERNAL_IP}=>{REDACTED_IP}",
+        "--replace",
+        f"{INTERNAL_PATH}=>{REDACTED_PATH}",
+        "--replace",
+        f"{INTERNAL_IP}=>{REDACTED_IP}",
     )
     assert result.returncode == 0, result.stderr
     log = (tmp_path / "engine.log").read_text(encoding="utf-8")

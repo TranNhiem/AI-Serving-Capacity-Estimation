@@ -134,7 +134,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install ruff
+      # Pinned deliberately: an unpinned ruff makes the formatter a moving target, so a
+      # release that changes one line-break rule turns every open branch red without a
+      # commit touching the code. Bump this on purpose, in a commit that also reformats.
+      - run: pip install ruff==0.16.4
       - run: ruff check .
       - run: ruff format --check .
 

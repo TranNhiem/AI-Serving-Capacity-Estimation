@@ -1425,9 +1425,7 @@ def _figure_dispersion(reps, field):
     the lower median, index ``(n - 1) // 2`` of the sorted values -- the same convention as
     the row picker, so the two cannot drift into meaning different things.
     """
-    values = sorted(
-        value for rep in reps if (value := getattr(rep.summary, field)) is not None
-    )
+    values = sorted(value for rep in reps if (value := getattr(rep.summary, field)) is not None)
     if not values:
         return None, (
             f"(U) no counted repetition produced a {field}; every window's reduction left "

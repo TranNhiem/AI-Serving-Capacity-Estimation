@@ -355,9 +355,7 @@ def _cmd_reduce(args: argparse.Namespace) -> int:
     from ascep.bench.rereduce import ReduceError, rebuild_report
 
     bundle_dir = pathlib.Path(args.bundle_dir)
-    report_path = (
-        pathlib.Path(args.report) if args.report else bundle_dir.parent / "report.json"
-    )
+    report_path = pathlib.Path(args.report) if args.report else bundle_dir.parent / "report.json"
     out_path = pathlib.Path(args.out) if args.out else report_path
     try:
         previous_report = _load_json(str(report_path))
@@ -765,8 +763,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_reduce.add_argument(
         "--check",
         action="store_true",
-        help="do not write; exit 0 if the rebuilt report matches the existing one, "
-        "1 if it differs",
+        help="do not write; exit 0 if the rebuilt report matches the existing one, 1 if it differs",
     )
     p_reduce.set_defaults(handler=_cmd_reduce)
 

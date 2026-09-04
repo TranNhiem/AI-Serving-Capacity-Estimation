@@ -141,9 +141,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
-    counts = {
-        name: [text.count(old) for old, _ in replacements] for name, text in texts.items()
-    }
+    counts = {name: [text.count(old) for old, _ in replacements] for name, text in texts.items()}
     for i, (old, _new) in enumerate(replacements):
         if sum(c[i] for c in counts.values()) == 0:
             # A replacement that matches nothing is almost always a typo in the very
@@ -188,8 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         for name, data in originals.items():
             (bundle_dir / name).write_bytes(data)
         print(
-            f"refusing to finish: {findings} finding(s) remain after redaction; "
-            "originals restored",
+            f"refusing to finish: {findings} finding(s) remain after redaction; originals restored",
             file=sys.stderr,
         )
         return 1
@@ -201,9 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         digest = persist._sha256(bundle_dir / name)
         # A file redacted before keeps the sha256_original from its first redaction: the
         # record must point back to what the run wrote, not to the previous pass.
-        entry = redactions.setdefault(
-            name, {"sha256_original": entries[name], "substitutions": []}
-        )
+        entry = redactions.setdefault(name, {"sha256_original": entries[name], "substitutions": []})
         # The record holds the replacement and the count, never the redacted string
         # itself: writing OLD into the manifest would publish the internal hostname the
         # operator just removed, in the one file every reader opens.

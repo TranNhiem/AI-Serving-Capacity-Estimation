@@ -165,9 +165,7 @@ def _window_specs():
         for repetition in range(3):
             records = [_record_dict(concurrency, repetition, "warmup", t0 - 0.8, warmup=True)]
             for index in range(3):
-                records.append(
-                    _record_dict(concurrency, repetition, str(index), t0 + 1.0 + index)
-                )
+                records.append(_record_dict(concurrency, repetition, str(index), t0 + 1.0 + index))
             specs.append(
                 {
                     "t0": t0,
@@ -232,8 +230,7 @@ def _write_bundle(bundle_dir: Path, specs) -> None:
         {
             "workload": _RUN_WORKLOAD,
             "windows": [
-                {key: value for key, value in spec.items() if key != "records"}
-                for spec in specs
+                {key: value for key, value in spec.items() if key != "records"} for spec in specs
             ],
         },
     )
@@ -351,9 +348,7 @@ def test_a_bundle_rereduces_to_the_same_figures_it_was_built_from(built_bundle, 
     bundle_dir, report = built_bundle
     dest = _copy_bundle(bundle_dir, tmp_path)
     rebuilt = rebuild_report(dest, previous_report=report)
-    for old_row, new_row in zip(
-        report["run"]["results"], rebuilt["run"]["results"], strict=True
-    ):
+    for old_row, new_row in zip(report["run"]["results"], rebuilt["run"]["results"], strict=True):
         for key, value in old_row.items():
             assert new_row[key] == value, key
         # A subset, not an equality: a rung publishes `dispersion` when it has repetitions to
@@ -564,9 +559,7 @@ def _current_report(bundle_dir: Path) -> dict:
     return _original_report(bundle_dir, _window_runs(_window_specs()))
 
 
-def test_check_passes_on_a_graded_report_because_the_grade_is_not_a_figure(
-    built_bundle, tmp_path
-):
+def test_check_passes_on_a_graded_report_because_the_grade_is_not_a_figure(built_bundle, tmp_path):
     """Every published report is graded and every rebuild is an ungraded draft, so a
     --check that compared `conformance` would report a difference on every example in
     this repository -- and an operator who sees --check fail on the worked examples

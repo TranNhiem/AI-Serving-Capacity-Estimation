@@ -187,9 +187,7 @@ def test_chapters_do_not_name_fields_the_schemas_reject(tmp_path):
     # difference would push writers to stop backticking real API names. persist and rereduce
     # are here because a bundle chapter that cannot write `verify_bundle` has to describe the
     # function instead, and a reader cannot grep for a description.
-    modules = (
-        capacity, records, metrics, ladder, driver, workloads, sessions, persist, rereduce
-    )
+    modules = (capacity, records, metrics, ladder, driver, workloads, sessions, persist, rereduce)
 
     declared = set()
     for path in sorted((ROOT / "schemas").glob("*.schema.json")):

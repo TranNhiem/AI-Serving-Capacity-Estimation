@@ -696,9 +696,7 @@ def test_a_step_cancelled_at_the_deadline_still_names_the_session_it_belonged_to
 
 def _dephase_offsets(concurrency, repetition, cycle_s):
     """The driver's offset derivation, restated: seeded from the operating point, not the clock."""
-    digest = hashlib.blake2b(
-        f"dephase:{concurrency}:{repetition}".encode(), digest_size=8
-    ).digest()
+    digest = hashlib.blake2b(f"dephase:{concurrency}:{repetition}".encode(), digest_size=8).digest()
     rng = random.Random(int.from_bytes(digest, "big"))
     return [rng.uniform(0.0, cycle_s) for _ in range(concurrency)]
 

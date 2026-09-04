@@ -1048,9 +1048,7 @@ def test_stripping_media_placeholders_from_a_media_run_is_refused(tmp_path, caps
     sent every image."""
     corpus = tmp_path / "mm.jsonl"
     corpus.write_text(
-        json.dumps(
-            {"conversations": [{"from": "human", "value": "<image> q"}], "image": ["a.png"]}
-        )
+        json.dumps({"conversations": [{"from": "human", "value": "<image> q"}], "image": ["a.png"]})
         + "\n",
         encoding="utf-8",
     )
