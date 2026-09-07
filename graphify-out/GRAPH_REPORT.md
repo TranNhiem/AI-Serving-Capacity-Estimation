@@ -1,105 +1,120 @@
-# Graph Report - AI-Serving-Capacity-Estimation  (2026-09-04)
+# Graph Report - AI-Serving-Capacity-Estimation  (2026-09-07)
 
 ## Corpus Check
-- label-refresh mode — file stats not available
+- 216 files · ~376,906 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4798 nodes · 7890 edges · 313 communities (259 shown, 45 thin omitted)
+- 4821 nodes · 7922 edges · 327 communities (265 shown, 53 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 179 edges (avg confidence: 0.9)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9a4106a5`
+- Built from commit: `a0f22049`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- Benchmark Run Orchestration
+- Benchmark Harness Execution Procedure
+- Benchmark Ladder Runner
 - Agent Session Profile Parsing
-- Per-Request Latency Record Semantics
+- Per-Request Latency Records
 - Multimodal Workload Corpus
 - Sustained Demand Rate Sizing
 - Synthetic Prompt Corpus Generation
-- Captured Session Shape Loading
+- Session Replay Planning
 - Conformance Verdict Computation
-- Bench Framework Adapter Contract
-- Workload Construction And Manifests
+- Benchmark Adapter Framework
+- Request Outcome Records And Refusals
+- Reproducible Benchmark Workloads
 - Capacity Estimation Formulas
+- Benchmark Window Policy Validation
 - Ladder Policy Validation
-- Benchmark Window Run Accounting
 - Capped Output Length Policy
 - Benchmark Window Deadline Test
 - Prefill And KV Residency Tests
-- Bench Driver Truncated Session Tests
 - Tool Call Timing Model
-- Benchmark Manifest Persistence Tests
 - Workload Construction And Output Plans
 - OpenAI Adapter Streaming Tests
+- Benchmark Bundle Persistence and Verification
 - Benchmark Workload Corpus Sampling
 - Window Metrics Reduction And Gates
-- Load Driver Session Behavior Tests
+- Load Window Driver Tests
 - Bundle-Backed Example Recomputation Tests
-- Report Reduction And Verification
+- Bundle Re-Reduction and Report Rebuilding
 - Workload Trace Parsing
 - Conformance Checker Implementation
 - Rung Failure Boundary Labeling
 - Agent Session Workload Profiling
 - Benchmark Prompt Corpus Sources
 - Rung Grading Rules and Tests
-- Steady-State Slice Metrics
-- Session Replay Fidelity Tests
+- Steady-State Slice Window Metrics
+- Synthetic Session Shape Generation
 - Multimodal Capacity Checks
 - Ladder Result Semantics and Vocabulary
-- Deterministic Session Replay Plans
-- Bench CLI Integration Tests
+- Replay Session Plan Construction
+- Bench CLI Test Suite
 - Report Rendering Helpers
 - Version Consistency Checks
 - Peak Concurrency Measurement
 - Secret Scanning Cache Tests
-- Context Token Counting Tests
 - Multimodal CPU-Cores Note Tests
 - Secret Scanning Tool
 - CLI Behavior Tests
 - Conformance Finding Rule Ordering
-- Benchmark Adapter Refusal Semantics
 - Null Assumption Exemption Tests
 - Agent Profile Export Tests
 - MoE Decode Roofline Estimation
-- Published Example Conformance Test
 - NaN Tier Handling Tests
-- Conformance Checker Rule Registration
+- Benchmark Metrics And Percentile Floors
+- Conformance Checker Rule Tests
 - Attention Family KV Capacity
-- Thinking Branch Conformance Tests
-- Offline Schema Validation Registry
+- Readme SVG Figure Generation
+- Offline Schema Validation
+- Benchmark Workload Construction Rules
+- Negative Corpus Generation
 - Command Line Interface
-- Bench Workload Replay Tests
-- Fatal Band Boundary Tests
-- Toolkit Subcommand Handlers
-- Bundle Re-Reduction Tests
+- Recorded Session Replay Tests
+- README Figure Generation Tests
+- Schema Path Resolution
+- CLI Subcommand Dispatch
+- Bundle Re-Reduction Verification Tests
 - Conformance Checker Test Fixture
-- Benchmark Bundle Persistence Verification
-- Load Driver Boundary And Policy Tests
+- Request Boundary Cohort Classification
 - Chapter Six Sizing Worked Example
-- Conformance Checker Tests
+- Conformance Rule Grading
+- Deterministic Seeded Dephasing Offsets
+- Sibling Tag Provenance
+- Null Justification Conformance Rules
+- Unmeasured Assumption U-Tag Fallback
+- Malformed Container Digest Conformance
+- Single-Point Campaign Labelling Requirement
+- Todo Scaffolding Detection Rule
+- Null Versus Zero Image Count
+- Measured Zero Image Count Declaration
+- Video Clip Count KV Floor Ambiguity
+- Mixed Mode ITS Cap Truncation Averaging
+- Stale Reason Note Exclusion
+- Text-Only Report CPU Note Test
 - Init Skeleton Scaffolding Tests
 - Schema Validation Test Suite
-- Benchmark Record JSONL Round-Trip Tests
+- Benchmark Record Persistence
 - Rung Dispersion Block Tests
 - Draft Capacity Report Assembly
 - Bench Draft Report Tests
-- Bundle Secret Redaction Tests
+- Bundle Redaction Integrity Tests
 - GitHub Issue Form Tests
 - Example Report Honesty Tests
 - Benchmark Environment Capture
 - Capacity Estimation And Validation
 - Report Skeleton Generation
 - Agent Profile Replay Tests
-- Negative Corpus Rule Tests
-- Reproduction Bundle Writing And Redaction
+- Negative Corpus Conformance Tests
+- Bundle Credential Redaction Tool
 - Benchmark Metrics Percentile Tests
 - Agent Profile Session Tests
 - Bench CLI Misconfiguration Rejection Tests
-- Elided Bundle Re-Reduction
+- Bundle Re-Reduction Elision Testing
 - Model Reasoning Mode Schema
 - Top-Level Required Fields
 - Image Token Table Schema
@@ -109,6 +124,7 @@
 - Run Behavior Flags Schema
 - Model Dtype Enumeration Schema
 - Attention Type Declaration Schema
+- Capacity Report Schema Provenance Fields
 - Capacity Report Schema Definition
 - Run Timing Parameters Schema
 - Model Declaration Schema Fields
@@ -121,7 +137,7 @@
 - Roofline Comparison Schema
 - Binding Constraint Enumeration
 - Run Outcome Enumeration
-- Capacity Report Field Definitions
+- Headroom Utilization Report Fields
 - Capacity Report Provenance Enum
 - Run Provenance Enum
 - Image Input Transport Schema
@@ -145,7 +161,7 @@
 - KV Residency Field Schema
 - Reasoning Share Field Schema
 - Requests Per Session Schema
-- Capacity Tier Metrics
+- Measured Capacity Result Fields
 - Results Metric Constraints
 - Hardware Version Schema
 - GPU Count Schema
@@ -163,6 +179,7 @@
 - Reasoning Tokens Workload Schema
 - Report Timestamp Schema Field
 - Target Throughput Per User Schema
+- Capacity Report Conformance Note Schema
 - Compute Runtime Version Reason Schema
 - CPU Cores Hardware Schema
 - CPU Model Reason Schema
@@ -218,18 +235,18 @@
 - Workload Sessions Reason Schema
 - Python Package Metadata
 - Run Record Schema
-- Gpu Count Schema Field
-- Numeric Threshold Constraints
+- Unmeasured Assumptions Array Schema
+- Capacity Report Metrics Schema
 - Run Window Schema Fields
 - Schema Root And Scale Metrics
 - Benchmark Bundle Provenance Manifest
-- Capacity Verdict U-Reason Fields
+- Capacity Report Sizing Uncertainty Reasons
 - SLO Gate Thresholds
-- Capacity Rung Figure Schema
+- Capacity Report Schema Metrics
 - Capacity Tier Estimates Schema
 - Core Schema Field Definitions
 - Run Schema Field Metadata
-- Report Metadata Entities
+- Capacity Report JSON Schema
 - Run Configuration Root
 - Serving Engine Feature Flags
 - Serving Engine Configuration Schema
@@ -239,10 +256,10 @@
 - Model Schema Root Declarations
 - Archetypes And Resolution Mix
 - Interconnect And Runtime Definitions
-- Measurement Uncertainty Fields
+- Measured Capacity Results Uncertainty Schema
 - Model Size Parameter Schema
 - Run Measurement Record Schema
-- Unmeasured Assumptions Scaling Schema
+- Capacity Report Schema
 - Core Property Type Definitions
 - Token And Video Limits
 - Capacity Sizing Result Schema
@@ -252,27 +269,26 @@
 - Field Override Update Reasons
 - Modality Array Constraints
 - Required Hardware Fields
-- Analysis Script Paths
+- Report Artifact Path Uncertainty Reasons
 - Run Declaration Schema
 - Model Capacity And Batching
 - Negative Example Corpus
 - Changelog Feature History
-- Protocol Capacity Benchmark Specification
+- KV Cache Memory Accounting
 - Provenance And Feature Declaration Rules
 - Parallelism Topology Binding Rules
 - Application Demand Sizing Inputs
 - Benchmark Repetition Dispersion Rules
 - Reasoning Mode Declaration Rules
 - Capacity Floors And Tiers
-- Protocol Sizing And Benchmark Rules
+- Capacity Sizing and Tiered Reporting
 - Binding Constraint Documentation
 - Binding Constraint Rules
 - Conformance Labeling Rules
-- Protocol Specification Index
+- Measured-Not-Assumed Reporting Rules
 - Memory And Provenance Tagging
-- Application Sizing Capacity Floors
+- Context-Driven Workload Sizing and Segregation
 - Multimodal Media Processing Rules
-- Declaration Conformance Grading Rules
 - Compliance Criteria Documentation
 - Multimodal Image Token Policies
 - Documentation And Worked Examples
@@ -308,13 +324,12 @@
 - Percentile Computation Discipline
 - Token Count Provenance Reconciliation
 - Unpriceable Audio Modality Handling
-- Image Input Transport Declaration
 - Field Acceptance Standard
 - Topology Binding Chapter
 - Pre-Measurement Gate Declaration
 - Prefill Floor Description
 - Weights Fit Check
-- Workload Archetypes Protocol Chapters
+- Workload Archetype Conformance Rules
 - CI Pipeline And Conformance Rules
 - Measurement Protocol And Grading Rules
 - Example Campaign Findings Notes
@@ -340,8 +355,8 @@
   CONTRIBUTING.md → examples/README.md
 - `Negative case C12: rung published without dispersion of its repeat windows` --semantically_similar_to--> `§4.8 Deterministic confidence intervals on capacity boundaries (SHOULD)`  [INFERRED] [semantically similar]
   examples/negative/c12/README.md → protocol/04-measurement.md
-- `test_a_policy_with_an_impossible_operating_point_is_rejected()` --uses--> `WindowPolicy`  [INFERRED]
-  tests/test_bench_driver.py → ascep/bench/driver.py
+- `_Bundle` --uses--> `RequestRecord`  [INFERRED]
+  tests/test_bundle_backed_examples.py → ascep/bench/records.py
 
 ## Import Cycles
 - None detected.
@@ -369,19 +384,23 @@
 - **Zero-dependency auditability guarantee: auditable stdlib-only modules, bare-install job, and the capacity.py stdlib rule all protect readers on locked-down clusters** — github_workflows_ci_auditable_stdlib_modules, github_workflows_ci_bare_install, github_pull_request_template_capacity_stdlib_only [INFERRED 0.85]
 - **Phase-locked fleet staircase defect manifested identically across all three GB200 campaigns** — examples_gb200_gemma4_31b_tp1_readme_phase_lock_defect, examples_gb200_qwen25_vl_32b_multi_image_readme_phase_lock_defect, examples_gb200_qwen25_vl_32b_video_readme_phase_lock_defect [INFERRED 0.95]
 
-## Communities (313 total, 45 thin omitted)
+## Communities (327 total, 53 thin omitted)
 
-### Community 10 - "Benchmark Run Orchestration"
-Cohesion: 0.06
-Nodes (47): WindowPolicy, ConfigError, _Terminated, bench(), _build_multimodal_corpus(), _cause_of(), _check_gates(), _check_shape() (+39 more)
+### Community 298 - "Benchmark Harness Execution Procedure"
+Cohesion: 0.33
+Nodes (6): Optional workload keys (multimodal selection, smoke caps, and session replay), ascep bench Reference Harness, image_input_transport declaration, Bisection and the Monotonicity Assumption, Confirmatory Repetition at the Boundary, Bench Config Refusal Rules
+
+### Community 10 - "Benchmark Ladder Runner"
+Cohesion: 0.07
+Nodes (43): ConfigError, _Terminated, bench(), _build_multimodal_corpus(), _cause_of(), _check_gates(), _check_shape(), _check_values() (+35 more)
 
 ### Community 101 - "Agent Session Profile Parsing"
 Cohesion: 0.16
 Nodes (16): Step, parse_session(), _realistic_export(), test_a_three_turn_session_matches_hand_computed_values(), test_aggregate_skips_zero_turn_sessions_and_keeps_resume_tokens_over_observers_only(), test_compaction_resume_tokens_is_none_when_no_compaction_occurred(), test_kv_residency_is_never_below_duty_cycle(), test_to_ascep_workload_emits_exactly_the_declared_key_set() (+8 more)
 
-### Community 109 - "Per-Request Latency Record Semantics"
-Cohesion: 0.09
-Nodes (15): RequestRecord, _is_monotonic(), test_accepted_and_completed_are_counted_on_different_timestamps(), test_achieved_concurrency_is_time_weighted_not_a_head_count(), test_error_records_are_excluded_from_latency_but_counted_in_the_denominator(), test_sub_millisecond_skew_is_tolerated_rather_than_rejected(), True unless timestamps regress by more than the clock-skew slack. A non-…, Time to first token, measured from the moment the request was issued.… (+7 more)
+### Community 109 - "Per-Request Latency Records"
+Cohesion: 0.13
+Nodes (9): RequestRecord, test_error_records_are_excluded_from_latency_but_counted_in_the_denominator(), test_sub_millisecond_skew_is_tolerated_rather_than_rejected(), Time to first token, measured from the moment the request was issued.…, Time spent before the request left the client., Every inter-token gap in this request. Empty for a request with fewer than two…, Chapter 7 §6: everything that is not a completed response is a failure., One issued request, from the client's point of view. All timestamps are seconds… (+1 more)
 
 ### Community 11 - "Multimodal Workload Corpus"
 Cohesion: 0.06
@@ -395,33 +414,37 @@ Nodes (4): Capacity, The protocol's standard answer, with its binding constraint
 Cohesion: 0.15
 Nodes (6): SyntheticCorpus, test_a_synthetic_corpus_cannot_be_built_without_a_tokenizer(), test_a_synthetic_corpus_refuses_a_target_it_cannot_hit_exactly(), Prompts built by appending filler words until the supplied tokenizer reports…, Section 7.2: token quantities MUST be defined after tokenization. A generator…, Better to fail than to publish input_tokens=1024 for a 1019-token prompt: the…
 
-### Community 117 - "Captured Session Shape Loading"
-Cohesion: 0.14
-Nodes (14): StepShape, _build_session_plan(), load_shapes(), test_a_file_written_by_ascep_agent_profile_loads_and_drives_the_driver(), test_load_shapes_refuses_each_bad_input_naming_the_path(), test_load_shapes_returns_the_shapes_and_the_declared_shared_prefix(), Path, parametrize (+6 more)
+### Community 117 - "Session Replay Planning"
+Cohesion: 0.12
+Nodes (9): SessionPlan, A source of session scripts for the closed-loop driver., Stable plan identifier shipped in the run manifest., Content digest, so 'same traffic' is checkable rather than asserted., Number of distinct captured shapes., Human-readable draw rule for the manifest., Which captured shape session number session_index replays., The request spec for one step of one session, pure in its arguments. (+1 more)
 
 ### Community 122 - "Conformance Verdict Computation"
 Cohesion: 0.29
 Nodes (6): Verdict, test_a_malformed_modalities_value_and_a_missing_workload_do_not_crash_c4(), test_findings_are_stable_and_partitioned(), The computed conformance level plus every finding that produced it., Whether the submitted label claims more than the computed level., C4 runs after the schema check but must not depend on it having passed. A…
 
-### Community 13 - "Bench Framework Adapter Contract"
-Cohesion: 0.09
-Nodes (21): Adapter, AdapterConfig, OpenAICompatAdapter, Outcome, _bench_adapter(), test_the_connection_pool_never_caps_below_the_declared_concurrency(), Enum, str (+13 more)
-
-### Community 135 - "Workload Construction And Manifests"
+### Community 13 - "Benchmark Adapter Framework"
 Cohesion: 0.13
-Nodes (10): MediaShapeWorkload, SessionWorkload, Workload, _build_workload(), Construct the Workload the ladder will replay, from the declared config only., Everything section 7.2 and 7.3 require a run to declare before it may generate…, Bind the generator to one window; pass ``concurrency`` when it is a ladder…, The reproduction bundle's half of the promise: everything needed to regenerate… (+2 more)
+Nodes (15): Adapter, AdapterConfig, RequestSpec, OpenAICompatAdapter, test_the_connection_pool_never_caps_below_the_declared_concurrency(), AsyncBaseTransport, The adapter contract: the smallest surface a serving framework must implement.…, Everything an adapter needs to issue one request, and nothing it does not.… (+7 more)
+
+### Community 131 - "Request Outcome Records And Refusals"
+Cohesion: 0.25
+Nodes (8): Outcome, test_admission_refusal_is_a_refusal_not_a_transport_error(), Enum, str, parametrize, The per-request record: the only thing a conforming harness must retain. Every…, Terminal state of an issued request. Every issued request has exactly one, and…, A shedding server is at capacity, which is the thing being measured.
+
+### Community 135 - "Reproducible Benchmark Workloads"
+Cohesion: 0.15
+Nodes (8): MediaShapeWorkload, SessionWorkload, Workload, Everything section 7.2 and 7.3 require a run to declare before it may generate…, Bind the generator to one window; pass ``concurrency`` when it is a ladder…, The reproduction bundle's half of the promise: everything needed to regenerate…, A Workload whose manifest also carries the corpus's measured media shape. C4…, A Workload whose traffic is a captured agent session rather than independent…
 
 ### Community 137 - "Capacity Estimation Formulas"
 Cohesion: 0.17
 Nodes (16): Constraint, Provenance, Tier, calibrate_memory_utilization(), media_tokens_per_request(), roofline_prefill_ttft_s(), test_enums_match_capacity_vocabulary(), Enum (+8 more)
 
+### Community 144 - "Benchmark Window Policy Validation"
+Cohesion: 0.13
+Nodes (14): WindowPolicy, _one_window(), test_a_policy_cannot_be_built_without_declaring_a_drain_deadline(), test_a_policy_cannot_be_built_without_declaring_think_time(), test_a_policy_with_an_impossible_operating_point_is_rejected(), test_a_policy_without_warm_up_is_rejected(), test_an_open_loop_policy_says_it_is_not_implemented_rather_than_running_closed(), parametrize (+6 more)
+
 ### Community 146 - "Ladder Policy Validation"
 Cohesion: 0.22
 Nodes (8): LadderPolicy, test_a_collapse_ratio_below_one_half_is_refused(), test_an_undeclared_cache_policy_is_refused_outright(), test_an_unknown_cache_policy_is_recorded_as_unmeasured_not_ignored(), The pre-run declarations grading needs: the section 1 C7 table, as data. Every…, "The ratio MUST NOT be below 0.5" -- a laxer ratio lets a queueing failure keep…, "If cache policy is unknown, record null with a (U) statement." Repeated…, Silence is the failure mode: a harness that never asked will look identical to…
-
-### Community 147 - "Benchmark Window Run Accounting"
-Cohesion: 0.25
-Nodes (5): WindowRun, One executed repetition: the records plus the declarations that give them…, Requests issued inside the window -- the error-rate denominator., In-window requests that completed validly after close, before the deadline., In-window requests the deadline turned into non-completions.
 
 ### Community 150 - "Capped Output Length Policy"
 Cohesion: 0.29
@@ -431,17 +454,9 @@ Nodes (6): CappedOutput, test_a_capped_output_plan_puts_a_ceiling_on_every_spec_
 Cohesion: 0.05
 Nodes (51): Workload, capacity_at(), build(), main(), _results(), _row(), _scaling_row(), _workload() (+43 more)
 
-### Community 180 - "Bench Driver Truncated Session Tests"
-Cohesion: 0.21
-Nodes (8): _FakePlan, _FakeShape, _FakeStep, test_a_session_the_window_cut_short_is_counted_as_started_but_not_completed(), test_a_step_cancelled_at_the_deadline_still_names_the_session_it_belonged_to(), Alternates a three-step session and a one-step session, recording what it was…, A truncated session contributes only its early -- and therefore shortest --…, The adapter hands that record to the sink, not back to the driver's call site.…
-
 ### Community 181 - "Tool Call Timing Model"
 Cohesion: 0.50
 Nodes (3): ToolCall, One tool invocation from a session transcript. Timestamps are epoch…, Wall-clock duration in seconds, or None when the call never ended.
-
-### Community 189 - "Benchmark Manifest Persistence Tests"
-Cohesion: 0.33
-Nodes (4): _Manifest, test_the_engine_log_and_container_digest_have_no_defaults(), Neither is knowable from inside the harness, and both pin the software the…, The smallest thing that looks like a workload manifest to the bundle writer.
 
 ### Community 21 - "Workload Construction And Output Plans"
 Cohesion: 0.07
@@ -451,6 +466,10 @@ Nodes (44): FixedOutput, ModelDecidedOutput, _synthetic(), test_a_fixed_output_p
 Cohesion: 0.14
 Nodes (34): FakeClock, _adapter(), chunk(), _script(), sse(), test_a_batched_stream_declares_that_its_itl_is_per_chunk(), test_a_chunk_count_never_becomes_a_token_count(), test_a_failed_request_is_never_retried() (+26 more)
 
+### Community 27 - "Benchmark Bundle Persistence and Verification"
+Cohesion: 0.04
+Nodes (74): Boundary, WindowRun, _Manifest, _manifest_key(), _relpath(), _sha256(), verify_bundle(), write_bundle() (+66 more)
+
 ### Community 31 - "Benchmark Workload Corpus Sampling"
 Cohesion: 0.06
 Nodes (33): JsonlCorpus, _corpus_file(), test_a_corpus_smaller_than_the_run_is_reused_and_says_so(), test_a_different_seed_draws_a_different_sequence(), test_a_media_placeholder_left_in_the_text_is_refused(), test_a_missing_field_names_the_field_and_the_line(), test_a_multimodal_record_is_refused_rather_than_flattened(), test_a_nested_path_that_does_not_resolve_names_the_component_that_failed() (+25 more)
@@ -459,17 +478,17 @@ Nodes (33): JsonlCorpus, _corpus_file(), test_a_corpus_smaller_than_the_run_is_r
 Cohesion: 0.07
 Nodes (45): SloGates, reduce_window(), _ok(), test_a_coalesced_window_switches_itl_to_the_per_request_mean_and_says_so(), test_a_gate_whose_statistic_is_unmeasurable_counts_as_failed(), test_a_percentile_above_the_advisory_floor_is_not_flagged(), test_a_percentile_between_the_two_floors_is_reported_but_flagged(), test_a_record_with_a_negative_span_is_excluded_and_counted_not_clamped() (+37 more)
 
-### Community 4 - "Load Driver Session Behavior Tests"
-Cohesion: 0.09
-Nodes (50): _FakeAdapter, no_reset(), run_window(), _policy(), _specs(), test_a_request_run_reports_no_sessions_rather_than_one_per_request(), test_a_request_still_running_at_the_drain_deadline_is_cancelled_and_recorded(), test_a_session_run_refuses_a_think_time_on_top_of_its_captured_gaps() (+42 more)
+### Community 4 - "Load Window Driver Tests"
+Cohesion: 0.08
+Nodes (59): _FakeAdapter, _FakePlan, _FakeShape, _FakeStep, no_reset(), run_window(), _policy(), _specs() (+51 more)
 
 ### Community 40 - "Bundle-Backed Example Recomputation Tests"
 Cohesion: 0.07
 Nodes (42): _Bundle, _Ranked, _assert_recomputes(), _elisions(), _find_bundle_backed_reports(), _load(), _median_counted_repetition(), report_path() (+34 more)
 
-### Community 68 - "Report Reduction And Verification"
+### Community 68 - "Bundle Re-Reduction and Report Rebuilding"
 Cohesion: 0.09
-Nodes (40): Boundary, CheckResult, ReduceError, check_report(), _derive_report(), _grading_elisions(), _is_tainted(), _load_declarations() (+32 more)
+Nodes (42): CheckResult, ReduceError, check_report(), _derive_report(), _grading_elisions(), _is_tainted(), _load_declarations(), load_window_runs() (+34 more)
 
 ### Community 69 - "Workload Trace Parsing"
 Cohesion: 0.13
@@ -495,13 +514,13 @@ Nodes (11): PromptSource, Where prompt text comes from. Implementations own the 
 Cohesion: 0.09
 Nodes (54): RepetitionResult, RungOutcome, WindowSummary, grade_ladder(), grade_rung(), _invalid_reps(), _reps(), _summary() (+46 more)
 
-### Community 83 - "Steady-State Slice Metrics"
-Cohesion: 0.09
-Nodes (26): SliceRow, absolute_floor(), advisory_floor(), _p_label(), _per_request_itl(), _slice_index(), slice_window(), _stat() (+18 more)
+### Community 83 - "Steady-State Slice Window Metrics"
+Cohesion: 0.11
+Nodes (18): SliceRow, slice_window(), test_a_decaying_completion_rate_is_visible_slice_by_slice(), test_a_warm_up_request_still_in_flight_occupies_the_first_slice(), test_accepted_and_completed_are_counted_on_different_timestamps(), test_achieved_concurrency_is_time_weighted_not_a_head_count(), test_entry_and_exit_slices_are_retained_unless_a_rule_says_otherwise(), test_records_outside_the_declared_window_land_in_no_slice() (+10 more)
 
-### Community 86 - "Session Replay Fidelity Tests"
-Cohesion: 0.07
-Nodes (50): SessionShape, _growth_session(), _plan(), shared_words(), _step(), test_a_compaction_step_drops_the_previous_steps_text_but_keeps_the_shared_prefix(), test_a_decreasing_turn_index_is_refused(), test_a_long_session_renders_in_linear_time_rather_than_quadratic_time() (+42 more)
+### Community 86 - "Synthetic Session Shape Generation"
+Cohesion: 0.06
+Nodes (63): SessionShape, StepShape, load_shapes(), _growth_session(), _plan(), shared_words(), _step(), test_a_compaction_step_drops_the_previous_steps_text_but_keeps_the_shared_prefix() (+55 more)
 
 ### Community 9 - "Multimodal Capacity Checks"
 Cohesion: 0.04
@@ -511,13 +530,13 @@ Nodes (66): CapCheck, image_tokens(), media_arrival_check(), media_token_cap_che
 Cohesion: 0.29
 Nodes (6): LadderResult, _repetition_failure(), Enum, Concurrency-ladder grading: what each rung means and what the ladder licenses.…, What the ladder as a whole licenses, per sections 3, 5 and 7. ``rungs`` holds…, The conservative verdict for one counted repetition. Returns a human-readable…
 
-### Community 96 - "Deterministic Session Replay Plans"
-Cohesion: 0.07
-Nodes (21): RequestSpec, ReplaySessionPlan, SessionPlan, Everything an adapter needs to issue one request, and nothing it does not.…, The load driver: reset, warm-up, the measured closed loop, and the drain…, Replay captured agent-session shapes as benchmark traffic. A coding-agent…, A source of session scripts for the closed-loop driver., Stable plan identifier shipped in the run manifest. (+13 more)
+### Community 96 - "Replay Session Plan Construction"
+Cohesion: 0.13
+Nodes (10): ReplaySessionPlan, _build_session_plan(), Load the captured shapes and refuse every declaration the replay would ignore.…, Replays captured SessionShapes as prompt text whose prefix relationships match…, sha256 over the canonical JSON of the shapes, the shared prefix length and the…, The number of captured shapes -- not the number of steps. Reporting steps here…, Round-robin, stated plainly. A random draw would give a 128-concurrency rung a…, Build the spec for one step. The prompt is one user message, not a… (+2 more)
 
-### Community 0 - "Bench CLI Integration Tests"
+### Community 0 - "Bench CLI Test Suite"
 Cohesion: 0.06
-Nodes (79): assert_draft_validates(), _config(), _report(), _run_offline(), _write(), test_a_complete_rungs_row_omits_reasons_because_there_is_nothing_to_reconcile(), test_a_confirmed_boundary_is_published_as_the_sustainable_tier(), test_a_declaration_file_that_is_not_there_is_named_in_the_error() (+71 more)
+Nodes (85): assert_draft_validates(), _config(), _report(), _run_offline(), _write(), test_a_complete_rungs_row_omits_reasons_because_there_is_nothing_to_reconcile(), test_a_confirmed_boundary_is_published_as_the_sustainable_tier(), test_a_declaration_file_that_is_not_there_is_named_in_the_error() (+77 more)
 
 ### Community 1 - "Report Rendering Helpers"
 Cohesion: 0.06
@@ -535,10 +554,6 @@ Nodes (16): peak_in_flight(), _flight_record(), test_a_pool_cap_pins_the_peak_fa
 Cohesion: 0.08
 Nodes (11): test_scan_defaults_to_one_job_so_a_dynamically_loaded_module_still_works(), test_the_cache_cannot_clear_a_file_it_has_not_seen(), test_the_checkouts_denylist_applies_to_a_tree_outside_the_checkout(), test_the_repo_itself_is_clean(), test_this_module_trips_none_of_the_patterns_it_exercises(), The publication gate, and the two ways it used to pass without checking…, The fixtures above have to look like secrets without being findable in this…, The whole risk of a cache in a safety gate: a false pass on bytes nobody read. (+3 more)
 
-### Community 116 - "Context Token Counting Tests"
-Cohesion: 0.33
-Nodes (6): _run_offline_with_usage(), test_a_rung_the_server_never_counted_leaves_the_context_out_rather_than_inventing_one(), test_the_context_mean_is_taken_over_complete_records_not_as_a_sum_of_two_means(), `run.results[]` carries an anyOf, not a required pair: `ascep init` reports it…, Half the records report both counts (600 + 100) and half report an input count…, Patch the adapter as _run_offline does, with per-request usage from…
-
 ### Community 120 - "Multimodal CPU-Cores Note Tests"
 Cohesion: 0.14
 Nodes (14): _declare_image_input(), test_a_cpu_cores_note_satisfies_the_multimodal_obligation(), test_a_multimodal_report_without_a_cpu_cores_note_is_a_c1_error(), test_a_null_cpu_cores_is_reported_once_as_a_missing_value_not_a_missing_note(), test_a_text_only_run_on_a_multimodal_model_needs_no_cpu_cores_note(), test_a_typoed_note_key_does_not_satisfy_the_cpu_cores_obligation(), test_the_multimodal_fixture_is_schema_valid_so_the_note_rule_is_what_is_measured(), Turn the text-only example into a schema-valid image *run* with cores declared.… (+6 more)
@@ -555,10 +570,6 @@ Nodes (11): _child(), test_conformance_and_render_still_work_when_the_extras_are
 Cohesion: 0.50
 Nodes (4): _rule_order(), test_findings_are_listed_in_rule_order_not_alphabetical_order(), Sort key placing a finding where its rule sits in :data:`_RULES`. Findings were…, Sorted as text, C10 to C12 land between C1 and C2. A reader scans a verdict in…
 
-### Community 131 - "Benchmark Adapter Refusal Semantics"
-Cohesion: 0.67
-Nodes (3): test_admission_refusal_is_a_refusal_not_a_transport_error(), parametrize, A shedding server is at capacity, which is the thing being measured.
-
 ### Community 134 - "Null Assumption Exemption Tests"
 Cohesion: 0.20
 Nodes (10): _assumption(), test_a_block_of_eight_complete_entries_like_bench_emits_raises_no_c1_findings(), test_a_complete_unmeasured_assumptions_entry_with_a_null_value_used_raises_no_c1(), test_a_null_outside_value_used_in_an_unmeasured_assumptions_entry_is_still_reported(), test_an_unmeasured_assumptions_entry_with_a_real_value_used_still_raises_no_c1(), parametrize, A null value_used means no substitute was plugged in -- the field was simply…, The exemption must change nothing for the entry that DID plug in a value: it… (+2 more)
@@ -571,49 +582,73 @@ Nodes (9): _raw_tool(), test_a_tool_time_that_cannot_be_an_interval_is_not_charg
 Cohesion: 0.17
 Nodes (20): moe_decode_weight_params(), roofline_decode_tok_s(), test_a_checkpoint_smaller_than_its_active_count_is_rejected_not_extrapolated(), test_a_dense_model_declared_as_moe_reads_its_parameters_once_at_any_batch(), test_a_half_declared_moe_geometry_raises_instead_of_falling_back_to_dense(), test_a_large_batch_step_reads_essentially_every_stored_parameter(), test_a_single_token_step_reads_exactly_the_active_parameters(), test_a_top_k_outside_the_expert_bank_is_rejected() (+12 more)
 
+### Community 147 - "Benchmark Metrics And Percentile Floors"
+Cohesion: 0.16
+Nodes (14): absolute_floor(), advisory_floor(), _is_monotonic(), _p_label(), _per_request_itl(), _slice_index(), _stat(), The reduction from raw per-request records to the figures a report publishes.… (+6 more)
+
+### Community 149 - "Conformance Checker Rule Tests"
+Cohesion: 0.12
+Nodes (24): _rules(), test_a_declined_tier_is_only_a_warning(), test_a_failing_gate_inside_the_envelope_is_a_c7_error(), test_a_failing_gate_outside_the_envelope_is_not_a_c7_error(), test_a_missing_tier_is_a_c6_error(), test_capacity_without_its_binding_constraint_is_a_c5_error(), test_every_rule_function_in_the_module_is_registered(), test_gates_chosen_after_the_run_is_a_c7_error() (+16 more)
+
 ### Community 15 - "Attention Family KV Capacity"
 Cohesion: 0.10
 Nodes (35): dtype_bytes(), effective_layer_frac(), kv_bytes_per_token(), kv_bytes_per_token_mla(), kv_capacity_sessions(), kv_heads_per_rank(), weight_bytes(), test_a_context_inside_the_window_leaves_every_local_layer_holding_all_of_it() (+27 more)
 
-### Community 166 - "Offline Schema Validation Registry"
-Cohesion: 0.14
-Nodes (19): _all_schemas(), build_registry(), iter_errors(), _schema_dir(), schema_path(), validate(), validator_for(), build() (+11 more)
+### Community 157 - "Readme SVG Figure Generation"
+Cohesion: 0.26
+Nodes (13): _arrow(), build_svg(), _chip(), _curve(), _esc(), main(), _rect(), _section_label() (+5 more)
+
+### Community 166 - "Offline Schema Validation"
+Cohesion: 0.18
+Nodes (15): _all_schemas(), build_registry(), iter_errors(), validate(), validator_for(), build(), main(), test_workload_validates() (+7 more)
+
+### Community 180 - "Benchmark Workload Construction Rules"
+Cohesion: 0.17
+Nodes (12): _build_workload(), test_a_text_corpus_reads_the_declared_prompt_field_and_not_a_hardcoded_one(), test_a_text_corpus_with_no_prompt_field_declared_defaults_to_conversations(), test_a_text_only_config_still_builds_the_plain_workload_and_a_string_prompt(), test_ignore_eos_false_with_a_declared_length_puts_that_ceiling_on_every_request(), test_ignore_eos_false_with_a_null_length_is_accepted_and_sends_no_max_tokens(), Construct the Workload the ladder will replay, from the declared config only., prompt_field' used to be honoured only when 'media_root' was set; a text corpus… (+4 more)
+
+### Community 189 - "Negative Corpus Generation"
+Cohesion: 0.31
+Nodes (9): _describe(), edit(), main(), _split(), Any, Regenerate the negative corpus: eleven reports, each wrong in exactly one way.…, Render the edit list the way the README states it, one clause per changed field., Dotted path to a key list, with all-digit components read as list indices. (+1 more)
 
 ### Community 2 - "Command Line Interface"
 Cohesion: 0.04
 Nodes (84): main(), _agent_export(), _agent_step(), _agent_tool(), _key_values(), _mutated_report(), _size_args(), test_agent_profile_counts_requests_as_api_calls_not_as_turns() (+76 more)
 
-### Community 20 - "Bench Workload Replay Tests"
-Cohesion: 0.03
-Nodes (94): _dry_run(), test_an_unknown_key_in_the_config_is_an_error_not_a_shrug(), test_dry_run_prints_the_plan_and_exits_zero_without_touching_the_network(), test_dry_run_states_the_window_count_and_the_wall_clock_it_implies(), test_four_null_slo_gates_are_refused_rather_than_recorded_as_declared(), test_gates_declared_after_the_run_are_refused_rather_than_recorded(), _media_corpus(), _media_workload() (+86 more)
+### Community 20 - "Recorded Session Replay Tests"
+Cohesion: 0.04
+Nodes (84): _dry_run(), test_an_unknown_key_in_the_config_is_an_error_not_a_shrug(), test_dry_run_prints_the_plan_and_exits_zero_without_touching_the_network(), test_dry_run_states_the_window_count_and_the_wall_clock_it_implies(), test_four_null_slo_gates_are_refused_rather_than_recorded_as_declared(), test_gates_declared_after_the_run_are_refused_rather_than_recorded(), _media_corpus(), _media_workload() (+76 more)
 
-### Community 23 - "Toolkit Subcommand Handlers"
+### Community 203 - "Schema Path Resolution"
+Cohesion: 0.40
+Nodes (5): _schema_dir(), schema_path(), Path, Where the shipped schemas live, in both of the layouts this package exists in.…, Path to a shipped schema. ``name`` may be ``"model"`` or…
+
+### Community 23 - "CLI Subcommand Dispatch"
 Cohesion: 0.08
-Nodes (46): build_parser(), _cmd_agent_profile(), _cmd_bench(), _cmd_conformance(), _cmd_init(), _cmd_reduce(), _cmd_render(), _cmd_size() (+38 more)
+Nodes (48): _bench_adapter(), build_parser(), _cmd_agent_profile(), _cmd_bench(), _cmd_conformance(), _cmd_init(), _cmd_reduce(), _cmd_render() (+40 more)
 
-### Community 25 - "Bundle Re-Reduction Tests"
-Cohesion: 0.07
-Nodes (54): rebuild_report(), built_bundle(), _copy_bundle(), _current_report(), _edit_records(), _graded_beside(), _original_report(), _read_json() (+46 more)
+### Community 25 - "Bundle Re-Reduction Verification Tests"
+Cohesion: 0.08
+Nodes (50): built_bundle(), _copy_bundle(), _current_report(), _edit_records(), _graded_beside(), _original_report(), _read_json(), _record_dict() (+42 more)
 
 ### Community 263 - "Conformance Checker Test Fixture"
 Cohesion: 0.67
 Nodes (3): report(), fixture, A fresh copy per test — every test here mutates it.
 
-### Community 27 - "Benchmark Bundle Persistence Verification"
-Cohesion: 0.06
-Nodes (50): _record(), _run(), test_a_bundle_with_colliding_request_ids_is_refused(), test_a_bundle_with_no_runs_is_refused(), test_a_file_removed_from_the_bundle_fails_verification(), test_a_fresh_bundle_verifies(), test_a_null_digest_is_allowed_and_left_for_the_checker_to_downgrade(), test_a_small_engine_log_is_copied_into_the_bundle_rather_than_hashed_in_place() (+42 more)
-
-### Community 28 - "Load Driver Boundary And Policy Tests"
-Cohesion: 0.08
-Nodes (38): apply_boundary_rules(), _dephase_offsets(), _rec(), test_a_policy_cannot_be_built_without_declaring_a_drain_deadline(), test_a_policy_cannot_be_built_without_declaring_think_time(), test_a_policy_with_an_impossible_operating_point_is_rejected(), test_a_policy_without_warm_up_is_rejected(), test_a_request_outstanding_at_the_drain_deadline_is_an_error_with_no_latency_sample() (+30 more)
+### Community 28 - "Request Boundary Cohort Classification"
+Cohesion: 0.12
+Nodes (23): apply_boundary_rules(), _rec(), test_a_request_outstanding_at_the_drain_deadline_is_an_error_with_no_latency_sample(), test_a_request_that_already_failed_keeps_the_cause_it_failed_for(), test_a_request_with_no_end_timestamp_is_outstanding_not_missing(), test_a_straddler_completing_within_the_drain_deadline_is_a_valid_latency_sample(), test_a_zero_drain_deadline_admits_no_straddler_at_all(), test_an_arrival_before_the_window_opened_is_not_offered_demand() (+15 more)
 
 ### Community 29 - "Chapter Six Sizing Worked Example"
 Cohesion: 0.05
 Nodes (49): fits(), gpus_required(), kv_capacity_tokens(), kv_pool_bytes(), declared(), measured(), _size(), test_active_sessions_is_not_confused_with_concurrency() (+41 more)
 
-### Community 3 - "Conformance Checker Tests"
-Cohesion: 0.05
-Nodes (74): check(), _rules(), test_a_bare_u_tag_does_not_justify_a_null_but_a_sentence_does(), test_a_c1_error_forces_non_conforming(), test_a_declined_tier_is_only_a_warning(), test_a_failing_gate_inside_the_envelope_is_a_c7_error(), test_a_failing_gate_outside_the_envelope_is_not_a_c7_error(), test_a_lowercase_todo_is_still_scaffolding() (+66 more)
+### Community 3 - "Conformance Rule Grading"
+Cohesion: 0.06
+Nodes (34): check(), test_a_c1_error_forces_non_conforming(), test_a_lowercase_todo_is_still_scaffolding(), test_a_note_beside_a_null_does_not_justify_the_null(), test_a_stale_justification_is_reported_once_not_twice(), test_a_text_only_non_thinking_report_raises_no_media_or_reasoning_findings(), test_a_thinking_branch_without_a_named_mode_cannot_be_read_as_either_profile(), test_a_value_used_outside_the_assumptions_register_is_graded_like_any_other_null() (+26 more)
+
+### Community 314 - "Deterministic Seeded Dephasing Offsets"
+Cohesion: 0.50
+Nodes (4): _dephase_offsets(), test_the_dephasing_offsets_are_deterministic_for_a_given_operating_point(), The driver's offset derivation, restated: seeded from the operating point, not…, Offsets drawn from the clock would be a benchmark input nobody can replay. Two…
 
 ### Community 33 - "Init Skeleton Scaffolding Tests"
 Cohesion: 0.06
@@ -623,9 +658,9 @@ Nodes (38): _cli(), _is_placeholder(), _lookup(), _norm(), test_a_leftover_place
 Cohesion: 0.06
 Nodes (35): _enums(), _permits_null(), _scan_for_locally_unjustifiable_nulls(), schema(), test_a_note_on_a_declared_value_validates_and_the_suffix_spelling_does_not(), test_a_pooled_gaps_row_must_carry_the_tokens_per_chunk_figure_that_licenses_it(), test_a_reported_itl_percentile_must_name_its_population(), test_an_empty_note_is_refused_because_it_says_nothing() (+27 more)
 
-### Community 37 - "Benchmark Record JSONL Round-Trip Tests"
-Cohesion: 0.10
-Nodes (34): read_records(), write_records(), _rec(), test_a_cancelled_in_flight_request_survives_a_round_trip_and_is_still_counted(), test_a_completed_request_is_not_a_failure(), test_a_corrupt_line_raises_instead_of_being_skipped(), test_a_record_file_written_before_the_agent_fields_existed_still_loads(), test_a_request_that_never_produced_a_token_has_no_ttft_and_no_itl() (+26 more)
+### Community 37 - "Benchmark Record Persistence"
+Cohesion: 0.09
+Nodes (35): read_records(), write_records(), _rec(), test_a_cancelled_in_flight_request_survives_a_round_trip_and_is_still_counted(), test_a_completed_request_is_not_a_failure(), test_a_corrupt_line_raises_instead_of_being_skipped(), test_a_record_file_written_before_the_agent_fields_existed_still_loads(), test_a_request_that_never_produced_a_token_has_no_ttft_and_no_itl() (+27 more)
 
 ### Community 44 - "Rung Dispersion Block Tests"
 Cohesion: 0.12
@@ -639,9 +674,9 @@ Nodes (33): _boundary_constraint(), build_report(), _conformance_note(), _distin
 Cohesion: 0.09
 Nodes (30): _offline_report(), _offline_report_with(), _only_the_top_rung_fails(), test_a_bench_draft_can_be_graded_up_by_the_command_its_note_names(), test_a_campaign_at_one_context_length_declares_single_point(), test_a_decidable_boundary_reaches_both_filled_tiers(), test_a_ladder_with_no_passing_rung_still_publishes_the_ceiling_it_measured(), test_a_rung_that_failed_its_gates_still_sets_the_engine_ceiling() (+22 more)
 
-### Community 52 - "Bundle Secret Redaction Tests"
-Cohesion: 0.14
-Nodes (29): verify_bundle(), _bundle(), _engine_log(), _redactions(), _run(), _sha256(), test_a_bundle_that_does_not_verify_going_in_is_refused_and_left_untouched(), test_a_redaction_rewrites_the_artifact_and_leaves_a_bundle_that_still_verifies() (+21 more)
+### Community 52 - "Bundle Redaction Integrity Tests"
+Cohesion: 0.15
+Nodes (27): _bundle(), _engine_log(), _redactions(), _run(), _sha256(), test_a_bundle_that_does_not_verify_going_in_is_refused_and_left_untouched(), test_a_redaction_rewrites_the_artifact_and_leaves_a_bundle_that_still_verifies(), test_a_redaction_that_leaves_a_finding_restores_the_original_and_refuses() (+19 more)
 
 ### Community 56 - "GitHub Issue Form Tests"
 Cohesion: 0.11
@@ -667,13 +702,13 @@ Nodes (23): _build(), decisions(), _merged(), _narrow(), _object(), _record_deci
 Cohesion: 0.16
 Nodes (22): _shapes(), _step(), test_a_clock_that_ran_backwards_between_turns_yields_no_gap_rather_than_a_negative_one(), test_a_prompt_that_shrank_without_a_compaction_is_still_a_prefix_reset(), test_a_replayable_shape_matches_the_hand_computed_sequence(), test_a_step_recording_no_prompt_at_all_is_refused_by_name(), test_a_turns_tool_time_is_spread_across_its_gaps_not_charged_to_one(), test_pending_and_running_tools_count_per_turn_but_block_no_time() (+14 more)
 
-### Community 87 - "Negative Corpus Rule Tests"
-Cohesion: 0.09
-Nodes (29): _describe(), edit(), main(), _split(), _findings(), _report(), test_every_rule_from_c1_to_c11_has_a_case_or_a_stated_reason_it_cannot(), test_no_case_removes_a_finding_the_baseline_did_not_have() (+21 more)
+### Community 87 - "Negative Corpus Conformance Tests"
+Cohesion: 0.14
+Nodes (19): _findings(), _report(), test_every_rule_from_c1_to_c11_has_a_case_or_a_stated_reason_it_cannot(), test_no_case_removes_a_finding_the_baseline_did_not_have(), test_one_case_adds_findings_of_exactly_the_rule_it_claims(), test_the_baseline_grades_conforming_with_no_findings_at_all(), test_the_baseline_says_in_its_own_note_that_it_is_a_fixture(), test_the_case_readme_names_the_rule_and_the_field() (+11 more)
 
-### Community 88 - "Reproduction Bundle Writing And Redaction"
-Cohesion: 0.16
-Nodes (17): load_elisions(), _manifest_key(), _relpath(), _sha256(), write_bundle(), _credential_match(), main(), _parse_args() (+9 more)
+### Community 88 - "Bundle Credential Redaction Tool"
+Cohesion: 0.47
+Nodes (5): _credential_match(), main(), _parse_args(), Namespace, The scanner rule ``old`` trips, if it is credential-shaped rather than a site…
 
 ### Community 89 - "Benchmark Metrics Percentile Tests"
 Cohesion: 0.12
@@ -687,9 +722,9 @@ Nodes (19): _assistant(), _compaction_message(), _export(), test_a_delta_spannin
 Cohesion: 0.29
 Nodes (7): test_a_base_url_carrying_the_api_route_is_refused_rather_than_doubled(), test_a_config_missing_a_declaration_the_protocol_requires_is_refused(), test_a_ladder_that_cannot_be_graded_as_declared_is_refused_before_the_first_request(), parametrize, Each of these has an obvious default, and every one of those defaults is a lie…, Each of these produces a number rather than an error if it is left to run. A…, `http://host:8000/v1` is what every OpenAI client example puts in front of a…
 
-### Community 99 - "Elided Bundle Re-Reduction"
-Cohesion: 0.14
-Nodes (30): _bundle_copy(), _empty_token_ts(), _previous_report(), _repin_manifest(), _set_elisions(), test_a_rebuild_refuses_elided_token_stamps_and_quotes_the_declared_reason(), test_a_rebuild_uses_empty_token_stamps_once_the_elision_is_undeclared(), test_an_unscopable_elision_refuses_both_entry_points() (+22 more)
+### Community 99 - "Bundle Re-Reduction Elision Testing"
+Cohesion: 0.13
+Nodes (32): load_elisions(), _bundle_copy(), _empty_token_ts(), _previous_report(), _repin_manifest(), _set_elisions(), test_a_rebuild_refuses_elided_token_stamps_and_quotes_the_declared_reason(), test_a_rebuild_uses_empty_token_stamps_once_the_elision_is_undeclared() (+24 more)
 
 ### Community 103 - "Model Reasoning Mode Schema"
 Cohesion: 0.12
@@ -726,6 +761,10 @@ Nodes (13): enum, enum, bf16, fp16, fp32, fp4, fp6, fp8 (+5 more)
 ### Community 115 - "Attention Type Declaration Schema"
 Cohesion: 0.15
 Nodes (13): description, enum, type, attention_type, full, gqa, hybrid, hybrid-recurrent (+5 more)
+
+### Community 116 - "Capacity Report Schema Provenance Fields"
+Cohesion: 0.10
+Nodes (26): type, description, type, description, type, description, type, type (+18 more)
 
 ### Community 118 - "Capacity Report Schema Definition"
 Cohesion: 0.17
@@ -775,9 +814,9 @@ Nodes (9): description, enum, type, binding_constraint, kv, prefill, slo, throug
 Cohesion: 0.25
 Nodes (8): description, enum, type, outcome, aborted, complete, failed, invalid
 
-### Community 140 - "Capacity Report Field Definitions"
-Cohesion: 0.06
-Nodes (41): type, description, type, description, type, description, minimum, type (+33 more)
+### Community 140 - "Headroom Utilization Report Fields"
+Cohesion: 0.07
+Nodes (27): description, exclusiveMinimum, type, type, description, minimum, description, type (+19 more)
 
 ### Community 141 - "Capacity Report Provenance Enum"
 Cohesion: 0.25
@@ -871,9 +910,9 @@ Nodes (5): reasoning_share, description, maximum, minimum, type
 Cohesion: 0.40
 Nodes (5): requests_per_session, default, description, exclusiveMinimum, type
 
-### Community 182 - "Capacity Tier Metrics"
-Cohesion: 0.18
-Nodes (11): description, enum, type, produced_by, capacity_at, gpus_required, kv_capacity_tokens, measurement (+3 more)
+### Community 182 - "Measured Capacity Result Fields"
+Cohesion: 0.25
+Nodes (8): enum, capacity_at, gpus_required, kv_capacity_tokens, measurement, roofline_decode_tok_s, roofline_prefill_ttft_s, other
 
 ### Community 19 - "Results Metric Constraints"
 Cohesion: 0.04
@@ -942,6 +981,10 @@ Nodes (4): report_generated_utc, description, format, type
 ### Community 208 - "Target Throughput Per User Schema"
 Cohesion: 0.50
 Nodes (4): target_tok_s_per_user, description, minimum, type
+
+### Community 209 - "Capacity Report Conformance Note Schema"
+Cohesion: 0.50
+Nodes (4): description, minLength, type, conformance_note
 
 ### Community 212 - "Compute Runtime Version Reason Schema"
 Cohesion: 0.67
@@ -1159,13 +1202,13 @@ Nodes (3): sessions_per_user_per_day_u_reason, description, type
 Cohesion: 0.06
 Nodes (42): type, type, description, minimum, type, description, type, description (+34 more)
 
-### Community 313 - "Gpu Count Schema Field"
+### Community 313 - "Unmeasured Assumptions Array Schema"
 Cohesion: 0.50
-Nodes (4): description, minimum, type, gpu_count
+Nodes (4): unmeasured_assumptions, description, minItems, type
 
-### Community 32 - "Numeric Threshold Constraints"
-Cohesion: 0.07
-Nodes (30): description, type, description, type, description, type, description, exclusiveMinimum (+22 more)
+### Community 32 - "Capacity Report Metrics Schema"
+Cohesion: 0.06
+Nodes (33): description, type, description, type, description, type, description, type (+25 more)
 
 ### Community 35 - "Run Window Schema Fields"
 Cohesion: 0.05
@@ -1179,17 +1222,17 @@ Nodes (36): additionalProperties, allOf, anyOf, description, $id, required, $sch
 Cohesion: 0.05
 Nodes (37): sha256_original, substitutions, sha256_original, substitutions, sha256_original, substitutions, sha256_original, substitutions (+29 more)
 
-### Community 42 - "Capacity Verdict U-Reason Fields"
-Cohesion: 0.07
-Nodes (27): description, type, description, type, description, type, default, description (+19 more)
+### Community 42 - "Capacity Report Sizing Uncertainty Reasons"
+Cohesion: 0.06
+Nodes (32): description, type, description, description, type, description, minimum, description (+24 more)
 
 ### Community 43 - "SLO Gate Thresholds"
 Cohesion: 0.06
 Nodes (33): description, type, description, exclusiveMinimum, type, description, type, description (+25 more)
 
-### Community 45 - "Capacity Rung Figure Schema"
+### Community 45 - "Capacity Report Schema Metrics"
 Cohesion: 0.06
-Nodes (32): properties, description, exclusiveMinimum, type, description, type, description, description (+24 more)
+Nodes (32): properties, description, type, description, type, description, type, description (+24 more)
 
 ### Community 46 - "Capacity Tier Estimates Schema"
 Cohesion: 0.08
@@ -1203,9 +1246,9 @@ Nodes (31): description, type, description, description, type, description, type
 Cohesion: 0.03
 Nodes (65): description, pattern, type, description, type, description, description, type (+57 more)
 
-### Community 51 - "Report Metadata Entities"
-Cohesion: 0.08
-Nodes (24): description, pattern, type, description, minLength, type, description, $ref (+16 more)
+### Community 51 - "Capacity Report JSON Schema"
+Cohesion: 0.10
+Nodes (20): description, pattern, type, description, $ref, description, $ref, properties (+12 more)
 
 ### Community 54 - "Run Configuration Root"
 Cohesion: 0.07
@@ -1243,9 +1286,9 @@ Nodes (20): description, items, minItems, uniqueItems, description, items, addit
 Cohesion: 0.10
 Nodes (25): description, type, type, description, type, description, type, description (+17 more)
 
-### Community 67 - "Measurement Uncertainty Fields"
-Cohesion: 0.07
-Nodes (29): description, type, description, type, description, type, description, type (+21 more)
+### Community 67 - "Measured Capacity Results Uncertainty Schema"
+Cohesion: 0.06
+Nodes (36): description, type, description, type, description, type, description, type (+28 more)
 
 ### Community 70 - "Model Size Parameter Schema"
 Cohesion: 0.09
@@ -1255,9 +1298,9 @@ Nodes (23): description, type, description, exclusiveMinimum, maximum, type, des
 Cohesion: 0.11
 Nodes (22): required, required, concurrency, e2e_p95_s, e2e_p99_s, error_rate_pct, gpu_mem_util_pct, gpu_util_pct (+14 more)
 
-### Community 74 - "Unmeasured Assumptions Scaling Schema"
-Cohesion: 0.10
-Nodes (22): additionalProperties, required, type, scaling, unmeasured_assumptions, description, items, type (+14 more)
+### Community 74 - "Capacity Report Schema"
+Cohesion: 0.12
+Nodes (18): additionalProperties, required, type, scaling, description, items, type, items (+10 more)
 
 ### Community 75 - "Core Property Type Definitions"
 Cohesion: 0.09
@@ -1295,9 +1338,9 @@ Nodes (19): description, items, minItems, type, uniqueItems, enum, input_modalit
 Cohesion: 0.11
 Nodes (19): required, compute_runtime_version, cpu_cores, cpu_model, dense_bf16_flops_per_s, driver_version, gpu_model, gpus_per_node (+11 more)
 
-### Community 92 - "Analysis Script Paths"
-Cohesion: 0.05
-Nodes (41): description, type, description, type, description, type, description, type (+33 more)
+### Community 92 - "Report Artifact Path Uncertainty Reasons"
+Cohesion: 0.10
+Nodes (21): description, description, type, description, type, description, type, description (+13 more)
 
 ### Community 93 - "Run Declaration Schema"
 Cohesion: 0.11
@@ -1315,9 +1358,9 @@ Nodes (11): baseline.json: clean synthetic fixture (4x A100 80GB, dense 13B bf16
 Cohesion: 0.06
 Nodes (56): ascep/agent_profile.py (ascep agent-profile), MultimodalJsonlCorpus, tools/redact_bundle.py, ascep/bench/sessions.py session replay, SyntheticCorpus, agent_loop workload block, agent-profile --shapes replay captures, Four capacity floors (weights, KV, throughput, prefill) (+48 more)
 
-### Community 148 - "Protocol Capacity Benchmark Specification"
-Cohesion: 0.16
-Nodes (14): kv_bytes_per_token (MHA/GQA/MQA), kv_bytes_per_token_mla (MLA latent attention), kv_capacity_sessions (linear/SSM/recurrent), ascep bench Reference Harness, Pre-run Declarations and Preflight, C3 — Topology Binding, C7 — Gates Fixed Before the Run, C8 — Reproduction Bundle (+6 more)
+### Community 148 - "KV Cache Memory Accounting"
+Cohesion: 0.40
+Nodes (6): kv_bytes_per_token (MHA/GQA/MQA), kv_bytes_per_token_mla (MLA latent attention), kv_capacity_sessions (linear/SSM/recurrent), Pre-run Declarations and Preflight, C3 — Topology Binding, kv_heads_per_rank / KV-head replication
 
 ### Community 167 - "Provenance And Feature Declaration Rules"
 Cohesion: 0.40
@@ -1343,9 +1386,9 @@ Nodes (5): max_output_tokens MUST be declared for thinking/mixed workloads, reas
 Cohesion: 0.20
 Nodes (10): Multimodal encoder cache — an unpriced bound on media in flight, vision_encoder replicated per TP rank, demand_prefill_tok_s and the zero-generation boundary, The prefill floor — Constraint.PREFILL, the fourth floor, C5 — Binding constraint, C6 — Four tiers reported, The capacity floors — weights, KV, prefill, throughput, The four capacity tiers and roofline efficiency (+2 more)
 
-### Community 18 - "Protocol Sizing And Benchmark Rules"
-Cohesion: 0.16
-Nodes (20): capacity_at, fits (weights floor check), Four Reporting Tiers (theoretical/measured/sustainable/recommended), gpus_required, interpolate_throughput, roofline_decode_tok_s, Roofline Efficiency (measured / theoretical), roofline_prefill_ttft_s (+12 more)
+### Community 18 - "Capacity Sizing and Tiered Reporting"
+Cohesion: 0.18
+Nodes (19): capacity_at, fits (weights floor check), Four Reporting Tiers (theoretical/measured/sustainable/recommended), gpus_required, interpolate_throughput, roofline_decode_tok_s, Roofline Efficiency (measured / theoretical), roofline_prefill_ttft_s (+11 more)
 
 ### Community 183 - "Binding Constraint Documentation"
 Cohesion: 0.50
@@ -1359,25 +1402,21 @@ Nodes (4): C5 — every capacity figure must name its binding constraint (floor)
 Cohesion: 0.50
 Nodes (4): DRAFT non-conforming Report / ascep conformance --raise, Conformance Labels: full / partial / non-conforming, Conformance Rules C1-C12 (operational definitions), Non-conforming Comparability Asymmetry
 
-### Community 186 - "Protocol Specification Index"
-Cohesion: 0.29
-Nodes (7): C1 — Complete Declaration, §7 Unmeasured-assumptions Ledger and the Flip Rule, capacity-report.md Template, SPEC chapter index (ch1-ch10), Issued-not-admitted Error Denominator, Straddler Rule and Drain Deadline, Media token cost is measured or engine-reported, never assumed
+### Community 186 - "Measured-Not-Assumed Reporting Rules"
+Cohesion: 0.25
+Nodes (8): C1 — Complete Declaration, C8 — Reproduction Bundle, §7 Unmeasured-assumptions Ledger and the Flip Rule, capacity-report.md Template, SPEC chapter index (ch1-ch10), Issued-not-admitted Error Denominator, Straddler Rule and Drain Deadline, Media token cost is measured or engine-reported, never assumed
 
 ### Community 187 - "Memory And Provenance Tagging"
 Cohesion: 0.40
 Nodes (6): calibrate_memory_utilization, kv_pool_bytes / kv_capacity_tokens, memory_utilization (framework VRAM cap), weight_bytes, C2 — Provenance Tagging, (M)/(I)/(T)/(U) Provenance Tagging Discipline
 
-### Community 188 - "Application Sizing Capacity Floors"
-Cohesion: 0.40
-Nodes (6): avg_context_tokens, Workload Segmentation (short/mixed/long context), C10 — Agent-loop Context Estimators, C11 — Mix-carried Capacity, The Capacity Floors (weights/kv/prefill/throughput/slo), KV/Throughput Crossover Context Length
+### Community 188 - "Context-Driven Workload Sizing and Segregation"
+Cohesion: 0.25
+Nodes (9): avg_context_tokens, Workload Segmentation (short/mixed/long context), C10 — Agent-loop Context Estimators, C11 — Mix-carried Capacity, C7 — Gates Fixed Before the Run, The Capacity Floors (weights/kv/prefill/throughput/slo), KV/Throughput Crossover Context Length, Head-of-Line Blocking (long prefill vs short requests) (+1 more)
 
 ### Community 200 - "Multimodal Media Processing Rules"
 Cohesion: 0.40
 Nodes (5): image_pixel_budget_px — the silently binding field, media_preprocessing serving-layer object, media_token_cap_check, mm_processor_cache_gb — the processor cache is prefix caching in disguise, per_request_override_supported defaults to false
-
-### Community 201 - "Declaration Conformance Grading Rules"
-Cohesion: 0.50
-Nodes (4): The notes object — justifying a non-null value, C1 — Complete declaration, Conformance grades — conforming / partial / non-conforming, Template conformance note — required at every level
 
 ### Community 210 - "Compliance Criteria Documentation"
 Cohesion: 0.67
@@ -1391,9 +1430,9 @@ Nodes (3): image_token_policy (fixed-grid / dynamic-resolution / declared-table)
 Cohesion: 0.05
 Nodes (46): Serving-framework adapter contract, C1 — complete declaration, C2 — provenance tagging, C3 — topology binding, C8 — reproduction bundle, ascep/capacity.py purity invariant, Versioning rule: number-changing changes are major bumps, chatbot-10k-dau workload declaration example (+38 more)
 
-### Community 41 - "Workload Archetypes Protocol Chapters"
-Cohesion: 0.21
-Nodes (13): media_arrival_check, Per-prompt media limit gap — rejection counts must be published beside error rates, agent_loop — four numbers describing the loop, Agent session capture and replay (agent-profile --shapes / replay_sessions), The closed archetypes vocabulary (chat_assistant/image_grounded/video_grounded/code_agent/other), Conformance rules C9 (archetype cross-examination), C10 (agent estimators), C11 (tier carry-over), context_growth_tokens_per_turn — the accumulating-context fix, kv_residency vs duty_cycle — the 3.3333x KV misprice (+5 more)
+### Community 41 - "Workload Archetype Conformance Rules"
+Cohesion: 0.15
+Nodes (17): media_arrival_check, The notes object — justifying a non-null value, Per-prompt media limit gap — rejection counts must be published beside error rates, agent_loop — four numbers describing the loop, Agent session capture and replay (agent-profile --shapes / replay_sessions), The closed archetypes vocabulary (chat_assistant/image_grounded/video_grounded/code_agent/other), Conformance rules C9 (archetype cross-examination), C10 (agent estimators), C11 (tier carry-over), context_growth_tokens_per_turn — the accumulating-context fix (+9 more)
 
 ### Community 48 - "CI Pipeline And Conformance Rules"
 Cohesion: 0.08
@@ -1413,23 +1452,23 @@ Nodes (21): gb200-gemma4-31b-tp1 campaign (Gemma 4 31B on one GB200 at TP1), gb2
 
 ## Knowledge Gaps
 - **1289 isolated node(s):** `description`, `description`, `always-on`, `chat-template-flag`, `native-timestamped` (+1284 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2456 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **45 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2468 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **53 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `avg_context_tokens` and `C11 — Mix-carried Capacity`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `RequestRecord` connect `Per-Request Latency Record Semantics` to `Bench CLI Integration Tests`, `Load Driver Session Behavior Tests`, `Bench Framework Adapter Contract`, `Benchmark Window Run Accounting`, `Bench Workload Replay Tests`, `Benchmark Bundle Persistence Verification`, `Load Driver Boundary And Policy Tests`, `Benchmark Window Deadline Test`, `Window Metrics Reduction And Gates`, `Benchmark Record JSONL Round-Trip Tests`, `Bundle-Backed Example Recomputation Tests`, `Report Reduction And Verification`, `Steady-State Slice Metrics`, `Session Replay Fidelity Tests`, `Benchmark Metrics Percentile Tests`, `Deterministic Session Replay Plans`, `Peak Concurrency Measurement`, `Context Token Counting Tests`, `Captured Session Shape Loading`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
-- **Why does `check()` connect `Conformance Checker Tests` to `Bench CLI Integration Tests`, `Init Skeleton Scaffolding Tests`, `Conformance Finding Rule Ordering`, `Null Assumption Exemption Tests`, `Conformance Checker Implementation`, `Published Example Conformance Test`, `NaN Tier Handling Tests`, `Bench Draft Report Tests`, `Negative Corpus Rule Tests`, `Toolkit Subcommand Handlers`, `Multimodal CPU-Cores Note Tests`, `Bundle Re-Reduction Tests`, `Conformance Verdict Computation`, `Benchmark Bundle Persistence Verification`, `Thinking Branch Conformance Tests`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Why does `main()` connect `Command Line Interface` to `Bench CLI Integration Tests`, `Bundle-Backed Example Recomputation Tests`, `Bench Draft Report Tests`, `Bench Workload Replay Tests`, `Context Token Counting Tests`, `Toolkit Subcommand Handlers`, `Bundle Re-Reduction Tests`?**
-  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+- **Why does `check()` connect `Conformance Rule Grading` to `Bench CLI Test Suite`, `Conformance Finding Rule Ordering`, `Null Assumption Exemption Tests`, `Conformance Checker Implementation`, `NaN Tier Handling Tests`, `Conformance Checker Rule Tests`, `CLI Subcommand Dispatch`, `Bundle Re-Reduction Verification Tests`, `Benchmark Bundle Persistence and Verification`, `Init Skeleton Scaffolding Tests`, `Bench Draft Report Tests`, `Sibling Tag Provenance`, `Null Justification Conformance Rules`, `Unmeasured Assumption U-Tag Fallback`, `Malformed Container Digest Conformance`, `Single-Point Campaign Labelling Requirement`, `Todo Scaffolding Detection Rule`, `Null Versus Zero Image Count`, `Measured Zero Image Count Declaration`, `Video Clip Count KV Floor Ambiguity`, `Mixed Mode ITS Cap Truncation Averaging`, `Stale Reason Note Exclusion`, `Text-Only Report CPU Note Test`, `Negative Corpus Conformance Tests`, `Multimodal CPU-Cores Note Tests`, `Conformance Verdict Computation`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `RequestRecord` connect `Per-Request Latency Records` to `Bench CLI Test Suite`, `Window Metrics Reduction And Gates`, `Request Outcome Records And Refusals`, `Load Window Driver Tests`, `Benchmark Record Persistence`, `Peak Concurrency Measurement`, `Bundle Re-Reduction and Report Rebuilding`, `Bundle-Backed Example Recomputation Tests`, `Benchmark Adapter Framework`, `Benchmark Metrics And Percentile Floors`, `Steady-State Slice Window Metrics`, `Recorded Session Replay Tests`, `Synthetic Session Shape Generation`, `Benchmark Metrics Percentile Tests`, `Benchmark Bundle Persistence and Verification`, `Request Boundary Cohort Classification`, `Benchmark Window Deadline Test`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+- **Why does `reduce_window()` connect `Window Metrics Reduction And Gates` to `Request Outcome Records And Refusals`, `Bundle Re-Reduction and Report Rebuilding`, `Load Window Driver Tests`, `Peak Concurrency Measurement`, `Rung Grading Rules and Tests`, `Bundle-Backed Example Recomputation Tests`, `Per-Request Latency Records`, `Benchmark Window Policy Validation`, `Benchmark Metrics And Percentile Floors`, `Benchmark Metrics Percentile Tests`, `Request Boundary Cohort Classification`, `Bundle Re-Reduction Verification Tests`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **Are the 13 inferred relationships involving `RequestRecord` (e.g. with `Adapter` and `OpenAICompatAdapter`) actually correct?**
   _`RequestRecord` has 13 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `description`, `description`, `always-on` to the rest of the system?**
   _1289 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Benchmark Run Orchestration` be split into smaller, more focused modules?**
-  _Cohesion score 0.06462585034013606 - nodes in this community are weakly interconnected._
+- **Should `Benchmark Ladder Runner` be split into smaller, more focused modules?**
+  _Cohesion score 0.07293868921775898 - nodes in this community are weakly interconnected._
