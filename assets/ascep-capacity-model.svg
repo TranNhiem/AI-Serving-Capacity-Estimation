@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="680" viewBox="0 0 1240 680">
+<rect x="0" y="0" width="1240" height="680" rx="18" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="40" y="52" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="25" font-weight="600" fill="#0F172A">ASCEP — capacity is the minimum of four floors</text>
+<text x="40" y="80" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="14.5" fill="#64748B">Declare it, measure it, and name the floor that binds — that is the number you can act on.</text>
+<text x="40" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="0.10em" fill="#64748B">DECLARE</text>
+<text x="320" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="0.10em" fill="#64748B">FOUR CAPACITY FLOORS</text>
+<text x="900" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="0.10em" fill="#64748B">THE ANSWER</text>
+<text x="40" y="528" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="0.10em" fill="#64748B">FOUR TIERS — THE SAME CLUSTER, FOUR HONEST ANSWERS</text>
+<rect x="40" y="142" width="232" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="162" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#0F172A">hardware</text>
+<text x="54" y="178" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">GPU model, count, VRAM, interconnect</text>
+<rect x="40" y="199" width="232" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="219" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#0F172A">model</text>
+<text x="54" y="235" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">params, precision, KV geometry</text>
+<rect x="40" y="256" width="232" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="276" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#0F172A">serving</text>
+<text x="54" y="292" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">engine, TP/PP, max_model_len, KV dtype</text>
+<rect x="40" y="313" width="232" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="333" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#0F172A">workload</text>
+<text x="54" y="349" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">context shape, think time, SLO targets</text>
+<rect x="40" y="370" width="232" height="48" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="54" y="390" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#0F172A">run</text>
+<text x="54" y="406" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">ladder, windows, seeds, engine log</text>
+<text x="40" y="444" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#64748B">five JSON layers, schema-validated</text>
+<text x="40" y="462" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#64748B">a missing declaration refuses the run</text>
+<text x="40" y="478" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#64748B">before the first request</text>
+<path d="M 272 166 Q 286.0 166 300 268" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 272 223 Q 286.0 223 300 268" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 272 280 Q 286.0 280 300 268" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 272 337 Q 286.0 337 300 268" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 272 394 Q 286.0 394 300 268" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<line x1="300" y1="268" x2="311.0" y2="268.0" stroke="#2563EB" stroke-width="2"/><polygon points="318,268 311.0,272.0 311.0,264.0" fill="#2563EB"/>
+<rect x="320" y="142" width="440" height="276" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<rect x="332" y="154" width="416" height="60" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="348" y="178" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="600" fill="#0F172A">Weights</text>
+<text x="348" y="196" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" font-size="10.5" fill="#64748B">do the weights + a usable KV pool fit?</text>
+<text x="732" y="186" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" text-anchor="end" fill="#059669">fits ✓</text>
+<rect x="332" y="218" width="416" height="60" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="348" y="242" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="600" fill="#0F172A">KV</text>
+<text x="348" y="260" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" font-size="10.5" fill="#64748B">kv_tokens ÷ avg_context_tokens</text>
+<text x="732" y="245" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end" fill="#0F172A">12,400</text>
+<text x="732" y="260" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" text-anchor="end" fill="#0F172A">users</text>
+<rect x="332" y="282" width="416" height="60" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="348" y="306" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="600" fill="#0F172A">Prefill</text>
+<text x="348" y="324" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" font-size="10.5" fill="#64748B">usable_prefill_tok_s ÷ prompt demand</text>
+<text x="732" y="309" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end" fill="#0F172A">3,100</text>
+<text x="732" y="324" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" text-anchor="end" fill="#0F172A">users</text>
+<rect x="332" y="346" width="416" height="60" rx="8" fill="#FEF3C7" stroke="#B45309" stroke-width="1.5"/>
+<text x="348" y="370" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13.5" font-weight="600" fill="#0F172A">Throughput</text>
+<text x="348" y="388" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" font-size="10.5" fill="#64748B">usable_tok_s ÷ per-user demand</text>
+<text x="732" y="373" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end" fill="#B45309">1,850</text>
+<text x="732" y="388" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" text-anchor="end" fill="#B45309">users</text>
+<rect x="320" y="436" width="440" height="42" rx="8" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="336" y="462" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" fill="#334155">SLO gate  ·  p95 TTFT ≤ 400 ms  ·  p95 TPOT ≤ 50 ms</text>
+<line x1="540" y1="436" x2="540.0" y2="425.0" stroke="#64748B" stroke-width="1.5"/><polygon points="540,418 544.0,425.0 536.0,425.0" fill="#64748B"/>
+<text x="320" y="496" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-style="italic" fill="#64748B">a rung that misses the gate is not capacity — it is an overload</text>
+<path d="M 748 248 Q 769.0 248 790 300" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 748 312 Q 769.0 312 790 300" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+<path d="M 748 376 Q 769.0 376 790 300" fill="none" stroke="#B45309" stroke-width="2"/>
+<rect x="790" y="280" width="76" height="40" rx="20" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+<text x="828" y="305" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#2563EB">min( )</text>
+<line x1="866" y1="300" x2="889.0" y2="300.0" stroke="#2563EB" stroke-width="2"/><polygon points="896,300 889.0,304.0 889.0,296.0" fill="#2563EB"/>
+<rect x="900" y="142" width="300" height="190" rx="12" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+<text x="920" y="172" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" font-weight="600" letter-spacing="0.10em" fill="#2563EB">CAPACITY</text>
+<text x="920" y="226" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="46" font-weight="700" fill="#0F172A">1,850</text>
+<text x="920" y="250" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" fill="#334155">concurrent users, at the declared SLO</text>
+<line x1="920" y1="268" x2="1180" y2="268" stroke="#BFDBFE" stroke-width="1"/>
+<text x="920" y="290" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" letter-spacing="0.08em" fill="#64748B">BINDING CONSTRAINT</text>
+<text x="920" y="314" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#B45309">throughput</text>
+<text x="900" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" fill="#64748B">A capacity number without its binding</text>
+<text x="900" y="376" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" fill="#64748B">constraint does not tell you what to buy</text>
+<text x="900" y="392" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11.5" fill="#64748B">more of. ASCEP requires naming it.</text>
+<rect x="40" y="542" width="272" height="104" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="56" y="568" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#64748B">THEORETICAL</text>
+<text x="56" y="606" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" fill="#0F172A">2,600</text>
+<text x="56" y="628" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">roofline ceiling — what the silicon allows</text>
+<rect x="266" y="556" width="30" height="18" rx="9" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="281" y="569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle" fill="#64748B">(U)</text>
+<rect x="336" y="542" width="272" height="104" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+<text x="352" y="568" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#64748B">MEASURED</text>
+<text x="352" y="606" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" fill="#2563EB">1,850</text>
+<text x="352" y="628" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">observed on the ladder, at the SLO gate</text>
+<rect x="562" y="556" width="30" height="18" rx="9" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="577" y="569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle" fill="#64748B">(M)</text>
+<rect x="632" y="542" width="272" height="104" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="648" y="568" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#64748B">SUSTAINABLE</text>
+<text x="648" y="606" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" fill="#0F172A">1,610</text>
+<text x="648" y="628" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">held for ≥ 30 min without drift</text>
+<rect x="858" y="556" width="30" height="18" rx="9" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="873" y="569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle" fill="#64748B">(M)</text>
+<rect x="928" y="542" width="272" height="104" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1"/>
+<text x="944" y="568" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="600" letter-spacing="0.06em" fill="#64748B">RECOMMENDED</text>
+<text x="944" y="606" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="700" fill="#0F172A">1,400</text>
+<text x="944" y="628" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">sustainable ÷ 1.15 headroom</text>
+<rect x="1154" y="556" width="30" height="18" rx="9" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+<text x="1169" y="569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10" font-weight="600" text-anchor="middle" fill="#64748B">(I)</text>
+<line x1="40" y1="660" x2="1200" y2="660" stroke="#E2E8F0" stroke-width="1"/>
+<text x="40" y="676" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="10.5" fill="#64748B">Every number carries provenance — (M) measured  ·  (I) inferred from measured inputs  ·  (U) unmeasured, with the reason  ·  graded against conformance rules C1–C12</text>
+</svg>

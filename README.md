@@ -7,6 +7,13 @@ much infrastructure do I need?***
 [![Protocol](https://img.shields.io/badge/ASCEP-v0.5--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
+<p align="center">
+  <img src="assets/ascep-capacity-model.svg" width="100%"
+       alt="Five declarations — hardware, model, serving, workload, run — feed four independent capacity floors: weights, KV, prefill and throughput. Capacity is the minimum of the four, and the floor that binds is named. The same cluster is then reported at four tiers: theoretical, measured, sustainable and recommended, each tagged with its provenance.">
+</p>
+
+<p align="center"><sub>Schematic — the numbers are illustrative, not a measurement. Real reports live in <a href="examples/">examples/</a>. Regenerate with <code>python tools/make_figure.py</code>.</sub></p>
+
 ---
 
 ## The problem
