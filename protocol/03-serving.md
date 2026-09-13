@@ -154,3 +154,64 @@ overrides them is decided. One caveat, measured and recorded in §9.2: on an eng
 multimodal encoder cache there is a further bound that none of those four floors names, so
 for a media-dense workload C5's answer is the binding floor *among the ones the model
 prices*, and the report has to say so.
+
+R8 through R11 bind the same way. A missing `runtime_class` fails C1 with the rest of the
+required fields, and the three that follow it fail C5 rather than C1: each one moves which
+floor binds without moving any declaration a validator can see. A `serial` runtime
+carrying a multi-user figure, a slotted one whose KV floor was taken from `max_model_len`,
+and a `shift` policy over a ladder that outgrew the window all produce a capacity number
+whose named binding constraint is not the one that actually bound.
+
+## R8 — Runtime class
+
+R1 through R7 assume a server that schedules many sequences in one forward pass. llama.cpp,
+Ollama, LM Studio and MLX runtimes admit concurrency structurally differently — fixed
+independent slots, or one request at a time — and each difference moves a floor rather than
+a label. The rules below apply wherever the runtime is not a continuous-batching server.
+
+A report MUST declare `runtime_class` as `server-batched`, `slotted` or `serial`, and a capacity claim above one concurrent user on
+a `serial` runtime MUST NOT be published: there is no measurement behind it, only
+arithmetic.
+
+**Failure prevented.** ASCEP's throughput floor divides aggregate tok/s by per-user demand
+to get a user count. On a serial runtime the aggregate tok/s measured at concurrency 1 is
+the only aggregate tok/s there is, so that division produces a concurrency claim the machine
+physically cannot honour — and the report looks conforming while promising parallel service
+from an engine that queues its second user.
+
+## R9 — Per-slot context
+
+On a slotted runtime the per-slot context bounds the user. A report MUST declare
+`context_tokens_per_slot`, and the KV floor MUST be computed from it rather than from
+`max_model_len`.
+
+**Failure prevented.** Slotted runtimes divide the configured context among slots:
+`llama-server -c 32768 --parallel 4` gives each slot 8192 tokens, not 32768. A reader who
+sizes KV for four concurrent 32k sessions from the undivided window is over-promising by
+exactly the slot count, and nothing else in the declaration can tell them so.
+
+## R10 — Context overflow
+
+A non-`refuse` overflow policy MUST be stated together with the longest prompt in the
+sweep. If any prompt in the ladder exceeds the window under `truncate` or `shift`,
+the run measured a different workload than the one declared and the report MUST say so.
+
+**Failure prevented.** Context shift evicts the oldest tokens silently and keeps decoding,
+so a sweep whose prompts outgrow the window is measuring a shorter workload than the one
+declared — and reporting throughput that is high for exactly that reason. The number is
+attributed to the engine and survives comparison, because nothing in the report records
+that the prompts on the wire were not the prompts in the report.
+
+## R11 — Pinning the code
+
+A report MUST pin the serving code by at least one of three: a `container_digest`, a
+`framework_version` that names a released build, or a `runtime_build`. A report that pins
+none of the three MUST NOT claim better than partial conformance, and MUST say in the
+`(U)` justification that reproduction is not possible from the declaration alone.
+
+**Failure prevented.** A local report can otherwise pin nothing: "llama.cpp, Q4_K_M"
+identifies neither the code nor the weights. "llama.cpp" plus a date is not a build —
+`b4589 (f7f1d9a)` is — and a quantisation name is not an identity, since two requantised
+files called `Q4_K_M` differ in which tensors were left at higher precision and therefore
+in both quality and size. A run pinned to nothing is not reproducible, and its numbers
+cannot be traced.

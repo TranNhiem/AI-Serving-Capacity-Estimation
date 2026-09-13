@@ -96,7 +96,16 @@
     "engine_reported_kv_cache_tokens": 1149595,
     "cold_start_to_ready_s": null,
     "cold_start_to_ready_s_u_reason": "(U) not timed",
-    "image_input_transport": "n-a"
+    "image_input_transport": "n-a",
+    "runtime_class": "server-batched",
+    "context_overflow_policy": "refuse",
+    "kv_cache_type_k": "n-a",
+    "kv_cache_type_v": "n-a",
+    "weights_residency": "resident",
+    "runtime_build": null,
+    "runtime_build_u_reason": "(U) no build identifier was recorded, and framework_version is null as well, so nothing in this declaration pins the code. Chapter 3's R11 holds this report to partial for that reason: the numbers below are not reproducible from the declaration alone.",
+    "model_artifact_sha256": null,
+    "model_artifact_sha256_u_reason": "(U) the checkpoint was served from a shared parallel filesystem by path, and no digest of the weights file was taken at run time. Consequence: the model declaration names the checkpoint but nothing here proves which bytes were loaded, so a rerun that finds a re-uploaded or re-quantised file at the same path would not be detectable from this report."
   },
   "run": {
     "ascep_version": "0.1.0",

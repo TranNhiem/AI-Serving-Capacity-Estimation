@@ -40,6 +40,15 @@
       "per_request_override_supported": "Declared false as the schema's default assumption and not exercised in this campaign. The cap is applied at launch, not per request, so no per-request mm_processor_kwargs a client could send is part of this declaration; on the gemma evidence a probe of this kind can terminate the server, so the test is queued for after the ladder's bundle is pulled."
     }
   },
+  "runtime_class": "server-batched",
+  "context_overflow_policy": "refuse",
+  "kv_cache_type_k": "n-a",
+  "kv_cache_type_v": "n-a",
+  "weights_residency": "resident",
+  "runtime_build": null,
+  "runtime_build_u_reason": "(U) no build identifier was recorded, and framework_version is null as well, so nothing in this declaration pins the code. Chapter 3's R11 holds this report to partial for that reason: the numbers below are not reproducible from the declaration alone.",
+  "model_artifact_sha256": null,
+  "model_artifact_sha256_u_reason": "(U) the checkpoint was served from a shared parallel filesystem by path, and no digest of the weights file was taken at run time. Consequence: the model declaration names the checkpoint but nothing here proves which bytes were loaded, so a rerun that finds a re-uploaded or re-quantised file at the same path would not be detectable from this report.",
   "notes": {
     "limit_mm_per_prompt_is_a_launch_flag_the_protocol_cannot_hold": "The engine will be launched with a per-prompt image limit admitting at least 8 images, because this corpus averages 4.19 images per record and its tail runs longer than that, while the engine default of 1 would reject those requests with HTTP 400. A rejected request is not a slow request, it returns in milliseconds, so an under-set limit inflates throughput and empties the media out of a media benchmark while every SLO gate still passes; media_arrival_check catches it after the fact and the flag is what stops it from firing. ASCEP has no field for the per-modality admission limit, so as in the gemma bundle it is recorded here in prose and an operator reproducing this bundle has to read the note."
   }

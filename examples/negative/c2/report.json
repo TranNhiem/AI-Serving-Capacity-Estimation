@@ -72,7 +72,16 @@
     "speculative_decoding": "off",
     "engine_reported_kv_cache_tokens": 163000,
     "cold_start_to_ready_s": 95.0,
-    "image_input_transport": "n-a"
+    "image_input_transport": "n-a",
+    "runtime_class": "server-batched",
+    "context_overflow_policy": "refuse",
+    "kv_cache_type_k": "n-a",
+    "kv_cache_type_v": "n-a",
+    "weights_residency": "resident",
+    "runtime_build": null,
+    "runtime_build_u_reason": "(U) a released version string is declared but no build identifier; for a synthetic baseline nothing was built, so there is no hash to give.",
+    "model_artifact_sha256": null,
+    "model_artifact_sha256_u_reason": "(U) this baseline is a constructed document, not a run: no weights file was loaded, so there are no bytes to digest."
   },
   "run": {
     "ascep_version": "0.1.0",

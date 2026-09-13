@@ -346,6 +346,33 @@ def build() -> dict:
             # multimodal endpoint this is load-bearing: base64 inflates request bodies by
             # roughly 4/3 and can saturate the client before the server notices.
             "image_input_transport": "n-a",
+            # 0.7.0's seven serving fields, appended rather than interleaved so the diff
+            # against the 0.6 report is seven added lines and nothing moved.
+            "runtime_class": "server-batched",
+            "context_overflow_policy": "refuse",
+            # "n-a", not null: this engine applies no per-tensor KV override, so the model
+            # declaration's kv_precision governs and the KV floor is computable. A null here
+            # would mean the element type is genuinely unknown, and C1 would then demand a
+            # (U) sentence saying "not applicable" — a tag that means nothing, on a field
+            # that has an answer.
+            "kv_cache_type_k": "n-a",
+            "kv_cache_type_v": "n-a",
+            "weights_residency": "resident",
+            "runtime_build": None,
+            "runtime_build_u_reason": (
+                "(U) no build identifier was recorded, and framework_version is null as "
+                "well, so nothing in this declaration pins the code. Chapter 3's R11 holds "
+                "this report to partial for that reason: the numbers below are not "
+                "reproducible from the declaration alone."
+            ),
+            "model_artifact_sha256": None,
+            "model_artifact_sha256_u_reason": (
+                "(U) the checkpoint was served from a shared parallel filesystem by path, "
+                "and no digest of the weights file was taken at run time. Consequence: the "
+                "model declaration names the checkpoint but nothing here proves which bytes "
+                "were loaded, so a rerun that finds a re-uploaded or re-quantised file at "
+                "the same path would not be detectable from this report."
+            ),
         },
         "run": {
             "ascep_version": VERSION,

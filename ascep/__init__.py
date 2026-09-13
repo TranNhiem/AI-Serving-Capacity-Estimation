@@ -34,8 +34,8 @@ from ascep.capacity import (
     weight_bytes,
 )
 
-__version__ = "0.6.0"
-ASCEP_VERSION = "0.6.0"
+__version__ = "0.7.0"
+ASCEP_VERSION = "0.7.0"
 
 __all__ = [
     "ASCEP_VERSION",

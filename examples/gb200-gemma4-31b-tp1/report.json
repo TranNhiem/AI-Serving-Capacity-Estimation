@@ -94,6 +94,14 @@
     "engine_reported_kv_cache_tokens": 114544,
     "cold_start_to_ready_s": 140.3,
     "image_input_transport": "n-a",
+    "runtime_class": "server-batched",
+    "context_overflow_policy": "refuse",
+    "kv_cache_type_k": "n-a",
+    "kv_cache_type_v": "n-a",
+    "weights_residency": "resident",
+    "runtime_build": "db7a17ecc",
+    "model_artifact_sha256": null,
+    "model_artifact_sha256_u_reason": "(U) the checkpoint was served from a shared parallel filesystem by path, and no digest of the weights file was taken at run time. Consequence: the model declaration names the checkpoint but nothing here proves which bytes were loaded, so a rerun that finds a re-uploaded or re-quantised file at the same path would not be detectable from this report.",
     "notes": {
       "cold_start_measurement": "Wall clock from the launch command to the first HTTP 200 on /v1/models, polled every 5 s, so the ready instant is bracketed to within 5 s and the figure is an upper bound by up to that much. It covers the whole path a restart actually pays: weight load of 62.5 GB from the shared parallel filesystem, then the 72.3 s the engine log attributes to init (profile, KV allocation, warmup). Two things it is not. It is not a cold cache: this checkpoint had been served from the same filesystem minutes earlier, so the WekaFS client and page cache were warm, and a genuinely cold read would be slower. And it is not a scheduler-managed start: nothing here queued for an allocation, so a Slurm deployment must add its own queueing time on top."
     }

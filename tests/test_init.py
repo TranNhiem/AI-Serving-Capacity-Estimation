@@ -164,18 +164,43 @@ def test_ascep_version_is_the_real_version_because_a_placeholder_cannot_match_it
         assert init.skeleton(layer).get("ascep_version") == ASCEP_VERSION
 
 
-def test_ascep_version_is_still_the_only_patterned_string():
-    """`init._KNOWN` handles exactly one patterned field. A second one needs a real answer.
+def test_every_patterned_string_is_either_known_or_nullable():
+    """`init` can emit exactly two things into a string field: a real value out of `_KNOWN`,
+    or a null beside a `(U)` reason. A `pattern` on a field that accepts neither leaves only
+    the visible placeholder, and `'TODO' does not match '^[0-9a-f]{64}$'` names no task the
+    user can act on -- it reads as a tool defect rather than as a field to fill in.
 
-    Without this, adding a `pattern` anywhere would make `init` silently emit a document that
-    fails validation for a reason the user cannot act on.
+    This asked a narrower question until 0.7.0: it counted patterned fields and demanded that
+    `ascep_version` be the only one. `model_artifact_sha256` is the second, and it is nullable
+    on purpose -- hashing a 40 GB weights file is a real cost, and a reporter who declines it
+    says so in the sibling rather than inventing sixty-four hex digits. Nullability, not the
+    count, is what decides whether the skeleton can emit the field honestly, so that is what
+    is tested. A third patterned field that forbids null still fails here.
     """
-    patterned = []
+    offenders = []
+    missing_sibling = []
+
+    def types(node):
+        t = node.get("type")
+        return t if isinstance(t, list) else [t]
 
     def walk(node, path, source):
         if isinstance(node, dict):
             if "pattern" in node:
-                patterned.append(f"{source}{path}")
+                name = path.rsplit("/", 1)[-1]
+                if name not in init._KNOWN and "null" not in types(node):
+                    offenders.append(f"{source}{path}")
+            # The `(U)` sibling is what makes a null legal under C1, so a nullable patterned
+            # field whose schema never defines one would have `init` emit a bare null that
+            # the conformance check then flags with no field to write the answer into.
+            for name, child in (node.get("properties") or {}).items():
+                if (
+                    isinstance(child, dict)
+                    and "pattern" in child
+                    and "null" in types(child)
+                    and f"{name}_u_reason" not in node["properties"]
+                ):
+                    missing_sibling.append(f"{source}{path}/{name}")
             for key, value in node.items():
                 walk(value, f"{path}/{key}", source)
         elif isinstance(node, list):
@@ -184,10 +209,14 @@ def test_ascep_version_is_still_the_only_patterned_string():
 
     for layer in LAYERS:
         walk(load_schema(layer), "", layer)
-    unhandled = {p.rsplit("/", 1)[-1] for p in patterned} - set(init._KNOWN)
-    assert not unhandled, (
-        f"schemas gained patterned fields with no known value: {sorted(unhandled)}; "
-        "add them to ascep.init._KNOWN or they will never validate"
+    assert not offenders, (
+        f"schemas gained patterned fields that permit neither a known value nor null: "
+        f"{sorted(offenders)}; add them to ascep.init._KNOWN or allow null, or the skeleton "
+        "emits TODO and fails its own validation"
+    )
+    assert not missing_sibling, (
+        f"nullable patterned fields with no _u_reason sibling: {sorted(missing_sibling)}; "
+        "the skeleton emits a bare null and C1 rejects it with nowhere to put the answer"
     )
 
 

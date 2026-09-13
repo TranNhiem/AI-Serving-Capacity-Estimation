@@ -4,7 +4,7 @@
 serve this model, I want to build this application — how much capacity do I get, and how
 much infrastructure do I need?***
 
-[![Protocol](https://img.shields.io/badge/ASCEP-v0.6--draft-blue)](protocol/SPEC.md)
+[![Protocol](https://img.shields.io/badge/ASCEP-v0.7--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 <p align="center">
@@ -199,6 +199,7 @@ rows are the contribution this project most wants. To adapt it:
 | A different framework | declare `serving.framework` and report the engine's own KV-pool figure; the protocol never assumes vLLM |
 | A different accelerator | declare it in `hardware.schema.json`; only the roofline needs vendor specs |
 | A unified-memory device (Apple Silicon, DGX Spark) | declare `memory_architecture: unified` + `usable_memory_bytes` — the bindable budget, not total RAM; `vram_bytes_per_gpu` is then refused, not merely unused |
+| A runtime that does not batch (llama.cpp, Ollama, LM Studio, MLX) | declare `runtime_class: slotted` or `serial`; a serial runtime must declare `parallel_slots: 1`, and a slotted one must declare `context_tokens_per_slot` — the divided window, not `max_model_len` — because the throughput floor multiplies by admitted concurrency and the KV floor sizes one session |
 | A quantized model | declare stored precision and overhead fraction; formulas already handle sub-byte formats |
 | An MoE model | declare **total** params for memory, **active** params for compute — the most common sizing error |
 | An MLA model (DeepSeek-style) | declare `attention_type: mla` + `kv_lora_rank`/`qk_rope_head_dim`; the GQA formula overstates its KV by ~57× |
@@ -221,21 +222,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**v0.6, draft.** The spec and the formula set are stable enough to use and argue with. The
+**v0.7, draft.** The spec and the formula set are stable enough to use and argue with. The
 harness is generalized from a private benchmark campaign and now ships; expect churn in
 `ascep/` before v1.0. Breaking changes to anything that would alter a conforming report's
 numbers get a major version bump. The 0.4 release was one; 0.5 was not.
 
-**0.6 is breaking, but it breaks documents rather than numbers.** Every formula returns
-exactly what it returned before — the published examples recompute bit-identically, which the
-test suite asserts directly. What changed is the hardware declaration: `memory_architecture`
-is newly required, so a 0.5 `hardware.json` no longer validates until one line is added. That
-line is the price of describing unified-memory single-device targets — Apple Silicon, DGX
-Spark — honestly, and the alternative was worse. Left unconditional, `vram_bytes_per_gpu`
-would have to be answered on a machine that has no per-accelerator memory to count, and the
-only available answers are total system memory, which no framework can bind, or a partition
-the silicon does not have. See [chapter 1 §1.8](protocol/01-hardware.md) and the migration
-note in [CHANGELOG.md](CHANGELOG.md).
+**0.6 and 0.7 are both breaking, and both break documents rather than numbers.** Every
+formula returns exactly what it returned before — the published examples recompute
+bit-identically, which the test suite asserts directly. What changed is the declarations,
+and in both releases for the same reason: describing a small local device honestly.
+
+0.6 made `memory_architecture` required, so a 0.5 `hardware.json` no longer validates until
+one line is added. Left unconditional, `vram_bytes_per_gpu` would have to be answered on a
+machine that has no per-accelerator memory to count, and the only available answers are total
+system memory, which no framework can bind, or a partition the silicon does not have.
+
+0.7 made `runtime_class` and six siblings required, because the serving schema assumed an
+engine that batches. llama.cpp, Ollama, LM Studio and MLX admit concurrency structurally
+differently — fixed slots, or one request at a time — and ASCEP's throughput floor multiplies
+by admitted concurrency. On a runtime that serves one request at a time, that multiplication
+produces a user count the machine cannot honour, in a report that otherwise looks conforming.
+See [chapter 1 §1.8](protocol/01-hardware.md), [chapter 3 R8–R11](protocol/03-serving.md) and
+the migration notes in [CHANGELOG.md](CHANGELOG.md).
 
 One consequence is worth stating plainly, because it is not a number change and so does not
 force a major bump, but it can still move a label. C11 grades a published capacity figure

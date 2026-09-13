@@ -23,7 +23,111 @@
     "speculative_decoding",
     "engine_reported_kv_cache_tokens",
     "cold_start_to_ready_s",
-    "image_input_transport"
+    "image_input_transport",
+    "runtime_class",
+    "context_overflow_policy",
+    "kv_cache_type_k",
+    "kv_cache_type_v",
+    "weights_residency",
+    "runtime_build",
+    "model_artifact_sha256"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "runtime_class": {
+            "const": "serial"
+          }
+        },
+        "required": [
+          "runtime_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "parallel_slots": {
+            "const": 1
+          }
+        },
+        "required": [
+          "parallel_slots"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtime_class": {
+            "const": "serial"
+          }
+        },
+        "required": [
+          "runtime_class"
+        ]
+      },
+      "then": {
+        "properties": {
+          "batching_mode": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtime_class": {
+            "const": "slotted"
+          }
+        },
+        "required": [
+          "runtime_class"
+        ]
+      },
+      "then": {
+        "required": [
+          "parallel_slots",
+          "context_tokens_per_slot"
+        ],
+        "properties": {
+          "parallel_slots": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "context_tokens_per_slot": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kv_cache_quantized": {
+            "const": "on"
+          }
+        },
+        "required": [
+          "kv_cache_quantized"
+        ]
+      },
+      "then": {
+        "required": [
+          "kv_cache_type_k",
+          "kv_cache_type_v"
+        ],
+        "properties": {
+          "kv_cache_type_k": {
+            "type": "string"
+          },
+          "kv_cache_type_v": {
+            "type": "string"
+          }
+        }
+      }
+    }
   ],
   "properties": {
     "ascep_version": {
@@ -47,7 +151,7 @@
         "string",
         "null"
       ],
-      "description": "Immutable container image digest (sha256). Required by the reproduction bundle (C8)."
+      "description": "Immutable container image digest (sha256). Required by the reproduction bundle (C8). Null is acceptable on a device that runs no container, but chapter 3's R11 then asks the report to pin its code some other way, in framework_version or runtime_build. A declaration that pins none of the three cannot be reproduced by anyone, including its own author on another bench day, and is held to partial for that reason."
     },
     "tensor_parallel": {
       "type": "integer",
@@ -70,7 +174,7 @@
         "null"
       ],
       "minimum": 1,
-      "description": "Framework maximum sequence length in tokens. A run above native_max_context_tokens without declaration invalidates context-bound throughput claims (C4)."
+      "description": "Framework maximum sequence length in tokens. A run above native_max_context_tokens without declaration invalidates context-bound throughput claims (C4). On a slotted runtime this is not the window that bounds one user's KV -- context_tokens_per_slot is, because the configured context is divided among the slots -- and sizing KV from the configured figure instead over-promises by exactly the slot count."
     },
     "max_model_len_u_reason": {
       "type": "string",
@@ -95,7 +199,7 @@
         "static",
         null
       ],
-      "description": "Batching discipline. Static batching invalidates comparison against continuous-batching runs at the same concurrency."
+      "description": "Batching discipline. Static batching invalidates comparison against continuous-batching runs at the same concurrency. This describes the scheduler inside a server-batched runtime; a runtime that admits one request at a time has no scheduler to describe, which is why runtime_class 'serial' requires this to be null. A serial report wearing a batching label validates clean and then reads as a claim about concurrency the machine cannot make."
     },
     "max_num_seqs": {
       "type": [
@@ -155,7 +259,7 @@
         "off",
         null
       ],
-      "description": "Whether runtime KV quantization applies beyond model kv_precision."
+      "description": "Whether runtime KV quantization applies beyond model kv_precision. This records that a quantization happened, not what it left: the element sizes live in kv_cache_type_k and kv_cache_type_v. The KV floor needs bytes per element, so 'on' quoted without those two leaves the floor uncomputable while looking like a complete declaration."
     },
     "chunked_prefill": {
       "type": [
@@ -326,6 +430,118 @@
     "image_input_transport_u_reason": {
       "type": "string",
       "description": "(U) justification required when image_input_transport is null (C1)."
+    },
+    "runtime_class": {
+      "type": "string",
+      "enum": [
+        "server-batched",
+        "slotted",
+        "serial"
+      ],
+      "description": "The structural fact about admitted concurrency. 'server-batched': the engine schedules many sequences in one forward pass (vLLM, SGLang, TGI). 'slotted': a fixed number of independent slots, each with its own context (llama-server --parallel, LM Studio). 'serial': one request at a time; a second either queues or is refused (llama-cli, mlx_lm.generate, a default Ollama install). Not a synonym for batching_mode: batching_mode describes the scheduler inside a server-batched runtime, and on a runtime that admits one request there is no scheduler to describe. Takes no null for the same reason memory_architecture does not: it is the discriminator every conditional in this schema keys off, and a null discriminator leaves the document in no branch at all. Every reporter knows whether their server accepts a second request while the first is generating."
+    },
+    "parallel_slots": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "How many requests the runtime admits concurrently before queueing; the number ASCEP's throughput floor is allowed to multiply by. On a serial runtime it MUST be 1: the aggregate tok/s measured at concurrency 1 is the only aggregate tok/s there is, so a floor that multiplies by anything larger produces a user count the machine physically cannot honour, and the report looks conforming. On a slotted runtime it MUST be a non-null integer. On 'server-batched' it may be null because max_num_seqs already carries it. Null only with parallel_slots_u_reason set. Units: requests. Not required of a server-batched runtime, where max_num_seqs is the same ceiling; where both are declared they must agree, because a throughput floor multiplied by the larger of two disagreeing ceilings is the over-promising direction."
+    },
+    "parallel_slots_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when parallel_slots is null (C1)."
+    },
+    "context_tokens_per_slot": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "description": "The per-session window after the configured context is divided among slots. On a slotted runtime this, not max_model_len, is what bounds one user's KV: llama-server -c 32768 --parallel 4 gives each slot 8192 tokens, and quoting the undivided window over-promises by exactly the slot count. The KV floor MUST be computed from this value. Null only on non-slotted runtimes or if unknown, with context_tokens_per_slot_u_reason set. Units: tokens."
+    },
+    "context_tokens_per_slot_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when context_tokens_per_slot is null (C1)."
+    },
+    "context_overflow_policy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "refuse",
+        "truncate",
+        "shift",
+        null
+      ],
+      "description": "What the runtime does when a request exceeds its window: 'refuse', 'truncate', or 'shift' (llama.cpp's context shift silently evicts the oldest tokens and continues). 'refuse' is the only value that leaves the measurement honest. Under 'truncate' or 'shift', a sweep whose prompts outgrow the window is measuring a shorter workload than the one declared and reporting throughput that is high for exactly that reason, so a non-'refuse' value MUST accompany a statement of the longest prompt in the sweep. Null only if unknown, with context_overflow_policy_u_reason set."
+    },
+    "context_overflow_policy_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when context_overflow_policy is null (C1)."
+    },
+    "kv_cache_type_k": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Element type of the K cache (e.g. 'f16', 'q8_0', 'q4_0', 'fp8'). The KV floor needs bytes per element; kv_cache_quantized: 'on' says a quantisation happened without saying how many bytes it left, so the floor cannot be computed from it. Required non-null whenever kv_cache_quantized is 'on'. K and V are separate fields because llama.cpp quantises them separately (-ctk / -ctv) and asymmetric settings are common. The literal 'n-a' means the runtime applies no per-tensor override and the model declaration's kv_precision governs both caches; null means the element type is genuinely unknown and needs its (U) justification. The distinction matters because only one of those two states leaves the KV floor computable."
+    },
+    "kv_cache_type_k_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_cache_type_k is null (C1)."
+    },
+    "kv_cache_type_v": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Element type of the V cache (e.g. 'f16', 'q8_0', 'q4_0', 'fp8'). The KV floor needs bytes per element; kv_cache_quantized: 'on' says a quantisation happened without saying how many bytes it left, so the floor cannot be computed from it. Required non-null whenever kv_cache_quantized is 'on'. Declared separately from kv_cache_type_k because llama.cpp quantises the two caches independently and asymmetric settings are common. The literal 'n-a' means the runtime applies no per-tensor override and the model declaration's kv_precision governs both caches; null means the element type is genuinely unknown and needs its (U) justification. The distinction matters because only one of those two states leaves the KV floor computable."
+    },
+    "kv_cache_type_v_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when kv_cache_type_v is null (C1)."
+    },
+    "weights_residency": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "resident",
+        "mmap-paged",
+        "unknown",
+        null
+      ],
+      "description": "Whether the weights are pinned in memory ('resident') or mapped from disk and evictable ('mmap-paged'). The weights floor assumes resident. On a unified machine under memory pressure an mmap-paged model pages to NVMe mid-decode, and the resulting throughput is a measurement of the SSD. Declaring 'mmap-paged' marks the weights floor as a soft bound rather than a hard one."
+    },
+    "weights_residency_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when weights_residency is null (C1)."
+    },
+    "runtime_build": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Build identifier where the version string does not identify the code: llama.cpp's 'b4589 (f7f1d9a)' is the identity; 'llama.cpp' plus a date is not. Chapter 3's R11 asks a report to pin its serving code by at least one of container_digest, a framework_version naming a released build, or this field. That is a grading rule rather than a validator rule on purpose: a report may honestly pin none of the three and declare itself partial, and making the validator refuse it would teach reporters to invent a build string instead of admitting the gap."
+    },
+    "runtime_build_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when runtime_build is null (C1)."
+    },
+    "model_artifact_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 digest of the weights file the server actually loaded (64 lowercase hex characters). Quantisation names are not identities: two files both called 'Q4_K_M' from two requantisers differ in which tensors were left at higher precision, and therefore in both quality and size. The digest is the only thing that makes a local run reproducible. Never conditionally required: hashing a 40 GB file is a real cost, and a null declines with a (U) reason while the run stays auditable through runtime_build and container_digest."
+    },
+    "model_artifact_sha256_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when model_artifact_sha256 is null (C1)."
     },
     "notes": {
       "type": "object",

@@ -115,6 +115,15 @@
       "video_max_frames_u_reason": "(U) the cap was looked for and is absent because no video reaches the preprocessor: the per-prompt video limit is 0, so the unbounded reading this null would otherwise carry -- unbounded frames, therefore unbounded context -- does not apply."
     },
     "image_input_transport": "base64",
+    "runtime_class": "server-batched",
+    "context_overflow_policy": "refuse",
+    "kv_cache_type_k": "n-a",
+    "kv_cache_type_v": "n-a",
+    "weights_residency": "resident",
+    "runtime_build": null,
+    "runtime_build_u_reason": "(U) no build identifier was recorded, and framework_version is null as well, so nothing in this declaration pins the code. Chapter 3's R11 holds this report to partial for that reason: the numbers below are not reproducible from the declaration alone.",
+    "model_artifact_sha256": null,
+    "model_artifact_sha256_u_reason": "(U) the checkpoint was served from a shared parallel filesystem by path, and no digest of the weights file was taken at run time. Consequence: the model declaration names the checkpoint but nothing here proves which bytes were loaded, so a rerun that finds a re-uploaded or re-quantised file at the same path would not be detectable from this report.",
     "notes": {
       "engine_reported_kv_cache_tokens": "Read from the engine log shipped in this bundle (job start 04:30, 429,952 tokens). The figure is not stable across boots of an identical configuration: an earlier start of the same sbatch on the same GPU reported 429,936, one 16-token KV block less, presumably because free memory after weight load moved slightly. Read it as +/- one block rather than exact, and never carry it between runs -- the bundle hashes the log beside this declaration, so a figure copied from a previous boot contradicts the evidence shipped with it.",
       "cold_start_to_ready_s": "Measured from the engine first log line to Application startup complete, 04:30:19 to 04:31:01. This is a warm restart, not a first start: the log records \"Directly load the compiled graph(s) for dynamic shape from the cache, took 2.280 s\", so the torch.compile cache under VLLM_CACHE_ROOT was already populated by an earlier boot on this node. The same configuration's first start, with that cache empty, took 90 s. Size a cold rollout or an autoscaler that lands on a fresh node with the larger figure. Both are floors in any case: interpreter start and module import happen before anything is logged.",
