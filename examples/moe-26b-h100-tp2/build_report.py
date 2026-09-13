@@ -235,6 +235,10 @@ def build() -> dict:
             "gpu_count": n_gpus,
             "nodes": hw["nodes"],
             "gpus_per_node": hw["gpu_count_per_node"],
+            # An H100 SXM5 has its own HBM stack, so "discrete" is a fact about the part and
+            # not a default carried over from the schema. It is stated rather than inferred
+            # because the field decides which memory question the rest of the block answers.
+            "memory_architecture": "discrete",
             "vram_bytes_per_gpu": hw["vram_bytes_per_gpu"],
             "interconnect_intra_node": hw["interconnect_intra_node"],
             "interconnect_inter_node": None,
@@ -246,6 +250,10 @@ def build() -> dict:
             "compute_runtime_version_u_reason": "(U) not captured at run time",
             "hbm_bandwidth_bytes_s": hw["hbm_bandwidth_bytes_s"],
             "dense_bf16_flops_per_s": hw["dense_bf16_flops_per_s"],
+            # 989 TFLOP/s is NVIDIA's dense BF16 figure for this part; 1,979 is the same
+            # number with sparsity. Quoting the sparse one as dense would halve every
+            # roofline efficiency in this report without changing a single measurement.
+            "dense_flops_precision": "bf16",
             "cpu_model": None,
             "cpu_model_u_reason": "(U) not captured at run time",
             "cpu_cores": None,

@@ -348,7 +348,10 @@ def test_a_bundle_rereduces_to_the_same_figures_it_was_built_from(built_bundle, 
     bundle_dir, report = built_bundle
     dest = _copy_bundle(bundle_dir, tmp_path)
     rebuilt = rebuild_report(dest, previous_report=report)
-    for old_row, new_row in zip(report["run"]["results"], rebuilt["run"]["results"], strict=True):
+    # Not `strict=True`: 3.10+, and the 3.9 leg of the matrix raises TypeError before it
+    # can assert anything. The length equality is what mattered, so state it.
+    assert len(report["run"]["results"]) == len(rebuilt["run"]["results"])
+    for old_row, new_row in zip(report["run"]["results"], rebuilt["run"]["results"]):
         for key, value in old_row.items():
             assert new_row[key] == value, key
         # A subset, not an equality: a rung publishes `dispersion` when it has repetitions to

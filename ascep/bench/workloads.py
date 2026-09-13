@@ -479,7 +479,10 @@ def _image_sizes(record: dict, n_images: int) -> list[tuple[int | None, int | No
         and all(_is_size(w) for w in width)
         and all(_is_size(h) for h in height)
     ):
-        return list(zip(width, height, strict=True))
+        # No `strict=True`: it is 3.10+, this package supports 3.9, and the guard above
+        # already pins both lists to n_images, so the keyword bought nothing but a
+        # TypeError on half the CI matrix.
+        return list(zip(width, height))
     # Unsized media is a reporting gap, not a corpus error: media_shape declares the
     # share of images it could size, so the run says so rather than refusing to start.
     return [(None, None)] * n_images

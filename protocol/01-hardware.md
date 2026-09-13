@@ -7,23 +7,29 @@ declaring it. All fields map to `hardware.schema.json`; unknown values MUST be r
 
 ## 1.1 Required fields
 
-| field | unit | why it is required | failure it prevents |
-|---|---|---|---|
-| `accelerator.model` | string | "Radeon", "TPU" or "80GB card" names families, not parts | A reader reproduces on a different SKU with 2× different bandwidth and gets a different answer from the same config |
-| `accelerator.count` | int | CPU-visible device count per node and in total | C3 topology binding: without a count, per-GPU KV and throughput figures are unfalsifiable |
-| `accelerator.vram_bytes_per_gpu` | bytes | Feeds `kv_pool_bytes` | Analytic and measured KV capacities silently disagree by the difference between SKUs (e.g. 40 vs 80 GiB variants of the same accelerator) |
-| `accelerator.hbm_bandwidth_bytes_s` | bytes/s | Sole input to `roofline_decode_tok_s` | Without it the theoretical tier cannot be computed, and C6 (four tiers) cannot be met |
-| `accelerator.flops_per_s_dense` | FLOP/s | Sole input to `roofline_prefill_ttft_s` | Same: no roofline, no roofline efficiency, no conformance. Declared as dense FLOP/s at the deployed precision, not sparse — sparse marketing numbers inflate the roofline ~2× and make measured efficiency look broken |
-| `accelerator.precision` | string | The precision the bandwidth/FLOP/s figures above are quoted at | Quoting FP8 FLOP/s for a BF16 deployment doubles the theoretical prefill bound and poisons the efficiency check |
-| `interconnect.intra_node` | enum + bandwidth | Determines the TP widths that are viable (§1.3) | TP=8 over PCIe is measured, published, and off by multiples versus what the same GPUs achieve over a high-speed fabric |
-| `network.inter_node` | enum + bandwidth + topology | Determines whether a model is one node or many, and which parallel dim crosses nodes (§1.4) | A cross-node TP result presented as a single-node option |
-| `cpu.model`, `cpu.cores`, `ram_bytes`, `storage.*` | varies | Cold-start and host-side bottlenecks live here (§1.5) | Load time omitted; a capacity report that is true only for an already-warm server |
-| `topology.node_exclusive` | bool | Gate on every other number (§1.6) | A shared node invalidates all of it silently |
-| `topology.nodes`, `topology.single_node` | int, bool | Multi-node is a different capacity regime (§1.7) | A 2-node result quoted per-GPU as if nodes were fungible |
+| field | unit | required when | why it is required | failure it prevents |
+|---|---|---|---|---|
+| `accelerator.model` | string | always | "Radeon", "TPU" or "80GB card" names families, not parts | A reader reproduces on a different SKU with 2× different bandwidth and gets a different answer from the same config |
+| `accelerator.count` | int | always | CPU-visible device count per node and in total | C3 topology binding: without a count, per-GPU KV and throughput figures are unfalsifiable |
+| `memory_architecture` | string (`discrete` \| `unified`) | always | Selects which memory-budget question the rest of the table asks (§1.8); every conditional row keys off it | A reader sums "GPU memory" and system RAM on a unified part and prices a machine that does not exist |
+| `accelerator.vram_bytes_per_gpu` | bytes | `memory_architecture == "discrete"` | Feeds `kv_pool_bytes` | Analytic and measured KV capacities silently disagree by the difference between SKUs (e.g. 40 vs 80 GiB variants of the same accelerator). On a unified part this row has no honest answer (§1.8); `usable_memory_bytes` carries the budget |
+| `usable_memory_bytes` | bytes | `memory_architecture == "unified"` | Feeds `kv_pool_bytes` on unified parts: the bytes the framework can actually bind for weights plus KV after the OS, the compositor and the wired-memory limit | Declaring total system memory instead overstates the bindable pool by tens of GB; every KV floor computed from it promises concurrency no configuration of the machine can hold |
+| `memory_type` | string | `memory_architecture == "unified"` | Annotates the bandwidth figure: `"LPDDR5X"` and `"HBM3e"` at the same bytes/s are different machines — one bus is shared with the CPU and display, one is not | A bandwidth number read as a private GPU resource when it is the whole system's DRAM bus |
+| `accelerator.hbm_bandwidth_bytes_s` | bytes/s | always | Sole input to `roofline_decode_tok_s`; accelerator-visible DRAM bandwidth, annotated by `memory_type` | Without it the theoretical tier cannot be computed, and C6 (four tiers) cannot be met |
+| `accelerator.flops_per_s_dense` | FLOP/s | always (honest `null` + `(U)` where no dense figure is published — §1.2) | Sole input to `roofline_prefill_ttft_s` | Same: no roofline, no roofline efficiency, no conformance. Declared as dense FLOP/s at the deployed precision, not sparse — sparse marketing numbers inflate the roofline ~2× and make measured efficiency look broken |
+| `dense_flops_precision` | enum | whenever the FLOP/s figure above is non-null | Names the precision (`bf16`…`nvfp4`) the quoted dense FLOP/s is measured at | An FP4 headline read as dense BF16 doubles the theoretical prefill bound per precision step and sends efficiency analysis chasing a phantom (HW-10) |
+| `thermal_behavior` | enum | `memory_architecture == "unified"` | States whether the part holds its datasheet bandwidth and FLOP/s across the sustained measurement window (`not-assessed` is a legal answer) | A cold-started sprint quoted as sustained capacity; two honest sweeps — cold and heat-soaked — read as a discrepancy that isn't one |
+| `interconnect.intra_node` | enum + bandwidth | `gpus_per_node > 1` (single-device parts declare `n-a`) | Determines the TP widths that are viable (§1.3) | TP=8 over PCIe is measured, published, and off by multiples versus what the same GPUs achieve over a high-speed fabric |
+| `network.inter_node` | enum + bandwidth + topology | `nodes > 1` | Determines whether a model is one node or many, and which parallel dim crosses nodes (§1.4) | A cross-node TP result presented as a single-node option |
+| `cpu.model`, `cpu.cores`, `ram_bytes`, `storage.*` | varies | always | Cold-start and host-side bottlenecks live here (§1.5); on unified parts `ram_bytes` aliases the accelerator pool (HW-10) | Load time omitted; a capacity report that is true only for an already-warm server |
+| `topology.node_exclusive` | bool / enum | always | Gate on every other number (§1.6) | A shared node invalidates all of it silently |
+| `topology.nodes`, `topology.single_node` | int, bool | always | Multi-node is a different capacity regime (§1.7) | A 2-node result quoted per-GPU as if nodes were fungible |
 
-A conforming report MUST populate every row. If a field genuinely cannot be measured, the
-value is `null` and tagged `(U)`; a guessed HBM bandwidth taken from a vendor page for the
-wrong SKU is worse than a null, because it is not tagged at all.
+A conforming report MUST populate every row its condition selects. The conditions are not
+discretion: a row whose guard is false is answered by `null` with a `(U)` reason or by the
+sanctioned `n-a` string, never by silence and never by a guess. If a field genuinely cannot
+be measured, the value is `null` and tagged `(U)`; a guessed HBM bandwidth taken from a
+vendor page for the wrong SKU is worse than a null, because it is not tagged at all.
 
 ## 1.2 Why both HBM bandwidth and FLOP/s are mandatory
 
@@ -49,6 +55,16 @@ Both figures MUST be quoted at the precision actually deployed (Chapter 2), beca
 FP8-quantized deployment runs against FP8 rates, and a 4-bit deployment like `nvfp4` has
 rates many vendors list separately if at all.
 
+One qualification the protocol insists on: mandatoriness attaches to the *declaration*, not
+to the existence of a figure. Apple publishes no GPU FLOP/s number at any precision, and
+back-computing one from core counts and clocks is guesswork wearing a datasheet's clothes.
+On such a part the honest, conforming value is `null` with a `(U)` reason — and the
+consequence is accepted, not papered over: the prefill theoretical tier and
+`roofline_efficiency` are then null as well, and the report shows that rather than
+manufacturing a bound it cannot defend. A report that invents the figure has converted an
+unknown into a silent non-conformance, which is the one thing the protocol exists to
+prevent.
+
 ## 1.3 Intra-node interconnect, and why TP width is meaningless without it
 
 Tensor parallelism divides each layer across GPUs and synchronizes activations twice per
@@ -69,6 +85,12 @@ only 2 GPUs), the report MUST say so.
 
 **Rule HW-3.** Replicas crossing sockets or NUMA boundaries SHOULD be declared, because CPU
 affinity changes measured latency tails at the margin. `(M)` if measured; otherwise `(U)`.
+
+A single-device part answers HW-1 trivially: with nothing to shard across,
+`interconnect_intra_node` takes the literal string `n-a` — the same escape
+`interconnect_inter_node` already documents for single-node reports. Do not substitute the
+part's CPU-side PCIe or package link: quoting it as an "interconnect" invites a reader to
+compare it against NVLink-class figures, and the comparison is a category error.
 
 ## 1.4 Inter-node fabric, and pipeline vs tensor parallel across nodes
 
@@ -109,7 +131,9 @@ for burst capacity does not exist at the timescale of the burst.)*
 CPU and RAM declarations catch a second failure: host-side preprocessing, tokenizer queues,
 and framework runtime overhead binding below the GPU floor. If a benchmark is CPU-bound,
 record it; a measurement made under an undeclared host bottleneck will be read as a GPU
-property.
+property. On a unified part this caveat sharpens: the CPU's traffic rides the same DRAM
+bus the serving framework is measuring, so a CPU-bound run depresses the memory roofline
+itself, not just the host pipeline in front of it (§1.8).
 
 ## 1.6 Node exclusivity
 
@@ -122,6 +146,15 @@ weeks reconciling them.)*
 
 This is the cheapest rule in the chapter to satisfy and the most commonly violated.
 
+The declaration admits `exclusive-process`: no other compute or graphics tenant ran during
+measurement, while the OS compositor and system services held their unavoidable share. Use
+it whenever that sentence is the true one — which on Apple Silicon is always, because no
+Mac can honestly declare `exclusive`: WindowServer holds GPU time from boot and cannot be
+scheduled out. Without this value every Apple report would carry the HW-7 contamination
+banner forever, and a banner that flies on every report from an entire platform stops
+meaning anything — which is how readers learn to ignore it on the reports where it still
+matters.
+
 ## 1.7 Single vs multi-node declaration
 
 **Rule HW-8.** `topology.nodes` MUST be declared, and capacity figures MUST be tagged with
@@ -133,3 +166,73 @@ non-conforming.
 
 A report covering both regimes SHOULD measure at multiple node counts and declare each, so
 that scaling behaviour is exposed rather than assumed.
+
+
+## 1.8 Unified memory: the wrong question and the right one
+
+The field table above was written against datacentre parts with HBM soldered beside the GPU:
+a private pool, described by `vram_bytes_per_gpu`, that nothing else on the machine can
+touch. ASCEP also covers small single-device targets — Grace Blackwell superchips, Apple
+Silicon — where CPU, GPU, operating system and display compositor allocate from one pool of
+LPDDR. Two of the table's premises break there.
+
+**`vram_bytes_per_gpu` is the wrong question.** There is no per-accelerator memory to count.
+Any answer is either total system memory — which no serving framework can bind — or a
+fabricated partition the silicon does not have. The right question is `usable_memory_bytes`:
+the bytes the framework can actually bind for weights plus KV after everything that does not
+go away has taken its share. That budget MUST exclude:
+
+- the OS reservation and running system services;
+- the display compositor, which on macOS holds GPU memory and GPU time whether or not a
+  benchmark is running — WindowServer does not idle politely;
+- the platform's GPU wired-memory limit (on Apple Silicon, `iogpu.wired_limit_mb`,
+  defaulting to roughly 65–75% of RAM; a 512 GB machine does not offer the framework
+  512 GB); and
+- whatever the framework itself reserves outside the weight-and-KV pool.
+
+The failure this guards against is directional, and the direction matters: declaring total
+system memory overstates the bindable pool by tens of GB **in the over-promising direction**.
+KV floors computed against it promise concurrency no configuration of the machine can
+deliver; the reader re-runs, fails to reach the headline, and goes looking for the bug in
+their own setup, because the wrong number arrives dressed as a measured one. Establishing
+the true figure takes minutes — attempt the allocation, read the wired limit, check the
+framework's startup log — so there is no honest reason to skip it.
+
+**Rule HW-9.** A report MUST declare `memory_architecture`. On a `unified` part,
+`usable_memory_bytes` MUST be the measured or documented bindable budget, not total system
+memory, and the method used to establish it MUST appear in `notes`. *(Failure prevented:
+the over-promising direction, at machine scale. The KV model prices floors against memory
+that will never exist, and every capacity figure derived downstream is unreachable by
+construction.)*
+
+**Rule HW-10.** On a `unified` part, `system_ram_bytes` aliases the same silicon as the
+accelerator pool and MUST NOT be added to it. *(Failure prevented: a reader summing the two
+double-counts the machine and provisions against imaginary capacity. Summing VRAM across
+discrete GPUs is legitimate; summing RAM and "GPU memory" on unified silicon counts one
+pool twice.)*
+
+These parts also stress the precision honesty §1.2 demands of every part. The headline
+rates small superchips advertise are increasingly FP4, not the dense BF16 a prefill
+roofline for a BF16 deployment needs; Apple's GPU publishes no FLOP/s figure at any
+precision, where the conforming declaration is `null` + `(U)` and a null prefill tier, per
+§1.2.
+
+**Rule HW-11.** A quoted `dense_bf16_flops_per_s` MUST carry `dense_flops_precision`. A
+sparse or FP4 headline figure quoted as if dense overstates the prefill bound by roughly 2×
+per precision step — the DGX Spark's 1 PFLOP is FP4, not dense BF16. *(Failure prevented:
+declared as if dense at the deployed precision, that figure would price the prefill
+roofline four times higher than the silicon can run it, and an honest 60%-of-roofline
+measurement would read as 15% — dispatching the reader on an efficiency hunt for a
+shortfall that is a units error.)*
+
+Finally, small single-device parts throttle under sustained load in a way H100-class
+parts with datacentre cooling mostly do not. `thermal_behavior` declares whether the part
+holds its datasheet bandwidth and FLOP/s across the measurement window. `not-assessed` is a
+legal, honest value: it costs the reader certainty, which is cheap, where a fabricated
+`sustained` costs them truth, which is not.
+
+**Rule HW-12.** On a part declared `throttles-under-sustained-load`, the measured and
+sustainable tiers MUST state the thermal state at the start of the window. *(Failure
+prevented: a cold-started sweep and a heat-soaked sweep of the same part are different
+measurements. Quoted without the label, two honest reports differ by a double-digit
+percentage and two teams burn weeks reconciling a "regression" that is a fan curve.)*

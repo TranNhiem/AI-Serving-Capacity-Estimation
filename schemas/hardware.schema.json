@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ascep.dev/schemas/hardware.schema.json",
-  "title": "ASCEP Layer 1 \u2014 Hardware declaration",
+  "title": "ASCEP Layer 1 — Hardware declaration",
   "description": "Layer 1 of the five ASCEP layers. Declares the silicon and its interconnect independently of any model or framework. Capacity is a function of all five layers; a hardware record alone MAY NOT be used to assert any capacity figure (C3).",
   "type": "object",
   "additionalProperties": false,
@@ -11,9 +11,7 @@
     "gpu_count",
     "nodes",
     "gpus_per_node",
-    "vram_bytes_per_gpu",
-    "interconnect_intra_node",
-    "interconnect_inter_node",
+    "memory_architecture",
     "node_exclusivity",
     "driver_version",
     "compute_runtime_version",
@@ -24,6 +22,107 @@
     "system_ram_bytes",
     "storage_class",
     "model_load_path"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "memory_architecture": {
+            "const": "discrete"
+          }
+        },
+        "required": [
+          "memory_architecture"
+        ]
+      },
+      "then": {
+        "required": [
+          "vram_bytes_per_gpu"
+        ],
+        "properties": {
+          "usable_memory_bytes": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "memory_architecture": {
+            "const": "unified"
+          }
+        },
+        "required": [
+          "memory_architecture"
+        ]
+      },
+      "then": {
+        "required": [
+          "usable_memory_bytes",
+          "memory_type",
+          "thermal_behavior"
+        ],
+        "properties": {
+          "vram_bytes_per_gpu": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gpus_per_node": {
+            "type": "integer",
+            "minimum": 2
+          }
+        },
+        "required": [
+          "gpus_per_node"
+        ]
+      },
+      "then": {
+        "required": [
+          "interconnect_intra_node"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "nodes": {
+            "type": "integer",
+            "minimum": 2
+          }
+        },
+        "required": [
+          "nodes"
+        ]
+      },
+      "then": {
+        "required": [
+          "interconnect_inter_node"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "dense_bf16_flops_per_s": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dense_bf16_flops_per_s"
+        ]
+      },
+      "then": {
+        "required": [
+          "dense_flops_precision"
+        ]
+      }
+    }
   ],
   "properties": {
     "ascep_version": {
@@ -50,30 +149,97 @@
       "minimum": 1,
       "description": "Accelerators per node. gpu_count MUST equal nodes * gpus_per_node."
     },
+    "memory_architecture": {
+      "type": "string",
+      "enum": [
+        "discrete",
+        "unified"
+      ],
+      "description": "Whether the accelerator has its own dedicated memory ('discrete', e.g. HBM on a datacenter GPU) or shares one coherent physical pool with the host CPU ('unified', e.g. Apple Silicon, DGX Spark). This is the discriminator for the conditional requirements below: a unified part has no separately bindable VRAM, so vram_bytes_per_gpu is the wrong question there and usable_memory_bytes carries the budget instead."
+    },
     "vram_bytes_per_gpu": {
       "type": [
         "number",
         "null"
       ],
-      "description": "High-bandwidth memory per device, in bytes (decimal GB, not GiB). Null only if unknown, with vram_bytes_per_gpu_u_reason set. Feeds ascep.capacity.kv_pool_bytes; a null here makes every KV figure (U)."
+      "description": "High-bandwidth memory per device, in bytes (decimal GB, not GiB). Required only when memory_architecture is 'discrete'; on a unified part the schema refuses a non-null value here, because there is no separately bindable VRAM to declare -- usable_memory_bytes carries the budget. Null only if unknown, with vram_bytes_per_gpu_u_reason set. Feeds ascep.capacity.kv_pool_bytes; a null here makes every KV figure (U)."
     },
     "vram_bytes_per_gpu_u_reason": {
       "type": "string",
       "description": "(U) justification required when vram_bytes_per_gpu is null (C1)."
+    },
+    "usable_memory_bytes": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "The bytes the serving framework can actually bind for weights plus KV on a unified part, after the OS reservation, the display compositor, and any GPU wired-memory limit (e.g. iogpu.wired_limit_mb, ~65–75% of RAM by default on macOS). It is not total system memory. On a 'discrete' part it MUST be absent or null and vram_bytes_per_gpu carries the budget; the schema refuses a number here on a discrete part. Required when memory_architecture is 'unified'. Null only if unknown, with usable_memory_bytes_u_reason set. Declaring total system memory here overstates the bindable pool by tens of GB in the over-promising direction."
+    },
+    "usable_memory_bytes_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when usable_memory_bytes is null (C1)."
+    },
+    "memory_type": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text memory technology annotation, e.g. 'HBM3e', 'LPDDR5X'. Required when memory_architecture is 'unified'; annotates hbm_bandwidth_bytes_s so a reader can tell a shared LPDDR pool from dedicated HBM. Null only if unknown, with memory_type_u_reason set."
+    },
+    "memory_type_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when memory_type is null (C1)."
+    },
+    "dense_flops_precision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "bf16",
+        "fp16",
+        "fp8",
+        "nvfp4",
+        "tf32",
+        "fp32",
+        null
+      ],
+      "description": "The dense precision the quoted dense_bf16_flops_per_s figure is measured at. Required whenever dense_bf16_flops_per_s is non-null. A sparse or FP4 headline quoted as if dense overstates the prefill bound by roughly 2x per precision step (the DGX Spark's 1 PFLOP is FP4, not dense BF16); this field exists so the precision can never be silently assumed."
+    },
+    "dense_flops_precision_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when dense_flops_precision is null (C1)."
+    },
+    "thermal_behavior": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "sustained",
+        "throttles-under-sustained-load",
+        "not-assessed",
+        null
+      ],
+      "description": "Whether the part holds its datasheet bandwidth and FLOP/s across the sustained measurement window. Required when memory_architecture is 'unified'. 'throttles-under-sustained-load' makes every (M) and sustainable figure temperature-dependent, and a cold-started sweep is then a different measurement from a heat-soaked one. 'not-assessed' is a legal, honest value; omitting the question entirely would let throttling parts pose as sustained ones."
+    },
+    "thermal_behavior_u_reason": {
+      "type": "string",
+      "description": "(U) justification required when thermal_behavior is null (C1)."
     },
     "interconnect_intra_node": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Intra-node interconnect and generation, e.g. 'NVLink gen4', 'PCIe gen5', 'InfinityFabric', 'other'. Affects achievable tensor-parallel width; omitting it makes TP claims non-reproducible."
+      "description": "Intra-node interconnect and generation, e.g. 'NVLink gen4', 'PCIe gen5', 'InfinityFabric', 'other', or the literal string 'n-a' for a single-device part where no intra-node link exists. Required only when gpus_per_node > 1. Affects achievable tensor-parallel width; omitting it makes TP claims non-reproducible."
     },
     "interconnect_inter_node": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Inter-node interconnect and rate, e.g. 'InfiniBand 400G', 'RoCE 200G', 'Ethernet', or 'n-a' for single-node."
+      "description": "Inter-node interconnect and rate, e.g. 'InfiniBand 400G', 'RoCE 200G', 'Ethernet', or 'n-a' for single-node. Required only when nodes > 1."
     },
     "node_exclusivity": {
       "type": [
@@ -82,31 +248,32 @@
       ],
       "enum": [
         "exclusive",
+        "exclusive-process",
         "shared",
         null
       ],
-      "description": "Whether benchmark nodes were exclusive. 'shared' invalidates cross-report comparison and MUST be surfaced in the report header."
+      "description": "Whether benchmark nodes were exclusive. 'exclusive' means true bare-metal exclusivity: nothing else held compute or graphics time. 'exclusive-process' means no other compute or graphics tenant ran during measurement, while the OS compositor and system services held their unavoidable share — no Mac can honestly declare 'exclusive', because WindowServer always holds GPU time, so without this value every Apple report would carry the HW-7 contamination banner forever and the banner would stop meaning anything. 'shared' invalidates cross-report comparison and MUST be surfaced in the report header."
     },
     "driver_version": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Accelerator driver version, exactly as reported by the system."
+      "description": "Accelerator driver version, exactly as reported by the system. The literal string 'n-a' is sanctioned for platforms with no separately versioned accelerator driver (Metal ships inside the macOS release); on such platforms the OS and runtime version belongs in compute_runtime_version. Null only if unknown, with driver_version_u_reason set. A fabricated version number on a platform that has none trains readers to ignore the field; 'n-a' keeps it honest."
     },
     "compute_runtime_version": {
       "type": [
         "string",
         "null"
       ],
-      "description": "Compute runtime and version (CUDA / ROCm / XLA / oneAPI / equivalent)."
+      "description": "Compute runtime and version (CUDA / ROCm / XLA / oneAPI / equivalent; on Apple Silicon this carries the macOS release and Metal/MLX versions)."
     },
     "hbm_bandwidth_bytes_s": {
       "type": [
         "number",
         "null"
       ],
-      "description": "Vendor-specified HBM bandwidth per device, in bytes/s (T). Input to ascep.capacity.roofline_decode_tok_s; without it the theoretical tier cannot be computed and the roofline_efficiency field MUST be null."
+      "description": "Accelerator-visible DRAM bandwidth, in bytes/s, annotated by memory_type (T). Input to ascep.capacity.roofline_decode_tok_s; without it the theoretical tier cannot be computed and the roofline_efficiency field MUST be null. On a unified part this bandwidth is shared with the CPU and the display, so a CPU-bound run also depresses the memory roofline — quoting the vendor peak as if private to the GPU overstates the decode bound."
     },
     "hbm_bandwidth_bytes_s_u_reason": {
       "type": "string",
@@ -117,7 +284,7 @@
         "number",
         "null"
       ],
-      "description": "Vendor-specified dense BF16 FLOP/s per device (T). Input to ascep.capacity.roofline_prefill_ttft_s."
+      "description": "Vendor-specified dense FLOP/s per device, at whatever precision dense_flops_precision names (T). Input to ascep.capacity.roofline_prefill_ttft_s. Apple publishes no GPU FLOP/s figure at any precision, so null + (U) is the expected honest value there; the consequence is that the prefill theoretical tier and roofline_efficiency are then null, and that consequence is stated here so it is not treated as silent non-conformance."
     },
     "dense_bf16_flops_per_s_u_reason": {
       "type": "string",
@@ -147,7 +314,7 @@
         "number",
         "null"
       ],
-      "description": "Host system RAM per node, in bytes. Relevant to model load path, KV offload, and prefix-cache spill."
+      "description": "Host system RAM per node, in bytes. Relevant to model load path, KV offload, and prefix-cache spill. On a unified part this aliases the same silicon as the accelerator pool and MUST NOT be added to usable_memory_bytes — summing the two double-counts the machine (HW-9)."
     },
     "system_ram_bytes_u_reason": {
       "type": "string",
@@ -201,7 +368,7 @@
     },
     "notes": {
       "type": "object",
-      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that cpu_cores is a cluster allocation rather than the node's core count. Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade. Optional except where a rule says otherwise: C1 requires a cpu_cores note on any report declaring image or video input.",
+      "description": "Free-form prose keyed by field name, recording why a declared non-null value is what it is: that cpu_cores is a cluster allocation rather than the node's core count, or the method used to establish usable_memory_bytes on a unified part (HW-8). Complements the (U) mechanism, which can only justify a null. A note NEVER substitutes for a value, never satisfies C1 beside a null, and is not evidence: it changes no tier and no conformance grade. Optional except where a rule says otherwise: C1 requires a cpu_cores note on any report declaring image or video input, and HW-8 requires a usable_memory_bytes note on any unified part.",
       "additionalProperties": {
         "type": "string",
         "minLength": 1

@@ -171,7 +171,11 @@ def build_svg() -> str:
         ("run", "ladder, windows, seeds, engine log"),
     ]
     chip_ys = [142 + i * 57 for i in range(5)]
-    for (name, caption), cy in zip(chips, chip_ys, strict=True):
+    # `zip(..., strict=True)` would be the obvious guard, but it is 3.10+ and this repo
+    # still supports 3.9. Asserting is equivalent here and fails on every interpreter:
+    # a silently short zip would drop a declaration chip off the figure entirely.
+    assert len(chips) == len(chip_ys)
+    for (name, caption), cy in zip(chips, chip_ys):
         parts.extend(_chip(40, cy, 232, 48, name, caption))
     # Hand-wrapped to stay inside the 232px column. SVG has no text wrapping, so a single
     # long line would run out from under the chips and straight through the SLO-gate box
@@ -190,19 +194,41 @@ def build_svg() -> str:
     parts.append(_rect(320, 142, 440, 276, 12, PANEL, HAIRLINE))
     rows = [
         # (name, formula, value, unit, fill, stroke, stroke_width, value_fill)
-        ("Weights", "do the weights + a usable KV pool fit?", "fits ✓", None,
-         "#FFFFFF", HAIRLINE, 1, GOOD),
-        ("KV", "kv_tokens ÷ avg_context_tokens", KV_USERS, "users",
-         "#FFFFFF", HAIRLINE, 1, INK),
-        ("Prefill", "usable_prefill_tok_s ÷ prompt demand", PREFILL_USERS, "users",
-         "#FFFFFF", HAIRLINE, 1, INK),
-        ("Throughput", "usable_tok_s ÷ per-user demand", THROUGHPUT_USERS, "users",
-         BINDFILL, BIND, 1.5, BIND),
+        (
+            "Weights",
+            "do the weights + a usable KV pool fit?",
+            "fits ✓",
+            None,
+            "#FFFFFF",
+            HAIRLINE,
+            1,
+            GOOD,
+        ),
+        ("KV", "kv_tokens ÷ avg_context_tokens", KV_USERS, "users", "#FFFFFF", HAIRLINE, 1, INK),
+        (
+            "Prefill",
+            "usable_prefill_tok_s ÷ prompt demand",
+            PREFILL_USERS,
+            "users",
+            "#FFFFFF",
+            HAIRLINE,
+            1,
+            INK,
+        ),
+        (
+            "Throughput",
+            "usable_tok_s ÷ per-user demand",
+            THROUGHPUT_USERS,
+            "users",
+            BINDFILL,
+            BIND,
+            1.5,
+            BIND,
+        ),
     ]
     row_ys = [154 + i * 64 for i in range(4)]
-    for (name, formula, value, unit, fill, stroke, sw, vfill), ry in zip(
-        rows, row_ys, strict=True
-    ):
+    assert len(rows) == len(row_ys)  # see the chip loop: strict= is 3.10+, this is 3.9
+    for (name, formula, value, unit, fill, stroke, sw, vfill), ry in zip(rows, row_ys):
         parts.append(_rect(332, ry, 416, 60, 8, fill, stroke, sw))
         parts.append(_text(348, ry + 24, name, 13.5, INK, weight=600))
         parts.append(_text(348, ry + 42, formula, 10.5, MUTED, family=FONT_MONO))
@@ -215,9 +241,7 @@ def build_svg() -> str:
     # SLO gate: dashed because it is a filter, not a floor — a rung that misses it
     # must not be allowed to read as capacity.
     parts.append(_rect(320, 436, 440, 42, 8, "#FFFFFF", HAIRLINE, dash="4 3"))
-    parts.append(
-        _text(336, 462, "SLO gate  ·  p95 TTFT ≤ 400 ms  ·  p95 TPOT ≤ 50 ms", 12, BODY)
-    )
+    parts.append(_text(336, 462, "SLO gate  ·  p95 TTFT ≤ 400 ms  ·  p95 TPOT ≤ 50 ms", 12, BODY))
     parts.append(_arrow(540, 436, 540, 418, MUTED, 1.5))
     parts.append(
         _text(
@@ -271,15 +295,21 @@ def build_svg() -> str:
         tx = 40 + i * 296
         is_measured = tier == "measured"
         parts.append(
-            _rect(tx, 542, 272, 104, 10, "#FFFFFF", ACCENT if is_measured else HAIRLINE,
-                  1.5 if is_measured else 1)
+            _rect(
+                tx,
+                542,
+                272,
+                104,
+                10,
+                "#FFFFFF",
+                ACCENT if is_measured else HAIRLINE,
+                1.5 if is_measured else 1,
+            )
         )
         parts.append(
             _text(tx + 16, 568, tier.upper(), 12, MUTED, weight=600, letter_spacing="0.06em")
         )
-        parts.append(
-            _text(tx + 16, 606, number, 28, ACCENT if is_measured else INK, weight=700)
-        )
+        parts.append(_text(tx + 16, 606, number, 28, ACCENT if is_measured else INK, weight=700))
         parts.append(_text(tx + 16, 628, under, 10.5, MUTED))
         parts.append(_rect(tx + 226, 556, 30, 18, 9, PANEL, HAIRLINE))
         parts.append(_text(tx + 241, 569, tag, 10, MUTED, weight=600, anchor="middle"))

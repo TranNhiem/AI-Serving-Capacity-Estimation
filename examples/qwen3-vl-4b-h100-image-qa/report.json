@@ -9,6 +9,7 @@
     "gpu_count": 1,
     "nodes": 1,
     "gpus_per_node": 8,
+    "memory_architecture": "discrete",
     "vram_bytes_per_gpu": 85520809984,
     "interconnect_intra_node": null,
     "interconnect_intra_node_u_reason": "(U) TP=1 on a single GPU; there is no inter-GPU link in the serving path, so no intra-node interconnect was exercised and none is declared. Describing the node's NVLink here would describe hardware the run never touched.",

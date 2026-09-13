@@ -4,7 +4,7 @@
 serve this model, I want to build this application — how much capacity do I get, and how
 much infrastructure do I need?***
 
-[![Protocol](https://img.shields.io/badge/ASCEP-v0.5--draft-blue)](protocol/SPEC.md)
+[![Protocol](https://img.shields.io/badge/ASCEP-v0.6--draft-blue)](protocol/SPEC.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 <p align="center">
@@ -198,6 +198,7 @@ rows are the contribution this project most wants. To adapt it:
 |---|---|
 | A different framework | declare `serving.framework` and report the engine's own KV-pool figure; the protocol never assumes vLLM |
 | A different accelerator | declare it in `hardware.schema.json`; only the roofline needs vendor specs |
+| A unified-memory device (Apple Silicon, DGX Spark) | declare `memory_architecture: unified` + `usable_memory_bytes` — the bindable budget, not total RAM; `vram_bytes_per_gpu` is then refused, not merely unused |
 | A quantized model | declare stored precision and overhead fraction; formulas already handle sub-byte formats |
 | An MoE model | declare **total** params for memory, **active** params for compute — the most common sizing error |
 | An MLA model (DeepSeek-style) | declare `attention_type: mla` + `kv_lora_rank`/`qk_rope_head_dim`; the GQA formula overstates its KV by ~57× |
@@ -220,13 +221,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Status
 
-**v0.5, draft.** The spec and the formula set are stable enough to use and argue with. The
+**v0.6, draft.** The spec and the formula set are stable enough to use and argue with. The
 harness is generalized from a private benchmark campaign and now ships; expect churn in
 `ascep/` before v1.0. Breaking changes to anything that would alter a conforming report's
-numbers get a major version bump. The 0.4 release was one; this one is not. Everything v0.5 adds — workload
-archetypes, the prefill floor, the agent-loop declarations — is opt-in and number-preserving:
-omit the new fields and every formula returns exactly what it returned before, which is the
-property the compatibility promise is made of and which the test suite asserts directly.
+numbers get a major version bump. The 0.4 release was one; 0.5 was not.
+
+**0.6 is breaking, but it breaks documents rather than numbers.** Every formula returns
+exactly what it returned before — the published examples recompute bit-identically, which the
+test suite asserts directly. What changed is the hardware declaration: `memory_architecture`
+is newly required, so a 0.5 `hardware.json` no longer validates until one line is added. That
+line is the price of describing unified-memory single-device targets — Apple Silicon, DGX
+Spark — honestly, and the alternative was worse. Left unconditional, `vram_bytes_per_gpu`
+would have to be answered on a machine that has no per-accelerator memory to count, and the
+only available answers are total system memory, which no framework can bind, or a partition
+the silicon does not have. See [chapter 1 §1.8](protocol/01-hardware.md) and the migration
+note in [CHANGELOG.md](CHANGELOG.md).
 
 One consequence is worth stating plainly, because it is not a number change and so does not
 force a major bump, but it can still move a label. C11 grades a published capacity figure
